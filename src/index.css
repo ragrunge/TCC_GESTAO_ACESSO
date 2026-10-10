@@ -1,0 +1,39 @@
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-sans/700.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { font-size: 15px; }
+  body { @apply bg-canvas text-ink font-sans antialiased; min-width: 1280px; line-height: 1.45; }
+  /* Foco sempre visível (WCAG 2.4.7) */
+  :focus-visible { outline: 3px solid #0B5563; outline-offset: 2px; border-radius: 4px; }
+  .sobre-escuro :focus-visible { outline-color: #FFFFFF; }
+  a { color: #0B5563; }
+  a:hover { color: #08434E; }
+}
+
+@layer components {
+  /* Campo do protótipo: 44px, borda #B9C3CA, raio 8px */
+  .input { @apply h-[44px] w-full rounded-lg border border-[#B9C3CA] bg-white px-3 text-[15px] text-ink placeholder:text-[#56616B]/70; }
+  textarea.input { @apply h-auto py-[10px]; }
+  .input:disabled { @apply bg-neutro-bg text-ink-suave; }
+}
+
+@media print {
+  aside, header, .no-print { display: none !important; }
+  body { min-width: 0; background: white; }
+}
+
+@media print {
+  .app-raiz { display: block; height: auto; }
+  .app-raiz > div { height: auto; }
+  main { overflow: visible !important; padding: 0 !important; }
+}

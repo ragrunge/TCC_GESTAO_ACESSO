@@ -1,0 +1,26 @@
+import { createContext, createElement, useContext, useMemo, type ReactNode } from 'react';
+import type { Api } from './types';
+import { createMockApi } from './mock/createMockApi';
+import { createHttpApi } from './http/createHttpApi';
+
+export * from './types';
+
+/** Escolhe a implementação por VITE_API_MODE (mock | http). Padrão: mock. */
+export function criarApi(): Api {
+  const modo = import.meta.env.VITE_API_MODE ?? 'mock';
+  if (modo === 'http') return createHttpApi(import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1');
+  return createMockApi();
+}
+
+const ApiContext = createContext<Api | null>(null);
+
+export function ApiProvider({ api, children }: { api?: Api; children: ReactNode }) {
+  const valor = useMemo(() => api ?? criarApi(), [api]);
+  return createElement(ApiContext.Provider, { value: valor }, children);
+}
+
+export function useApi(): Api {
+  const a = useContext(ApiContext);
+  if (!a) throw new Error('useApi fora de <ApiProvider>');
+  return a;
+}

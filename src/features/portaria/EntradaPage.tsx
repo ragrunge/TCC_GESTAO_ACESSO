@@ -1,0 +1,561 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { AlertTriangle, Check, Clock, History, Plus, Search } from 'lucide-react';
+import { useApi, ehApiError, type Autorizador, type AutorizacaoView, type NovaPessoaInput, type PessoaBusca, type RestricaoView } from '../../api';
+import { useAuth } from '../../auth/AuthContext';
+import { Alert } from '../../components/Alert';
+import { SeloVinculo } from '../../components/Badge';
+import { Button } from '../../components/Button';
+import { CartaoPasso } from '../../components/Card';
+import { Field } from '../../components/Field';
+import { Modal, temModalAberto } from '../../components/Modal';
+import { PageHeader } from '../../components/PageHeader';
+import { TowerUnitPicker, type TowerUnitPickerHandle } from '../../components/TowerUnitPicker';
+import { useToast } from '../../components/Toast';
+import { Avatar } from '../../components/UnitTag';
+import {
+  ROTULO_CATEGORIA, ROTULO_MEIO, ROTULO_PAPEL, type CategoriaPessoa, type Funcionario, type MeioAutorizacao, type TipoDocumento,
+} from '../../domain/types';
+import {
+  descreverHorario, descreverJanela, escalaVigente, estadoAutorizacaoPrevia, justificativaValida, meiosAceitos, MIN_JUSTIFICATIVA,
+  podeConfirmarEntrada, type DadosAutorizacao,
+} from '../../domain/rules';
+import { fmtData, fmtHora, fromInput, toInputDate, toInputTime } from '../../domain/time';
+import { rotuloUnidade, unidadeId } from '../../domain/units';
+import { mensagemErro, useAgora } from '../../app/useAsync';
+
+const SUGESTOES_EXCECAO = ['Morador não atende o interfone', 'Emergência médica', 'Serviço público (luz, água, gás)'];
+
+const NP_VAZIA = { nome: '', documentoTipo: 'cpf' as TipoDocumento, documento: '', telefone: '', categoria: 'visitante' as CategoriaPessoa, empresa: '', servico: '', foto: '' };
+
+export function EntradaPage() {
+  const api = useApi();
+  const nav = useNavigate();
+  const [params] = useSearchParams();
+  const retroativo = params.get('retroativo') === '1';
+  const { usuario } = useAuth();
+  const { avisar } = useToast();
+  const agora = useAgora(15000);
+  const agoraRef = useRef(agora);
+  agoraRef.current = agora;
+
+  // --- Passo 1: pessoa
+  const [query, setQuery] = useState('');
+  const [sugestoes, setSugestoes] = useState<PessoaBusca[]>([]);
+  const [idx, setIdx] = useState(0);
+  const [buscando, setBuscando] = useState(false);
+  const [pessoa, setPessoa] = useState<PessoaBusca | null>(null);
+  const [funcionario, setFuncionario] = useState<Funcionario | null>(null);
+  const [novoModo, setNovoModo] = useState(false);
+  const [np, setNp] = useState(NP_VAZIA);
+  const [erroNp, setErroNp] = useState('');
+  // --- Passo 2: unidade
+  const [torre, setTorre] = useState<number | null>(null);
+  const [numero, setNumero] = useState<string | null>(null);
+  const [carregandoUnidade, setCarregandoUnidade] = useState(false);
+  const [previas, setPrevias] = useState<AutorizacaoView[]>([]);
+  const [autorizadores, setAutorizadores] = useState<Autorizador[]>([]);
+  const [restricao, setRestricao] = useState<RestricaoView[] | null>(null);
+  // --- Passo 3: autorização
+  const [meio, setMeio] = useState<MeioAutorizacao | null>(null);
+  const [residenteId, setResidenteId] = useState<string | null>(null);
+  const [justificativa, setJustificativa] = useState('');
+  // --- Retroativo
+  const [dataReal, setDataReal] = useState(toInputDate(agora));
+  const [horaReal, setHoraReal] = useState('');
+  const [formulario, setFormulario] = useState('');
+  // --- Envio
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState('');
+
+  const buscaRef = useRef<HTMLInputElement>(null);
+  const pickerRef = useRef<TowerUnitPickerHandle>(null);
+  const grupoMeioRef = useRef<HTMLFieldSetElement>(null);
+  const focarMeio = useRef(false);
+  const enterPendente = useRef(false);
+
+  useEffect(() => { buscaRef.current?.focus(); }, []);
+
+  // Busca incremental
+  useEffect(() => {
+    if (pessoa || novoModo || query.trim().length < 1) { setSugestoes([]); return; }
+    let vivo = true;
+    setBuscando(true);
+    const t = setTimeout(() => {
+      api.pessoas.buscar(query, { semMoradores: true })
+        .then((r) => {
+          if (!vivo) return;
+          setSugestoes(r); setIdx(0);
+          // Enter digitado antes de a lista chegar: escolhe o primeiro resultado
+          if (enterPendente.current && r[0]) { enterPendente.current = false; void escolherPessoaRef.current(r[0]); }
+        })
+        .catch((e) => vivo && setErro(mensagemErro(e)))
+        .finally(() => vivo && setBuscando(false));
+    }, 120);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [query, pessoa, novoModo, api]);
+
+  const escolherPessoaRef = useRef<(p: PessoaBusca) => Promise<void>>(async () => undefined);
+  const escolherPessoa = useCallback(async (p: PessoaBusca) => {
+    setPessoa(p); setQuery(''); setSugestoes([]); setErro('');
+    setFuncionario(p.categoria === 'funcionario' ? await api.pessoas.funcionario(p.id) : null);
+    // Correção 12: após escolher a pessoa, o foco vai para a seleção de torre
+    setTimeout(() => pickerRef.current?.focusTorre(), 0);
+  }, [api]);
+
+  escolherPessoaRef.current = escolherPessoa;
+
+  function limpar(manterFoco = true) {
+    setPessoa(null); setFuncionario(null); setQuery(''); setSugestoes([]); setNovoModo(false); setNp(NP_VAZIA); setErroNp('');
+    setTorre(null); setNumero(null); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setJustificativa('');
+    setErro(''); setFormulario(''); setHoraReal('');
+    if (manterFoco) setTimeout(() => buscaRef.current?.focus(), 0);
+  }
+  const limparUnidade = () => {
+    setTorre(null); setNumero(null); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setJustificativa('');
+    setTimeout(() => pickerRef.current?.focusTorre(), 0);
+  };
+
+  // Ao escolher a unidade: restrições (RF-16), autorizações prévias e moradores aptos a autorizar
+  const unidadeAtual = torre && numero ? unidadeId(torre, numero) : null;
+
+  useEffect(() => {
+    if (!pessoa || !unidadeAtual) return;
+    let vivo = true;
+    setCarregandoUnidade(true); setMeio(null); setResidenteId(null); setErro('');
+    (async () => {
+      try {
+        const rest = await api.restricoes.verificar(pessoa.id, unidadeAtual);
+        if (!vivo) return;
+        if (rest.restrita) { setRestricao(rest.alertas); setCarregandoUnidade(false); return; }
+        const [aps, auts] = await Promise.all([api.autorizacoes.vigentes(pessoa.id, unidadeAtual), api.vinculos.autorizadores(unidadeAtual)]);
+        if (!vivo) return;
+        setPrevias(aps); setAutorizadores(auts);
+        const valida = aps.find((a) => estadoAutorizacaoPrevia(a, agoraRef.current) === 'valida');
+        if (valida) setMeio('autorizacao_previa');
+        focarMeio.current = true;
+      } catch (e) { if (vivo) setErro(mensagemErro(e)); }
+      finally { if (vivo) setCarregandoUnidade(false); }
+    })();
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pessoa?.id, unidadeAtual, api]);
+
+  // Correção 12: após a unidade, o foco vai para "Quem autorizou?"
+  useEffect(() => {
+    if (!carregandoUnidade && focarMeio.current && unidadeAtual) {
+      focarMeio.current = false;
+      const alvo = grupoMeioRef.current?.querySelector<HTMLInputElement>('input[type=radio]:checked:not(:disabled)')
+        ?? grupoMeioRef.current?.querySelector<HTMLInputElement>('input[type=radio]:not(:disabled)');
+      alvo?.focus();
+    }
+  }, [carregandoUnidade, unidadeAtual]);
+
+  // --- instante do acesso (retroativo usa a hora real informada)
+  const quando = retroativo ? fromInput(dataReal, horaReal || '00:00') : agora;
+  const retroValido = !retroativo || (!!horaReal && quando !== null && quando < agora);
+
+  const previaValida = useMemo(() => previas.find((a) => quando !== null && estadoAutorizacaoPrevia(a, quando) === 'valida'), [previas, quando]);
+  const previaFora = useMemo(() => (previaValida ? undefined : previas.find((a) => quando !== null && estadoAutorizacaoPrevia(a, quando) === 'fora_da_janela')), [previas, previaValida, quando]);
+  const categoria = pessoa?.categoria;
+  const meiosPermitidos = categoria ? meiosAceitos(categoria) : [];
+
+  const dados: DadosAutorizacao | null = pessoa ? {
+    categoriaPessoa: pessoa.categoria, unidadeDestinoId: unidadeAtual, autorizadoPorTipo: meio,
+    autorizadoPorPessoaId: meio === 'interfone' || meio === 'morador_presente' ? residenteId : null,
+    autorizacaoPreviaId: meio === 'autorizacao_previa' ? previaValida?.id ?? null : null, justificativa,
+  } : null;
+  // Mesma função pura que o "servidor" usa: o botão só habilita se a regra passar
+  const regraOk = !!dados && quando !== null && podeConfirmarEntrada(dados, {
+    quando, moradoresValidosIds: new Set(autorizadores.map((a) => a.pessoa.id)), autorizacoes: previas, funcionario: funcionario ?? undefined,
+  });
+  const pronto = !!pessoa && regraOk && retroValido && (!retroativo || formulario.trim().length > 0) && !carregandoUnidade && !restricao && !enviando;
+
+  const confirmar = useCallback(async () => {
+    if (!pessoa || !dados || !pronto) return;
+    setEnviando(true); setErro('');
+    try {
+      const ev = await api.eventos.criar({
+        pessoaId: pessoa.id, unidadeDestinoId: unidadeAtual, autorizadoPorTipo: dados.autorizadoPorTipo,
+        autorizadoPorPessoaId: dados.autorizadoPorPessoaId, autorizacaoPreviaId: dados.autorizacaoPreviaId,
+        justificativa: meio === 'excecao_porteiro' ? justificativa : null, retroativo,
+        ocorridoEm: retroativo ? quando : null, observacao: retroativo ? `Formulário de contingência nº ${formulario.trim()}` : null,
+      });
+      const via = { interfone: 'via interfone', morador_presente: 'com o morador presente na portaria', autorizacao_previa: 'via autorização prévia', excecao_porteiro: 'por exceção do porteiro (justificativa registrada)', escala: 'por escala' }[meio!];
+      const quem = ev.autorizadoPorTipo === 'excecao_porteiro' || ev.autorizadoPorTipo === 'escala' ? '' : `autorizada por ${ev.autorizadoPorNome ?? '—'} `;
+      avisar({
+        tom: ev.autorizadoPorTipo === 'excecao_porteiro' ? 'ambar' : 'verde',
+        titulo: retroativo ? 'Lançamento retroativo registrado' : 'Entrada registrada',
+        texto: `${retroativo ? `Acesso de ${fmtData(ev.ocorridoEm)} ${fmtHora(ev.ocorridoEm)}, lançado` : 'Entrada registrada'} às ${fmtHora(ev.registradoEm)} por ${ROTULO_PAPEL[usuario!.papel]} ${usuario!.nome} — ${quem}${via} (${ev.codigo}).`,
+      });
+      nav('/painel');
+    } catch (e) {
+      if (ehApiError(e) && e.code === 'PESSOA_EM_RESTRICAO') {
+        setRestricao((e.detalhes as { restricoes: RestricaoView[] }).restricoes);
+      } else setErro(mensagemErro(e));
+      setEnviando(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pessoa, dados, pronto, api, unidadeAtual, meio, justificativa, retroativo, quando, formulario, usuario]);
+
+  // Correção 13: Enter confirma sempre que o registro estiver completo (exceto em campo de texto longo)
+  const confirmarRef = useRef(confirmar);
+  confirmarRef.current = confirmar;
+  const prontoRef = useRef(pronto);
+  prontoRef.current = pronto;
+  const algoPreenchido = !!pessoa || novoModo || query.length > 0;
+  const algoRef = useRef(algoPreenchido);
+  algoRef.current = algoPreenchido;
+  useEffect(() => {
+    function tecla(e: KeyboardEvent) {
+      if (temModalAberto()) return;
+      const alvo = e.target as HTMLElement;
+      if (e.key === 'Enter') {
+        if (!prontoRef.current || alvo.tagName === 'TEXTAREA' || alvo.id === 'busca-pessoa') return;
+        e.preventDefault(); e.stopPropagation();
+        void confirmarRef.current();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        if (algoRef.current) limpar(); else nav('/painel');
+      }
+    }
+    document.addEventListener('keydown', tecla, true);
+    return () => document.removeEventListener('keydown', tecla, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function cadastrarNova(e: FormEvent) {
+    e.preventDefault();
+    setErroNp('');
+    try {
+      const input: NovaPessoaInput = { ...np, empresa: np.categoria === 'prestador' ? np.empresa : undefined, servico: np.categoria === 'prestador' ? np.servico : undefined };
+      const criada = await api.pessoas.criar(input);
+      setNovoModo(false); setNp(NP_VAZIA);
+      await escolherPessoa({ ...criada, ultimoAcesso: 'Sem acessos', unidadesVinculadas: [] });
+      avisar({ texto: `${criada.nome} cadastrado(a) como ${ROTULO_CATEGORIA[criada.categoria].toLowerCase()}.` });
+    } catch (err) { setErroNp(mensagemErro(err)); }
+  }
+
+  // Modal de restrição: ambos os caminhos gravam o evento "negado" (a gravação ocorre no servidor)
+  async function resolverRestricao(registrarOcorrencia: boolean) {
+    if (!pessoa || !unidadeAtual) return;
+    let eventoId = '', codigo = '';
+    try {
+      await api.eventos.criar({ pessoaId: pessoa.id, unidadeDestinoId: unidadeAtual, autorizadoPorTipo: null, retroativo, ocorridoEm: retroativo ? quando : null });
+    } catch (e) {
+      if (ehApiError(e) && e.code === 'PESSOA_EM_RESTRICAO') {
+        const d = e.detalhes as { eventoId: string; codigo: string };
+        eventoId = d.eventoId; codigo = d.codigo;
+      } else { setErro(mensagemErro(e)); setRestricao(null); return; }
+    }
+    const nome = pessoa.nome;
+    setRestricao(null);
+    avisar({ tom: 'vermelho', titulo: 'Entrada negada', texto: `${nome} não entrou na ${unidadeAtual}. Tentativa gravada na trilha (${codigo}).` });
+    if (registrarOcorrencia) {
+      nav(`/ocorrencias?novo=1&tipo=tentativa_acesso_indevido&unidade=${unidadeAtual}&envolvidos=${encodeURIComponent(nome)}&evento=${eventoId}`);
+    } else {
+      setTorre(null); setNumero(null); setMeio(null);
+      setTimeout(() => pickerRef.current?.focusTorre(), 0);
+    }
+  }
+
+  const pr = restricao?.[0];
+
+  // Resumo do registro (coluna direita)
+  const residente = autorizadores.find((a) => a.pessoa.id === residenteId)?.pessoa.nome;
+  const autorizadoPor = !meio ? '—'
+    : meio === 'excecao_porteiro' ? `${usuario!.nome} (exceção do porteiro)`
+    : meio === 'escala' ? 'Escala do condomínio'
+    : meio === 'autorizacao_previa' ? previaValida?.solicitadaPorNome ?? '—'
+    : residente ?? '—';
+  const faltas: string[] = [];
+  if (!pessoa) faltas.push('pessoa');
+  else {
+    if (!unidadeAtual && pessoa.categoria !== 'funcionario') faltas.push('unidade');
+    else if (carregandoUnidade) faltas.push('verificação da unidade');
+    if (!meio && !carregandoUnidade && (unidadeAtual || pessoa.categoria === 'funcionario')) faltas.push('quem autorizou');
+    else if ((meio === 'interfone' || meio === 'morador_presente') && !residenteId) faltas.push('morador que autorizou');
+    else if (meio === 'excecao_porteiro' && !justificativaValida(justificativa)) faltas.push(`justificativa (mín. ${MIN_JUSTIFICATIVA} caracteres)`);
+  }
+  if (retroativo) {
+    if (!horaReal) faltas.push('hora real do acesso');
+    else if (!retroValido) faltas.push('hora real anterior ao momento atual');
+    if (!formulario.trim()) faltas.push('nº do formulário de papel');
+  }
+  if (faltas.length === 0 && !pronto && !enviando && !restricao) faltas.push('autorização válida para este momento');
+
+  const LABEL_MEIO: Record<MeioAutorizacao, [string, string]> = {
+    interfone: ['Interfone', 'Morador confirma pelo interfone'],
+    morador_presente: ['Morador presente', 'Morador está na portaria'],
+    autorizacao_previa: ['Autorização prévia', 'Cadastrada antes pelo morador'],
+    excecao_porteiro: ['Exceção do porteiro', 'Sem morador; exige justificativa'],
+    escala: ['Escala', 'Funcionário em horário de escala'],
+  };
+  const meiosVisiveis = (['interfone', 'morador_presente', 'autorizacao_previa', 'excecao_porteiro', 'escala'] as MeioAutorizacao[]).filter((m) => meiosPermitidos.includes(m));
+  const rotuloResumo = 'text-[13px] text-[#56616B]';
+
+  return (
+    <div className="flex flex-col gap-5">
+      <PageHeader titulo={retroativo ? 'Lançar registro retroativo' : 'Registrar entrada'}
+        descricao={retroativo
+          ? 'Contingência (UC08): lance o acesso anotado no papel durante a queda do sistema, com a data e a hora reais.'
+          : 'Pessoa, unidade e quem autorizou. O registro não pode ser editado depois de confirmado.'} />
+
+      <div className="grid grid-cols-[minmax(0,1fr)_380px] items-start gap-5">
+        <div className="flex flex-col gap-4">
+          {retroativo && (
+            <section className="rounded-[10px] border border-[#A9D2D8] bg-[#F0F8F9] p-5">
+              <h2 className="mb-[14px] flex items-center gap-2 text-[17px] font-semibold"><History className="h-5 w-5 text-[#0B5563]" aria-hidden />Data e hora reais do acesso</h2>
+              <div className="grid grid-cols-3 gap-[14px]">
+                <Field label="Data real do acesso"><input type="date" className="input" value={dataReal} max={toInputDate(agora)} onChange={(e) => setDataReal(e.target.value)} /></Field>
+                <Field label="Hora real do acesso" erro={horaReal && !retroValido ? 'Deve ser anterior ao momento atual.' : undefined}>
+                  <input type="time" className="input" value={horaReal} max={dataReal === toInputDate(agora) ? toInputTime(agora) : undefined} onChange={(e) => setHoraReal(e.target.value)} />
+                </Field>
+                <Field label="Nº do formulário de papel" dica="Fica registrado na observação do evento."><input className="input" value={formulario} onChange={(e) => setFormulario(e.target.value)} /></Field>
+              </div>
+              <p className="mt-3 flex items-center gap-1.5 text-[14px] text-[#0B4450]"><Clock className="h-4 w-4" aria-hidden />A hora do lançamento ({fmtHora(agora)}) é definida pelo sistema e gravada junto, com a etiqueta Retroativo.</p>
+            </section>
+          )}
+
+          <CartaoPasso n={1} titulo="Pessoa">
+            {!pessoa && !novoModo && (
+              <>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-[14px] top-[14px] h-5 w-5 text-[#56616B]" strokeWidth={2} aria-hidden />
+                  <label htmlFor="busca-pessoa" className="sr-only">Buscar por nome, documento ou placa</label>
+                  <input id="busca-pessoa" ref={buscaRef} autoComplete="off" role="combobox" aria-expanded={sugestoes.length > 0}
+                    aria-controls="lista-sugestoes" aria-activedescendant={sugestoes[idx] ? `sug-${sugestoes[idx].id}` : undefined}
+                    className="h-12 w-full rounded-lg border border-[#9AA7B0] bg-white pl-11 pr-[14px] text-[16px] text-ink placeholder:text-[#56616B]/70"
+                    value={query} onChange={(e) => { enterPendente.current = false; setQuery(e.target.value); }} placeholder="Nome ou documento da pessoa"
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowDown') { e.preventDefault(); setIdx((i) => Math.min(i + 1, sugestoes.length - 1)); }
+                      else if (e.key === 'ArrowUp') { e.preventDefault(); setIdx((i) => Math.max(i - 1, 0)); }
+                      else if (e.key === 'Enter') { e.preventDefault(); if (sugestoes[idx]) void escolherPessoa(sugestoes[idx]); else if (query.trim()) enterPendente.current = true; }
+                    }} />
+                </div>
+                <div className="mt-2 flex flex-col gap-1">
+                  <ul id="lista-sugestoes" role="listbox" aria-label="Pessoas encontradas" className="flex flex-col gap-1 empty:hidden">
+                    {sugestoes.map((p, i) => (
+                      <li key={p.id} id={`sug-${p.id}`} role="option" aria-selected={i === idx}>
+                        <button type="button" tabIndex={-1} onClick={() => void escolherPessoa(p)} onMouseEnter={() => setIdx(i)}
+                          className={`grid min-h-[56px] w-full grid-cols-[44px_minmax(0,1fr)_150px_110px_190px] items-center gap-3 rounded-lg border px-[10px] py-[6px] text-left hover:bg-[#EEF5F6] ${
+                            i === idx ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#E1E6EA] bg-white'}`}>
+                          <Avatar nome={p.nome} />
+                          <span className="truncate font-semibold">{p.nome}</span>
+                          <span className="font-mono text-[14px] text-[#33424B]">{p.documentoMascarado}</span>
+                          <span className="text-[14px]">{ROTULO_CATEGORIA[p.categoria]}</span>
+                          <span className="truncate text-[13px] text-[#56616B]">Último: {p.ultimoAcesso}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {query.trim() && !buscando && sugestoes.length === 0 && <p className="px-0.5 py-1 text-[#56616B]">Nenhuma pessoa encontrada com “{query}”.</p>}
+                  <button type="button" onClick={() => { setNovoModo(true); setNp({ ...NP_VAZIA, nome: query }); }}
+                    className="flex min-h-[48px] items-center gap-[10px] rounded-lg border border-dashed border-[#9AA7B0] bg-white px-3 text-left font-semibold text-[#0B5563] hover:bg-[#EEF5F6]">
+                    <Plus className="h-[18px] w-[18px]" strokeWidth={2.2} aria-hidden />Pessoa sem cadastro
+                  </button>
+                  {sugestoes.length === 0 && !query.trim() && <div className="px-0.5 py-1 text-[13px] text-[#56616B]">Digite o nome ou o documento. Use ↑ ↓ para escolher e Enter para selecionar.</div>}
+                </div>
+              </>
+            )}
+
+            {novoModo && !pessoa && (
+              <form onSubmit={cadastrarNova} className="grid grid-cols-2 gap-[14px]">
+                <Field label="Nome completo" className="col-span-2"><input className="input" autoFocus required value={np.nome} onChange={(e) => setNp({ ...np, nome: e.target.value })} /></Field>
+                <Field label="Tipo de documento">
+                  <select className="input" value={np.documentoTipo} onChange={(e) => setNp({ ...np, documentoTipo: e.target.value as TipoDocumento })}>
+                    <option value="cpf">CPF</option><option value="rg">RG</option><option value="cnh">CNH</option><option value="passaporte">Passaporte</option><option value="outro">Outro</option>
+                  </select>
+                </Field>
+                <Field label="Número"><input className="input font-mono" required value={np.documento} onChange={(e) => setNp({ ...np, documento: e.target.value })} /></Field>
+                <Field label="Telefone"><input className="input" inputMode="tel" placeholder="(11) 9____-____" value={np.telefone} onChange={(e) => setNp({ ...np, telefone: e.target.value })} /></Field>
+                <Field label="Tipo">
+                  <select className="input" value={np.categoria} onChange={(e) => setNp({ ...np, categoria: e.target.value as CategoriaPessoa })}>
+                    <option value="visitante">Visitante</option><option value="prestador">Prestador</option>
+                  </select>
+                </Field>
+                {np.categoria === 'prestador' && (
+                  <>
+                    <Field label="Empresa"><input className="input" required value={np.empresa} onChange={(e) => setNp({ ...np, empresa: e.target.value })} /></Field>
+                    <Field label="Serviço"><input className="input" value={np.servico} onChange={(e) => setNp({ ...np, servico: e.target.value })} /></Field>
+                  </>
+                )}
+                <div className="col-span-2 flex items-center gap-[14px] rounded-lg border border-dashed border-[#C5CDD3] p-3">
+                  <label htmlFor="foto-np" className="sr-only">Foto (opcional)</label>
+                  <input id="foto-np" type="file" accept="image/*" className="!min-h-0 text-[14px]" onChange={(e) => setNp({ ...np, foto: e.target.files?.[0]?.name ?? '' })} />
+                  <span className="text-[14px] text-[#56616B]">Opcional — a recusa não impede o cadastro</span>
+                </div>
+                {erroNp && <Alert tom="vermelho" role="alert" className="col-span-2">{erroNp}</Alert>}
+                <div className="col-span-2 flex gap-[10px]">
+                  <Button type="submit" variante="primario">Usar este cadastro</Button>
+                  <Button onClick={() => { setNovoModo(false); setTimeout(() => buscaRef.current?.focus(), 0); }}>Voltar à busca</Button>
+                </div>
+              </form>
+            )}
+
+            {pessoa && (
+              <div className="flex items-center gap-[14px] rounded-lg border border-[#A9D2D8] bg-[#F0F8F9] px-[14px] py-3">
+                <Avatar nome={pessoa.nome} tamanho={44} />
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-[16px] font-semibold">{pessoa.nome}</span>
+                  <span className="text-[14px] text-[#33424B]"><span className="font-mono">{pessoa.documentoMascarado}</span> · {ROTULO_CATEGORIA[pessoa.categoria]}
+                    {pessoa.empresa && <> · {pessoa.empresa}{pessoa.servico ? ` (${pessoa.servico})` : ''}</>} · último acesso: {pessoa.ultimoAcesso}</span>
+                </div>
+                <Button pequeno onClick={() => limpar()}>Trocar</Button>
+              </div>
+            )}
+          </CartaoPasso>
+
+          <CartaoPasso n={2} titulo="Unidade de destino">
+            {!pessoa ? <p className="text-[#56616B]">Escolha a pessoa primeiro.</p> : (
+              <div className="flex flex-col gap-3">
+                {pessoa.categoria === 'funcionario' && <Alert tom="petroleo">Funcionário do condomínio: a unidade é opcional quando a entrada é por Escala.</Alert>}
+                <TowerUnitPicker ref={pickerRef} torre={torre} numero={numero}
+                  onChange={(t, n) => { setTorre(t); setNumero(n); if (!n) { setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); } }}
+                  onAlterar={limparUnidade}
+                  onComplete={() => { /* o efeito de [unidade] consulta restrições e autorizações */ }} />
+              </div>
+            )}
+          </CartaoPasso>
+
+          <CartaoPasso n={3} titulo="Quem autorizou?">
+            {!pessoa ? <p className="text-[#56616B]">Escolha a pessoa e a unidade. O sistema verifica restrições e autorizações prévias antes de liberar esta etapa.</p>
+              : !unidadeAtual && pessoa.categoria !== 'funcionario' ? <p className="text-[#56616B]">Escolha a pessoa e a unidade. O sistema verifica restrições e autorizações prévias antes de liberar esta etapa.</p>
+              : carregandoUnidade ? <p className="text-[#56616B]">Verificando restrições e autorizações…</p> : (
+                <div className="flex flex-col gap-[14px]">
+                  {previaValida && (
+                    <div role="status" className="flex items-start gap-3 rounded-[10px] border border-[#75E0A7] bg-[#DCFAE6] p-4 text-[#05603A]">
+                      <Check className="h-[22px] w-[22px] shrink-0" strokeWidth={2.4} aria-hidden />
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[16px] font-semibold">Autorização prévia de {previaValida.solicitadaPorNome} ({previaValida.unidadeId}), válida até {fmtData(previaValida.validaAte)}, {descreverJanela(previaValida)}.</span>
+                        <span className="text-[14px]">Autorizador preenchido automaticamente. Sem restrições para esta unidade.</span>
+                      </div>
+                    </div>
+                  )}
+                  {previaFora && (
+                    <Alert tom="ambar" titulo={`Autorização prévia fora do horário (${descreverHorario(previaFora)})`} role="status">
+                      Válida até {fmtData(previaFora.validaAte)}, {descreverJanela(previaFora)}. Neste momento ela não vale: escolha outro meio de autorização.
+                    </Alert>
+                  )}
+
+                  <fieldset ref={grupoMeioRef} className="grid gap-[10px]" style={{ gridTemplateColumns: `repeat(${Math.max(meiosVisiveis.length, 1)}, minmax(0, 1fr))` }}>
+                    <legend className="sr-only">Meio de autorização</legend>
+                    {meiosVisiveis.map((m) => {
+                      const desabilitado = m === 'autorizacao_previa' && !previaValida;
+                      const [titulo, desc] = LABEL_MEIO[m];
+                      return (
+                        <label key={m} className={`flex min-h-[76px] flex-col gap-1 rounded-[10px] border-2 p-3 text-left [&:has(:focus-visible)]:outline [&:has(:focus-visible)]:outline-[3px] [&:has(:focus-visible)]:outline-offset-2 [&:has(:focus-visible)]:outline-[#0B5563] ${
+                          meio === m ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#DCE1E5] bg-white'} ${desabilitado ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#9AA7B0]'}`}>
+                          <input type="radio" name="meio" className="sr-only" disabled={desabilitado} checked={meio === m}
+                            onChange={() => { setMeio(m); setResidenteId(null); }} />
+                          <span className="font-semibold">{titulo}</span>
+                          <span className="text-[13px] text-[#56616B]">{desabilitado ? (previaFora ? 'Fora da janela de horário' : 'Sem autorização válida') : desc}</span>
+                        </label>
+                      );
+                    })}
+                  </fieldset>
+
+                  {(meio === 'interfone' || meio === 'morador_presente') && (
+                    <div className="flex flex-col gap-2">
+                      <span id="rot-morador" className="text-[14px] font-medium">Morador que autorizou <span className="text-[#B42318]">*</span> <span className="font-normal text-[#56616B]">· somente vínculo aprovado na {unidadeAtual}</span></span>
+                      {autorizadores.length === 0
+                        ? <Alert tom="ambar">Nenhum morador com vínculo válido nesta unidade. Vínculo pendente não dá acesso de morador. Use outro meio.</Alert>
+                        : (
+                          <div role="radiogroup" aria-labelledby="rot-morador" className="flex flex-wrap gap-2">
+                            {autorizadores.map((a) => (
+                              <label key={a.pessoa.id} className={`flex h-11 cursor-pointer items-center gap-2 rounded-lg border-2 px-4 [&:has(:focus-visible)]:outline [&:has(:focus-visible)]:outline-[3px] [&:has(:focus-visible)]:outline-offset-2 [&:has(:focus-visible)]:outline-[#0B5563] ${
+                                residenteId === a.pessoa.id ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#DCE1E5] bg-white hover:border-[#9AA7B0]'}`}>
+                                <input type="radio" name="morador" className="sr-only" checked={residenteId === a.pessoa.id} onChange={() => setResidenteId(a.pessoa.id)} />
+                                <span className="font-medium">{a.pessoa.nome}</span>
+                                <span className="text-[13px] text-[#56616B]">{a.vinculo.tipo === 'proprietario' ? 'Proprietário(a)' : a.vinculo.tipo === 'inquilino' ? 'Inquilino(a)' : 'Dependente'}</span>
+                                {a.vinculo.status === 'legado' && <SeloVinculo status="legado" tamanho="xs" />}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                    </div>
+                  )}
+
+                  {meio === 'excecao_porteiro' && (
+                    <div className="flex flex-col gap-3 rounded-[10px] border border-[#FEC84B] bg-[#FEF0C7] p-4 text-[#93370D]">
+                      <div className="flex items-start gap-[10px]">
+                        <AlertTriangle className="h-[22px] w-[22px] shrink-0" strokeWidth={2.2} aria-hidden />
+                        <div>
+                          <div className="text-[16px] font-semibold">Liberação por exceção</div>
+                          <div className="text-[14px] text-[#7A2E0E]">Esta entrada ficará marcada como exceção, com {usuario!.nome} como responsável, e aparecerá no relatório de exceções.</div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {SUGESTOES_EXCECAO.map((s) => (
+                          <button key={s} type="button" onClick={() => setJustificativa(s)} className="h-9 rounded-full border border-[#F5B54A] bg-white px-3 text-[14px] text-[#7A2E0E] hover:bg-[#FFF8E6]">{s}</button>
+                        ))}
+                      </div>
+                      <label htmlFor="just" className="flex flex-col gap-1.5 text-[14px] font-medium text-[#7A2E0E]">Justificativa (obrigatória, mínimo {MIN_JUSTIFICATIVA} caracteres)
+                        <textarea id="just" rows={3} className="input !border-[#F5B54A] font-normal" value={justificativa} onChange={(e) => setJustificativa(e.target.value)} />
+                      </label>
+                      <span className="text-[13px] text-[#7A2E0E]">{justificativa.trim().length} de {MIN_JUSTIFICATIVA} caracteres{justificativaValida(justificativa) ? ' — suficiente' : ''}</span>
+                    </div>
+                  )}
+
+                  {meio === 'escala' && (
+                    funcionario && escalaVigente(funcionario, quando ?? agora)
+                      ? <Alert tom="verde" role="status">{funcionario.funcao} em horário de escala ({funcionario.escala.horaInicio}–{funcionario.escala.horaFim}, {descreverJanela({ diasSemana: funcionario.escala.diasSemana, horaInicio: null, horaFim: null })}).</Alert>
+                      : <Alert tom="ambar">O funcionário não está em horário de escala neste momento.</Alert>
+                  )}
+
+                  {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
+                </div>
+              )}
+          </CartaoPasso>
+        </div>
+
+        <aside aria-label="Resumo do registro" className="sticky top-0 flex flex-col gap-[14px] rounded-[10px] border border-[#DCE1E5] bg-white p-5">
+          <h2 className="text-[17px] font-semibold">Resumo do registro</h2>
+          <div className="flex flex-col gap-0.5"><span className={rotuloResumo}>Pessoa</span><span className="font-semibold">{pessoa?.nome ?? '—'}</span></div>
+          <div className="flex flex-col gap-0.5"><span className={rotuloResumo}>Unidade</span>
+            <span className="font-mono text-[24px] font-semibold text-[#0B3F49]">{unidadeAtual ? rotuloUnidade(unidadeAtual) : '—'}</span></div>
+          <div className="flex flex-col gap-0.5"><span className={rotuloResumo}>Autorizado por</span><span className="font-semibold">{autorizadoPor}</span>
+            <span className="text-[14px] text-[#33424B]">{meio ? ROTULO_MEIO[meio] : ''}</span></div>
+          {retroativo && (
+            <div className="flex flex-col gap-0.5"><span className={rotuloResumo}>Data e hora reais</span>
+              <span className="font-semibold">{quando !== null && horaReal ? `${fmtData(quando)} ${fmtHora(quando)}` : '—'}</span></div>
+          )}
+          <div className="flex flex-col gap-0.5"><span className={rotuloResumo}>Registrado por</span>
+            <span className="font-semibold">{ROTULO_PAPEL[usuario!.papel]} {usuario!.nome} · {fmtHora(agora)}</span></div>
+          <div className="h-px bg-[#E6EAED]" />
+          {pronto ? (
+            <button type="button" onClick={() => void confirmar()}
+              className="flex h-[52px] items-center justify-center gap-[10px] rounded-lg bg-[#0B5563] text-[16px] font-semibold text-white hover:bg-[#08434E]">
+              {retroativo ? 'Confirmar lançamento' : 'Confirmar entrada'} <kbd className="rounded-[5px] border border-white/50 px-[7px] py-0.5 font-mono text-[13px]">Enter</kbd>
+            </button>
+          ) : (
+            <>
+              <button type="button" disabled className="h-[52px] cursor-not-allowed rounded-lg border border-[#D5DDE2] bg-[#EEF2F4] text-[16px] font-semibold text-[#6B7780]">
+                {enviando ? 'Registrando…' : retroativo ? 'Confirmar lançamento' : 'Confirmar entrada'}
+              </button>
+              {faltas.length > 0 && <span className="text-[13px] text-[#56616B]">Falta: {faltas.join(', ')}</span>}
+            </>
+          )}
+          <Button atalho="Esc" onClick={() => (algoPreenchido ? limpar() : nav('/painel'))}>Cancelar</Button>
+        </aside>
+      </div>
+
+      {restricao && pr && unidadeAtual && pessoa && (
+        <Modal titulo={`Entrada não permitida para ${unidadeAtual}`} tom="vermelho" largura={600} gap={14} tituloId="titulo-restricao" onClose={() => void resolverRestricao(false)}
+          rodape={<>
+            <Button variante="perigo" grande className="flex-1" onClick={() => void resolverRestricao(true)}>Registrar ocorrência</Button>
+            <Button grande atalho="Esc" data-autofocus onClick={() => void resolverRestricao(false)}>Cancelar</Button>
+          </>}>
+          <div className="text-[18px] font-semibold">{pessoa.nome}</div>
+          <div className="flex flex-col gap-0.5"><span className="text-[13px] text-[#56616B]">Motivo registrado pelo morador</span><span className="text-[17px] font-semibold text-[#912018]">“{pr.motivo}”</span></div>
+          <div className="grid grid-cols-2 gap-[14px]">
+            <div className="flex flex-col gap-0.5"><span className="text-[13px] text-[#56616B]">Restrição solicitada por</span><span className="font-medium">{pr.solicitadaPorNome}</span></div>
+            <div className="flex flex-col gap-0.5"><span className="text-[13px] text-[#56616B]">Cadastrada no sistema por</span><span className="font-medium">{pr.cadastradaPorNome} · {fmtData(pr.cadastradaEm)} {fmtHora(pr.cadastradaEm)}</span></div>
+          </div>
+          {pr.escopo === 'condominio' && <div className="text-[14px] font-medium text-[#912018]">Restrição para todo o condomínio (aprovada pelo síndico).</div>}
+          <div className="rounded-lg bg-[#F3F5F6] px-3 py-[10px] text-[14px] text-[#33424B]">A tentativa será gravada na trilha de auditoria com seu nome e horário. Não há opção de liberar: os dois caminhos gravam a tentativa negada.</div>
+        </Modal>
+      )}
+    </div>
+  );
+}
