@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { numerosDaTorre, unidadeId } from '../domain/units';
+import { numerosDaTorre, unidadeId } from '@portaria/domain/units';
 import { UnitTag } from './UnitTag';
 
 export interface TowerUnitPickerHandle { focusTorre: () => void; focusUnidade: () => void }

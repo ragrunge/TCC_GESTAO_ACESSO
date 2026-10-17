@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useApi, type PessoaBusca } from '../api';
-import { ROTULO_CATEGORIA } from '../domain/types';
+import { ROTULO_CATEGORIA } from '@portaria/domain/types';
 import { Button } from './Button';
 import { Field } from './Field';
 import { Avatar } from './UnitTag';

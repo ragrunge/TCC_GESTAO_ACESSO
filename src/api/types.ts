@@ -2,11 +2,11 @@
 // A UI só conhece esta interface; mock (em memória) e http (fetch) são trocáveis em src/api/index.ts.
 import type {
   AutorizacaoPrevia, CategoriaPessoa, Encomenda, EventoView, MeioAutorizacao, Ocorrencia, Papel, Pessoa,
-  Restricao, StatusOcorrencia, StatusVinculo, TipoDocumento, TipoOcorrencia, TipoVinculo, Unidade,
-  UsuarioSistema, VinculoUnidade, Veiculo, DocumentoVinculo, Funcionario,
-} from '../domain/types';
-import type { EstadoAutorizacao } from '../domain/rules';
-import type { ResultadoIntegridade } from '../domain/hashChain';
+  RegistroAlteracao, Restricao, StatusOcorrencia, StatusVinculo, TipoEvento, TipoOcorrencia, TipoVinculo, Unidade,
+  UsuarioSistema, ValoresCorrecao, VinculoUnidade, Veiculo, DocumentoVinculo, Funcionario,
+} from '@portaria/domain/types';
+import type { EstadoAutorizacao } from '@portaria/domain/rules';
+import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
 
 /** Erro de API no formato da spec: status HTTP + código estável + mensagem para o operador. */
 export class ApiError extends Error {
@@ -19,11 +19,15 @@ export const ehApiError = (e: unknown): e is ApiError => e instanceof ApiError;
 
 // ----- Entradas -------------------------------------------------------------------------------
 export interface LoginInput { login: string; senha: string }
-export interface LoginResultado { requer2fa: boolean; usuario?: UsuarioSistema }
 
 export interface NovaPessoaInput {
-  nome: string; documentoTipo: TipoDocumento; documento: string; telefone?: string;
+  nome: string;
+  /** CPF (só ele é aceito). Dispensado quando `semCpf`. */
+  documento?: string;
+  telefone: string;
   categoria: CategoriaPessoa; empresa?: string; servico?: string;
+  /** Exceção "sem CPF": a pessoa só entra por exceção do porteiro. */
+  semCpf?: boolean;
 }
 
 export interface NovoEventoInput {
@@ -38,22 +42,51 @@ export interface NovoEventoInput {
   /** Obrigatório no retroativo: data/hora reais do acesso. O servidor define registradoEm. */
   ocorridoEm?: number | null;
   observacao?: string | null;
+  /** Nº do formulário de papel: obrigatório quando `retroativo`. */
+  formularioContingencia?: string | null;
 }
 
+/** UC02 A4: o morador recusou a visita (interfone ou morador presente). */
+export interface NovaRecusaInput {
+  pessoaId: string;
+  unidadeDestinoId: string;
+  meio: 'interfone' | 'morador_presente';
+  moradorPessoaId: string;
+  observacao?: string | null;
+  retroativo?: boolean;
+  ocorridoEm?: number | null;
+  formularioContingencia?: string | null;
+}
+
+export interface OpcoesSaida {
+  observacao?: string;
+  retroativo?: boolean;
+  /** Retroativo: hora real da saída (≥ entrada e < agora). */
+  ocorridoEm?: number | null;
+  formularioContingencia?: string | null;
+}
+
+export interface FiltroAlteracoes { de?: number; ate?: number; usuarioId?: string; acao?: string; entidade?: string }
+
 export interface FiltroEventos {
+  /** RF-32: restringe a um único evento (exportação isolada). */
+  eventoId?: string;
   de?: number; ate?: number; unidadeId?: string; pessoa?: string; operadorId?: string;
-  tipo?: 'entrada' | 'saida' | 'negado' | 'correcao'; meio?: MeioAutorizacao; somenteExcecoes?: boolean; somenteRetroativos?: boolean;
+  tipo?: TipoEvento; meio?: MeioAutorizacao; somenteExcecoes?: boolean; somenteRetroativos?: boolean;
 }
 
 export interface NovoVinculoInput {
   pessoaId: string; unidadeId: string; tipo: TipoVinculo; vigenciaInicio: number; vigenciaFim: number | null;
-  documento: DocumentoVinculo; solicitadoPor: string;
+  /** Opcional: o vínculo não exige documento anexado (decisão de produto); a aprovação da administração continua obrigatória (RF-04). */
+  documento?: DocumentoVinculo; solicitadoPor: string;
 }
 
 export interface NovaAutorizacaoInput {
   unidadeId: string; pessoaId: string; validaAte: number | null; validaDe?: number;
   diasSemana: number[] | null; horaInicio: string | null; horaFim: string | null;
+  /** Morador que pediu. Sem ele, `justificativa` (≥ 15 caracteres) é obrigatória. */
   solicitadaPorPessoaId: string | null;
+  justificativa?: string | null;
 }
 
 export interface NovaRestricaoInput {
@@ -70,14 +103,18 @@ export interface NovaOcorrenciaInput {
   anexos?: string[]; eventoIds?: string[];
 }
 
-export interface NovoUsuarioInput { nome: string; login: string; papel: Papel; totpAtivo?: boolean }
+export interface NovoUsuarioInput { nome: string; login: string; papel: Papel }
 
 export interface LinhaPlanilha { linha: number; torre: string; unidade: string; nome: string; documento: string; telefone: string; tipo?: string }
 
 // ----- Saídas ---------------------------------------------------------------------------------
 export interface PessoaBusca extends Pessoa { ultimoAcesso: string; unidadesVinculadas: string[] }
 
-export interface VinculoView extends VinculoUnidade { pessoaNome: string; pessoaDocumento: string }
+export interface VinculoView extends VinculoUnidade {
+  pessoaNome: string; pessoaDocumento: string;
+  /** Pessoa tem CPF e telefone (pré-requisito para aprovar o vínculo). */
+  pessoaCadastroCompleto: boolean;
+}
 
 export interface AutorizacaoView extends AutorizacaoPrevia {
   pessoaNome: string; estado: EstadoAutorizacao; unidadeRotulo: string; utilizadaEm: number | null;
@@ -101,20 +138,26 @@ export interface FichaPessoa { pessoa: Pessoa; funcionario?: Funcionario; vincul
 
 export interface ResumoTurno {
   pessoasDentro: number; encomendasPendentes: number; ocorrenciasAbertas: number; autorizacoesHoje: number;
-  excecoesNoTurno: number; restricoesPendentes: number;
+  excecoesHoje: number; restricoesPendentes: number;
 }
 
 export interface ResultadoRestricao { restrita: boolean; alertas: RestricaoView[] }
 
 export interface PacoteExportacao { nomeArquivo: string; conteudo: string; quantidade: number }
 
+/** Filtros dos relatórios (RF-30/RF-31). Sem `de`/`ate`: últimos 30 dias até hoje. `de`/`ate` são instantes; o servidor usa o dia inteiro. */
+export interface FiltroRelatorio { de?: number; ate?: number; unidadeId?: string; categoria?: CategoriaPessoa; meio?: MeioAutorizacao }
+
 export interface RelatorioResumo {
+  /** Período efetivamente aplicado (início do primeiro dia, fim do último). */
+  periodo: { de: number; ate: number };
   acessosPorDia: { dia: number; entradas: number }[];
   acessosPorMeio: { meio: MeioAutorizacao; total: number }[];
-  excecoesPorPorteiro: { operador: string; total: number }[];
+  /** Agrupado por operadorId (autorização sem solicitante conta para quem a cadastrou). */
+  excecoesPorPorteiro: { operadorId: string; operador: string; total: number }[];
   encomendasPorIdade: { faixa: string; total: number }[];
   cadastroCompleto: { unidadesCompletas: number; total: number };
-  totais: { entradas: number; negados: number; retroativos: number; excecoes: number };
+  totais: { entradas: number; negados: number; recusados: number; retroativos: number; excecoes: number };
 }
 
 export interface InconsistenciaImportacao { linha: number; codigo: string; mensagem: string; tipo: 'erro' | 'aviso' }
@@ -126,14 +169,15 @@ export interface ResultadoImportacao { importados: number; reaproveitados: numbe
 
 export interface Api {
   auth: {
-    login(i: LoginInput): Promise<LoginResultado>;
-    verificar2fa(codigo: string): Promise<UsuarioSistema>;
+    // 2FA fica para a fase de segurança (pós-MVP).
+    login(i: LoginInput): Promise<UsuarioSistema>;
     logout(): Promise<void>;
     me(): Promise<UsuarioSistema | null>;
   };
   busca: { global(q: string): Promise<{ pessoas: PessoaBusca[]; unidades: { id: string; motivo: string }[] }> };
   pessoas: {
-    buscar(q: string, opts?: { semMoradores?: boolean }): Promise<PessoaBusca[]>;
+    /** `limite`: máximo de resultados (padrão 8). A portaria pede 9 para saber se há mais que 8. */
+    buscar(q: string, opts?: { semMoradores?: boolean; limite?: number }): Promise<PessoaBusca[]>;
     listar(): Promise<PessoaBusca[]>;
     ficha(id: string): Promise<FichaPessoa>;
     criar(i: NovaPessoaInput): Promise<Pessoa>;
@@ -154,7 +198,8 @@ export interface Api {
     hoje(): Promise<AutorizacaoView[]>;
   };
   restricoes: {
-    verificar(pessoaId: string, unidadeId: string): Promise<ResultadoRestricao>;
+    /** `unidadeId` null: só restrições de escopo condomínio (funcionário sem unidade de destino). */
+    verificar(pessoaId: string, unidadeId: string | null): Promise<ResultadoRestricao>;
     criar(i: NovaRestricaoInput): Promise<Restricao>;
     aprovar(id: string): Promise<Restricao>;
     revogar(id: string): Promise<void>;
@@ -162,8 +207,9 @@ export interface Api {
   };
   eventos: {
     criar(i: NovoEventoInput): Promise<EventoView>;
-    registrarSaida(entradaId: string, observacao?: string): Promise<EventoView>;
-    corrigir(id: string, i: { justificativa: string; observacao?: string }): Promise<EventoView>;
+    registrarRecusa(i: NovaRecusaInput): Promise<EventoView>;
+    registrarSaida(entradaId: string, opcoes?: OpcoesSaida): Promise<EventoView>;
+    corrigir(id: string, i: { justificativa: string; observacao?: string; valores?: Partial<ValoresCorrecao> }): Promise<EventoView>;
     listar(f?: FiltroEventos): Promise<EventoView[]>;
     obter(id: string): Promise<EventoView>;
     presentes(): Promise<EventoView[]>;
@@ -179,9 +225,16 @@ export interface Api {
     alterarStatus(id: string, status: StatusOcorrencia): Promise<Ocorrencia>;
   };
   turno: { resumo(): Promise<ResumoTurno> };
-  relatorios: { resumo(dias?: number): Promise<RelatorioResumo> };
+  relatorios: {
+    /** Número = últimos N dias (atalho); objeto = filtros completos. */
+    resumo(f?: number | FiltroRelatorio): Promise<RelatorioResumo>;
+    /** Mesmo conteúdo do resumo, em CSV (UTF-8 com BOM, separador ;). */
+    exportarCsv(f?: FiltroRelatorio): Promise<PacoteExportacao>;
+  };
   auditoria: {
     verificarIntegridade(): Promise<ResultadoIntegridade>;
+    /** Trilha de alterações do sistema (mais recentes primeiro). */
+    alteracoes(f?: FiltroAlteracoes): Promise<RegistroAlteracao[]>;
     exportar(f?: FiltroEventos): Promise<PacoteExportacao>;
   };
   usuarios: {

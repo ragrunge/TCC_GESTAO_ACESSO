@@ -1,4 +1,4 @@
-import { brt } from '../../domain/time';
+import { brt } from '@portaria/domain/time';
 
 /** PRNG determinístico (mulberry32) para gerar dados simulados reproduzíveis. */
 export function prng(seed: number) {
@@ -41,3 +41,27 @@ export const MARCAS = [
   ['Honda Fit', 'prata'], ['VW T-Cross', 'branco'], ['Fiat Argo', 'cinza'], ['Hyundai HB20', 'branco'], ['Chevrolet Onix', 'preto'],
   ['Toyota Corolla', 'preto'], ['Jeep Renegade', 'verde'], ['Renault Kwid', 'vermelho'], ['Fiat Mobi', 'azul'], ['Nissan Kicks', 'cinza'],
 ];
+
+/**
+ * CPF válido (dígitos verificadores corretos) e determinístico. `meio` fixa os dígitos 4–9 (os que a
+ * máscara ***.XXX.YYY-** exibe), para manter no seed os números visíveis do protótipo.
+ */
+export function gerarCpf(rand: () => number, meio?: string): string {
+  const d: number[] = [];
+  for (let i = 0; i < 9; i++) d.push(meio && i >= 3 && i < 9 ? Number(meio[i - 3]) : Math.floor(rand() * 10));
+  if (d.every((x) => x === d[0])) d[0] = (d[0] + 1) % 10;
+  const dv = (n: number) => {
+    let soma = 0;
+    for (let i = 0; i < n; i++) soma += d[i] * (n + 1 - i);
+    const r = (soma * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  d.push(dv(9)); d.push(dv(10));
+  return d.join('');
+}
+
+/** Telefone celular fictício "(11) 9XXXX-XXXX". */
+export function gerarTelefone(rand: () => number): string {
+  const n = (k: number) => Array.from({ length: k }, () => Math.floor(rand() * 10)).join('');
+  return `(11) 9${n(4)}-${n(4)}`;
+}

@@ -4,12 +4,13 @@ import { Search } from 'lucide-react';
 import { useApi } from '../api';
 import type { PessoaBusca } from '../api';
 import { useAuth } from '../auth/AuthContext';
-import { ROTAS, pode, type Rota } from '../domain/rbac';
-import { ROTULO_CATEGORIA, ROTULO_PAPEL } from '../domain/types';
-import { partes } from '../domain/time';
+import { ROTAS, pode, type Rota } from '@portaria/domain/rbac';
+import { ROTULO_CATEGORIA, ROTULO_PAPEL } from '@portaria/domain/types';
+import { partes } from '@portaria/domain/time';
 import { temModalAberto } from '../components/Modal';
 import { FichaPessoaModal } from '../features/cadastro/FichaPessoaModal';
 import { useAgora, useAsync } from './useAsync';
+import { useTituloPagina } from './titulo';
 
 const DIAS_EXTENSO = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
 
@@ -33,6 +34,8 @@ const GRUPOS: { titulo: string; itens: { rota: Rota; rotulo: string; contador?: 
   ] },
   { titulo: 'Sistema', itens: [{ rota: 'usuarios', rotulo: 'Usuários' }] },
 ];
+
+const ROTULO_ROTA = new Map(GRUPOS.flatMap((g) => g.itens.map((i) => [i.rota as string, i.rotulo])));
 
 function Relogio() {
   const t = useAgora(5000);
@@ -110,6 +113,7 @@ export function Layout() {
   const loc = useLocation();
   const [fichaId, setFichaId] = useState<string | null>(null);
   const papel = usuario!.papel;
+  useTituloPagina(ROTULO_ROTA.get(loc.pathname.split('/')[1]));
 
   const pend = useAsync(async () => (pode(papel, 'vinculo.decidir') ? (await api.vinculos.listar({ status: 'pendente' })).length : 0), [papel, loc.pathname]);
 
@@ -127,6 +131,9 @@ export function Layout() {
 
   return (
     <div className="app-raiz grid h-screen grid-cols-[248px_minmax(0,1fr)]">
+      <a href="#conteudo" className="sr-only z-50 rounded-lg bg-white px-4 py-2 font-semibold text-[#0B5563] shadow-cartao focus:not-sr-only focus:fixed focus:left-4 focus:top-4">
+        Pular para o conteúdo
+      </a>
       <aside className="sobre-escuro flex flex-col gap-[18px] overflow-auto bg-[#10262C] px-3 py-5 text-[#C8D3D7]" aria-label="Menu principal">
         <div className="flex items-center gap-[10px] px-[10px] pb-2 pt-1">
           <div className="grid h-[34px] w-[34px] place-items-center rounded-lg bg-[#0B5563] text-[14px] font-bold text-white" aria-hidden>RP</div>
@@ -174,7 +181,7 @@ export function Layout() {
             </button>
           </div>
         </header>
-        <main className="flex-1 overflow-auto px-8 pb-14 pt-7" id="conteudo"><Outlet /></main>
+        <main className="flex-1 overflow-auto px-8 pb-14 pt-7 focus:outline-none" id="conteudo" tabIndex={-1}><Outlet /></main>
       </div>
       {fichaId && <FichaPessoaModal id={fichaId} onClose={() => setFichaId(null)} />}
     </div>

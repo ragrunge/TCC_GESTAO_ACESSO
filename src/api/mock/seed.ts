@@ -6,23 +6,23 @@
 // T2-104->T2-24, T2-61->T2-41, T9-21->T9-13, T9-33->T9-14. Mantidas: T4-32, T7-11, T6-52, T3-42, T8-42 (existe), etc.
 import type {
   AutorizacaoPrevia, CategoriaPessoa, Conferencia, DocumentoVinculo, Encomenda, EventoAcesso, Funcionario,
-  MeioAutorizacao, Ocorrencia, Pessoa, Restricao, StatusVinculo, TipoEvento, TipoVinculo, UsuarioSistema,
+  MeioAutorizacao, Ocorrencia, Papel, Pessoa, Restricao, StatusVinculo, TipoEvento, TipoVinculo, UsuarioSistema,
   VinculoUnidade, Veiculo,
-} from '../../domain/types';
-import { calcularHash, hashGenese } from '../../domain/hashChain';
-import { DIA, HORA, brt, partes } from '../../domain/time';
-import { gerarUnidades, unidadeId } from '../../domain/units';
+} from '@portaria/domain/types';
+import { calcularHash, hashGenese, sha256Hex } from '@portaria/domain/hashChain';
+import { DIA, HORA, brt, partes } from '@portaria/domain/time';
+import { gerarUnidades, unidadeId } from '@portaria/domain/units';
 import { VERSAO_DB, type DbData } from './dbTypes';
-import { MARCAS, PRIMEIROS, SOBRENOMES, docMascarado, dt, prng, slug } from './seedUtil';
+import { MARCAS, PRIMEIROS, SOBRENOMES, docMascarado, dt, gerarCpf, gerarTelefone, prng, slug } from './seedUtil';
 
 const PRAZO_LEGADO = dt('31/03/2027');
-const ID_JOAO = 'u1', ID_SERGIO = 'u2', ID_MARINA = 'u3';
+const ID_JOAO = 'u1', ID_SERGIO = 'u2', ID_MARINA = 'u3', ID_PAULA = 'u4';
 
 interface Rascunho {
   id: string; tipo: TipoEvento; pessoaId: string; categoria: CategoriaPessoa; unidadeId: string | null;
   meio: MeioAutorizacao | null; autPessoaId: string | null; autNome: string | null; apId: string | null;
   just: string | null; restricaoId: string | null; opId: string; ocorrido: number; registrado: number;
-  retro: boolean; refere: string | null; obs: string | null;
+  retro: boolean; refere: string | null; obs: string | null; formulario?: string | null;
 }
 
 export async function criarSeed(): Promise<DbData> {
@@ -40,12 +40,20 @@ export async function criarSeed(): Promise<DbData> {
 
   // ----- Pessoas ------------------------------------------------------------------------------
   const porNome = new Map<string, Pessoa>();
+  // CPFs e telefones saem de PRNGs próprios para não alterar a sequência dos nomes/eventos gerados.
+  const randCpf = prng(20261010);
+  const cpfs = new Map<string, string>(); // pessoaId -> 11 dígitos (só para calcular documentoBusca; não é guardado)
   function pessoa(nome: string, categoria: CategoriaPessoa, x: Partial<Pessoa> = {}): Pessoa {
     let id = `pe-${slug(nome)}`;
     if (pessoas.some((p) => p.id === id)) id += `-${pessoas.length}`;
+    const mascara = x.documentoMascarado ?? docMascarado(rand);
+    const meio = mascara.replace(/\D/g, '');
+    let cpf = gerarCpf(randCpf, meio);
+    while ([...cpfs.values()].includes(cpf)) cpf = gerarCpf(randCpf, meio);
+    cpfs.set(id, cpf);
     const p: Pessoa = {
-      id, nome, categoria, documentoTipo: x.documentoTipo ?? 'cpf', documentoMascarado: x.documentoMascarado ?? docMascarado(rand),
-      criadoEm: criado, ...x,
+      id, nome, categoria, documentoTipo: 'cpf', criadoEm: criado, telefone: gerarTelefone(randCpf), ...x,
+      documentoMascarado: `***.${cpf.slice(3, 6)}.${cpf.slice(6, 9)}-**`,
     };
     pessoas.push(p);
     porNome.set(nome, p);
@@ -61,7 +69,8 @@ export async function criarSeed(): Promise<DbData> {
   // Vínculos
   let nVinc = 0;
   function vinculo(nome: string, unidade: string, tipo: TipoVinculo, status: StatusVinculo, x: Partial<VinculoUnidade> = {}): VinculoUnidade {
-    const p = porNome.get(nome) ?? pessoa(nome, 'morador');
+    // Categoria só vira 'morador' na aprovação do vínculo: quem só tem pedido pendente segue visitante.
+    const p = porNome.get(nome) ?? pessoa(nome, status === 'pendente' ? 'visitante' : 'morador');
     const v: VinculoUnidade = {
       id: x.id ?? `V${100 + ++nVinc}`, pessoaId: p.id, unidadeId: unidade, tipo, status,
       vigenciaInicio: x.vigenciaInicio ?? null, vigenciaFim: x.vigenciaFim ?? null,
@@ -220,7 +229,8 @@ export async function criarSeed(): Promise<DbData> {
   const AP = (id: string, unidade: string, quem: string, porQuem: string, ate: string, dias: number[] | null, hi: string | null, hf: string | null) => {
     autorizacoes.push({
       id, unidadeId: unidade, pessoaId: P(quem).id, validaDe: dt('01/09/2026'), validaAte: dt(ate) + DIA - 1, diasSemana: dias,
-      horaInicio: hi, horaFim: hf, cadastradaPorNome: 'Paula Nogueira', solicitadaPorPessoaId: P(porQuem).id, solicitadaPorNome: porQuem, revogadaEm: null,
+      horaInicio: hi, horaFim: hf, cadastradaPorNome: 'Paula Nogueira', cadastradaPorId: ID_PAULA, solicitadaPorPessoaId: P(porQuem).id,
+      solicitadaPorNome: porQuem, semSolicitante: false, justificativa: null, revogadaEm: null, revogadaPorId: null, revogadaPorNome: null,
     });
   };
   AP('ap-juliana', 'T4-32', 'Juliana Costa', 'Ana Ribeiro', '30/11/2026', [1, 2, 3, 4, 5], '08:00', '18:00');
@@ -234,13 +244,13 @@ export async function criarSeed(): Promise<DbData> {
   restricoes.push({
     id: 'rs-bruno', escopo: 'unidade', unidadeId: 'T4-32', pessoaId: P('Bruno Teixeira').id, motivo: 'Morador não autoriza a entrada',
     validaAte: dt('31/12/2026') + DIA - 1, cadastradaPorNome: 'Paula Nogueira (Administração)', cadastradaEm: dt('12/08/2026 10:14'),
-    solicitadaPorNome: 'Ana Ribeiro (moradora, T4-32)', aprovadaPorNome: null, aprovadaEm: null, revogadaEm: null,
+    solicitadaPorNome: 'Ana Ribeiro (moradora, T4-32)', aprovadaPorNome: null, aprovadaEm: null, revogadaEm: null, revogadaPorId: null, revogadaPorNome: null,
   });
   restricoes.push({
     id: 'rs-edu', escopo: 'condominio', unidadeId: 'T6-22', pessoaId: P('Edu Barreto').id,
     motivo: 'Tentativas repetidas de acesso sem autorização em várias unidades', validaAte: dt('31/12/2026') + DIA - 1,
     cadastradaPorNome: 'Paula Nogueira (Administração)', cadastradaEm: dt('08/10/2026 16:20'),
-    solicitadaPorNome: 'Gustavo Lins (morador, T6-22)', aprovadaPorNome: null, aprovadaEm: null, revogadaEm: null,
+    solicitadaPorNome: 'Gustavo Lins (morador, T6-22)', aprovadaPorNome: null, aprovadaEm: null, revogadaEm: null, revogadaPorId: null, revogadaPorNome: null,
   });
 
   // ----- Eventos (rascunhos) ------------------------------------------------------------------
@@ -277,7 +287,7 @@ export async function criarSeed(): Promise<DbData> {
   entrada('e4811', T('05:40'), 'Gilberto Nascimento', 'T1-12', 'autorizacao_previa', ID_SERGIO, { apId: 'ap-gilberto', auth: 'Renato Farias' });
   // Contingência: papel durante queda do sistema, lançado às 06:05 (retroativo)
   entrada('e4810', T('03:10'), 'Fernanda Lins', 'T6-22', 'morador_presente', ID_SERGIO, {
-    auth: 'Gustavo Lins', retro: true, registrado: T('06:05'), obs: 'Formulário de contingência nº 0031',
+    auth: 'Gustavo Lins', retro: true, registrado: T('06:05'), formulario: '0031',
   });
   saida('e4810s', 'e4810', T('04:02'), { registrado: T('06:06') });
   entrada('e4809', T('01:20'), 'Diego Ramos', 'T3-14', 'interfone', ID_SERGIO, { auth: 'Patrícia Ramos' });
@@ -331,12 +341,13 @@ export async function criarSeed(): Promise<DbData> {
         meio = 'autorizacao_previa'; x.apId = `ap-h${nh}`;
         autorizacoes.push({
           id: x.apId, unidadeId: unidade, pessoaId: quem.id, validaDe: dia - 2 * DIA, validaAte: dia + DIA - 1, diasSemana: null,
-          horaInicio: '06:00', horaFim: '22:00', cadastradaPorNome: 'Paula Nogueira', solicitadaPorPessoaId: mor.pessoaId,
-          solicitadaPorNome: pessoas.find((q) => q.id === mor.pessoaId)!.nome, revogadaEm: null,
+          horaInicio: '06:00', horaFim: '22:00', cadastradaPorNome: 'Paula Nogueira', cadastradaPorId: ID_PAULA, solicitadaPorPessoaId: mor.pessoaId,
+          solicitadaPorNome: pessoas.find((q) => q.id === mor.pessoaId)!.nome, semSolicitante: false, justificativa: null,
+          revogadaEm: null, revogadaPorId: null, revogadaPorNome: null,
         });
       } else if (sorte < 0.42) meio = 'morador_presente';
       if (meio !== 'excecao_porteiro') { x.autPessoaId = mor.pessoaId; x.autNome = pessoas.find((q) => q.id === mor.pessoaId)!.nome; }
-      if (nh % 83 === 0) { x.retro = true; x.registrado = ts + 4 * HORA; x.obs = `Formulário de contingência nº ${String(nh).padStart(4, '0')}`; }
+      if (nh % 83 === 0) { x.retro = true; x.registrado = ts + 4 * HORA; x.formulario = String(nh).padStart(4, '0'); }
       rascunhos.push({
         id, tipo: 'entrada', pessoaId: quem.id, categoria: quem.categoria, unidadeId: unidade, meio, autPessoaId: null, autNome: null, apId: null,
         just: null, restricaoId: null, opId: op, ocorrido: ts, registrado: ts, retro: false, refere: null, obs: null, ...x,
@@ -344,6 +355,9 @@ export async function criarSeed(): Promise<DbData> {
       saida(`${id}s`, id, ts + (20 + Math.floor(rand() * 160)) * 60000);
     }
   }
+
+  // Papel de cada operador do seed (vira `operadorPapel` no evento)
+  const PAPEL_USUARIO: Record<string, Papel> = { u1: 'porteiro', u2: 'porteiro', u3: 'porteiro', u4: 'administracao', u5: 'sindico', u6: 'auditor', u7: 'porteiro' };
 
   // ----- Cadeia de hash -----------------------------------------------------------------------
   const ordenados = rascunhos.map((r, i) => ({ r, i })).sort((a, b) => a.r.registrado - b.r.registrado || a.i - b.i).map((x) => x.r);
@@ -355,8 +369,9 @@ export async function criarSeed(): Promise<DbData> {
       id: r.id, seq, codigo: `EV-2026-${String(4800 + seq).padStart(6, '0')}`, tipo: r.tipo, categoriaPessoa: r.categoria,
       pessoaId: r.pessoaId, unidadeDestinoId: r.unidadeId, pontoAcesso: 'Portaria social', autorizadoPorTipo: r.meio,
       autorizadoPorPessoaId: r.autPessoaId, autorizadoPorNome: r.autNome, autorizacaoPreviaId: r.apId, justificativa: r.just,
-      restricaoId: r.restricaoId, operadorId: r.opId, ocorridoEm: r.ocorrido, registradoEm: r.registrado, retroativo: r.retro,
-      refereEventoId: r.refere, corrigeEventoId: null, observacao: r.obs,
+      restricaoId: r.restricaoId, operadorId: r.opId, operadorPapel: PAPEL_USUARIO[r.opId] ?? 'porteiro', ocorridoEm: r.ocorrido,
+      registradoEm: r.registrado, retroativo: r.retro, refereEventoId: r.refere, corrigeEventoId: null, observacao: r.obs,
+      formularioContingencia: r.formulario ?? null, correcaoValores: null,
     };
     const hash = await calcularHash(anterior, base);
     eventos.push({ ...base, hashAnterior: anterior, hash });
@@ -384,9 +399,11 @@ export async function criarSeed(): Promise<DbData> {
   ];
 
   // ----- Ocorrências --------------------------------------------------------------------------
+  const NOME_USUARIO: Record<string, string> = { u1: 'João Lima', u2: 'Sérgio Matos', u3: 'Marina Couto' };
   const O = (n: number, quando: string, tipo: Ocorrencia['tipo'], unidade: string | null, env: string, desc: string, status: Ocorrencia['status'], por: string, ev: string[] = []): Ocorrencia => ({
     id: `OC-2026-0${n}`, codigo: `OC-2026-0${n}`, tipo, descricao: desc, unidadeId: unidade, envolvidos: env, abertaPorNome: por,
-    abertaEm: dt(quando), status, anexos: [], eventoIds: ev,
+    abertaPorId: Object.entries(NOME_USUARIO).find(([, nome]) => nome === por)![0],
+    abertaEm: dt(quando), status, historicoStatus: [], anexos: [], eventoIds: ev,
   });
   const ocorrencias: Ocorrencia[] = [
     O(47, '09/10/2026 08:12', 'dano', null, '—', 'Portão da garagem B travando ao fechar. Zeladoria avisada.', 'aberta', 'João Lima'),
@@ -396,21 +413,24 @@ export async function criarSeed(): Promise<DbData> {
     O(43, '14/09/2026 10:02', 'tentativa_acesso_indevido', 'T4-32', 'Bruno Teixeira', 'Tentativa de entrada sem autorização. Moradora solicitou restrição.', 'encerrada', 'João Lima'),
   ];
 
-  const U = (id: string, nome: string, login: string, papel: UsuarioSistema['papel'], ativo: boolean, ult: string, totp: boolean): UsuarioSistema =>
-    ({ id, nome, login, papel, ativo, ultimoAcesso: dt(ult), totpAtivo: totp });
+  const U = (id: string, nome: string, login: string, papel: UsuarioSistema['papel'], ativo: boolean, ult: string): UsuarioSistema =>
+    ({ id, nome, login, papel, ativo, ultimoAcesso: dt(ult) });
   const usuarios: UsuarioSistema[] = [
-    U('u1', 'João Lima', 'joao.lima', 'porteiro', true, '09/10/2026 06:01', false),
-    U('u2', 'Sérgio Matos', 'sergio.matos', 'porteiro', true, '09/10/2026 06:02', false),
-    U('u3', 'Marina Couto', 'marina.couto', 'porteiro', true, '07/10/2026 18:01', false),
-    U('u4', 'Paula Nogueira', 'paula.nogueira', 'administracao', true, '09/10/2026 09:14', true),
-    U('u5', 'Roberto Faria', 'roberto.faria', 'sindico', true, '08/10/2026 20:37', true),
-    U('u6', 'Luíza Campos', 'luiza.campos', 'auditor', true, '02/10/2026 16:50', true),
-    U('u7', 'Edson Ramos', 'edson.ramos', 'porteiro', false, '14/06/2026 05:58', false),
+    U('u1', 'João Lima', 'joao.lima', 'porteiro', true, '09/10/2026 06:01'),
+    U('u2', 'Sérgio Matos', 'sergio.matos', 'porteiro', true, '09/10/2026 06:02'),
+    U('u3', 'Marina Couto', 'marina.couto', 'porteiro', true, '07/10/2026 18:01'),
+    U('u4', 'Paula Nogueira', 'paula.nogueira', 'administracao', true, '09/10/2026 09:14'),
+    U('u5', 'Roberto Faria', 'roberto.faria', 'sindico', true, '08/10/2026 20:37'),
+    U('u6', 'Luíza Campos', 'luiza.campos', 'auditor', true, '02/10/2026 16:50'),
+    U('u7', 'Edson Ramos', 'edson.ramos', 'porteiro', false, '14/06/2026 05:58'),
   ];
+
+  // documentoBusca = SHA-256 do CPF (nunca o CPF em claro)
+  for (const p of pessoas) p.documentoBusca = await sha256Hex(cpfs.get(p.id)!);
 
   return {
     versao: VERSAO_DB, pessoas, funcionarios, unidades, vinculos, veiculos, autorizacoes, restricoes, eventos, encomendas,
-    ocorrencias, usuarios, salvoEm: brt(2026, 10, 9, 14, 32),
+    ocorrencias, usuarios, auditLog: [], salvoEm: brt(2026, 10, 9, 14, 32),
   };
 }
 

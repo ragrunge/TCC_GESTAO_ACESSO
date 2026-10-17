@@ -28,7 +28,7 @@ export function Badge({ tom = 'neutro', children, icone: Icone, tamanho = 'md', 
   );
 }
 
-import type { StatusVinculo, StatusOcorrencia } from '../domain/types';
+import type { StatusVinculo, StatusOcorrencia } from '@portaria/domain/types';
 export function SeloVinculo({ status, tamanho }: { status: StatusVinculo; tamanho?: keyof typeof TAMANHO }) {
   const m: Record<StatusVinculo, [Tom, string]> = {
     aprovado: ['verde', 'Aprovado'], pendente: ['ambar', 'Pendente'], legado: ['petroleo', 'Legado'],
@@ -38,7 +38,7 @@ export function SeloVinculo({ status, tamanho }: { status: StatusVinculo; tamanh
   return <Badge tom={tom} tamanho={tamanho}>{texto}</Badge>;
 }
 export function SeloOcorrencia({ status }: { status: StatusOcorrencia }) {
-  const m: Record<StatusOcorrencia, [Tom, string]> = { aberta: ['ambar', 'Aberta'], em_andamento: ['ambar', 'Em análise'], encerrada: ['verde', 'Encerrada'] };
+  const m: Record<StatusOcorrencia, [Tom, string]> = { aberta: ['ambar', 'Aberta'], em_andamento: ['ambar', 'Em andamento'], encerrada: ['verde', 'Encerrada'] };
   const [tom, texto] = m[status];
   return <Badge tom={tom}>{texto}</Badge>;
 }

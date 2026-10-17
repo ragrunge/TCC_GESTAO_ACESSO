@@ -25,8 +25,8 @@ export function createHttpApi(base: string): Api {
   void base;
   const n = naoImplementado;
   return {
-    // POST /auth/login, POST /auth/totp/verificar, POST /auth/logout, GET /auth/me
-    auth: { login: n('auth.login'), verificar2fa: n('auth.verificar2fa'), logout: n('auth.logout'), me: async () => null },
+    // POST /auth/login, POST /auth/logout, GET /auth/me
+    auth: { login: n('auth.login'), logout: n('auth.logout'), me: async () => null },
     busca: { global: n('busca.global') },
     // GET /pessoas?busca=, POST /pessoas
     pessoas: { buscar: n('pessoas.buscar'), listar: n('pessoas.listar'), ficha: n('pessoas.ficha'), criar: n('pessoas.criar'), funcionario: n('pessoas.funcionario') },
@@ -40,15 +40,15 @@ export function createHttpApi(base: string): Api {
     // GET /restricoes/verificar, GET/POST /restricoes, POST /restricoes/:id/aprovar
     restricoes: { verificar: n('restricoes.verificar'), criar: n('restricoes.criar'), aprovar: n('restricoes.aprovar'), revogar: n('restricoes.revogar'), pendentes: n('restricoes.pendentes') },
     // POST /eventos-acesso, GET /eventos-acesso, POST /eventos-acesso/:id/correcoes, GET /acessos/presentes
-    eventos: { criar: n('eventos.criar'), registrarSaida: n('eventos.registrarSaida'), corrigir: n('eventos.corrigir'), listar: n('eventos.listar'), obter: n('eventos.obter'), presentes: n('eventos.presentes') },
+    eventos: { criar: n('eventos.criar'), registrarRecusa: n('eventos.registrarRecusa'), registrarSaida: n('eventos.registrarSaida'), corrigir: n('eventos.corrigir'), listar: n('eventos.listar'), obter: n('eventos.obter'), presentes: n('eventos.presentes') },
     // POST /encomendas, GET /encomendas, POST /encomendas/:id/retirada
     encomendas: { listar: n('encomendas.listar'), receber: n('encomendas.receber'), entregar: n('encomendas.entregar') },
     // POST /ocorrencias, GET /ocorrencias, PATCH /ocorrencias/:id
     ocorrencias: { listar: n('ocorrencias.listar'), criar: n('ocorrencias.criar'), alterarStatus: n('ocorrencias.alterarStatus') },
     turno: { resumo: n('turno.resumo') },
-    relatorios: { resumo: n('relatorios.resumo') },
-    // GET /auditoria/integridade, POST /auditoria/exportacoes
-    auditoria: { verificarIntegridade: n('auditoria.verificarIntegridade'), exportar: n('auditoria.exportar') },
+    relatorios: { resumo: n('relatorios.resumo'), exportarCsv: n('relatorios.exportarCsv') },
+    // GET /auditoria/integridade, GET /auditoria/alteracoes, POST /auditoria/exportacoes
+    auditoria: { verificarIntegridade: n('auditoria.verificarIntegridade'), alteracoes: n('auditoria.alteracoes'), exportar: n('auditoria.exportar') },
     usuarios: { listar: n('usuarios.listar'), criar: n('usuarios.criar'), desativar: n('usuarios.desativar'), reativar: n('usuarios.reativar'), redefinirAcesso: n('usuarios.redefinirAcesso') },
     // POST /importacoes/planilha, POST /importacoes/:id/confirmar
     importacao: { analisar: n('importacao.analisar'), confirmar: n('importacao.confirmar') },

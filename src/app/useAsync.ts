@@ -32,7 +32,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
 }
 
 /** Hora simulada atual, atualizada a cada segundo. */
-import { agora } from '../domain/time';
+import { agora } from '@portaria/domain/time';
 export function useAgora(intervaloMs = 1000): number {
   const [t, setT] = useState(agora());
   useEffect(() => {

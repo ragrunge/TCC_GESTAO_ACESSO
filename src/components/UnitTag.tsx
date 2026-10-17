@@ -1,4 +1,4 @@
-import { rotuloUnidade } from '../domain/units';
+import { rotuloUnidade } from '@portaria/domain/units';
 
 /** Torre/unidade em destaque, em fonte mono: "TORRE 4 · AP 32". */
 export function UnitTag({ id, tamanho = 'md', className = '' }: { id: string; tamanho?: 'sm' | 'md' | 'lg' | 'xl'; className?: string }) {

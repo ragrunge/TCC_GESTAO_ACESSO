@@ -2,15 +2,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useApi } from '../api';
-import type { UsuarioSistema } from '../domain/types';
-import { pode, ROTAS, rotaInicial, type Acao, type Rota } from '../domain/rbac';
+import type { UsuarioSistema } from '@portaria/domain/types';
+import { pode, ROTAS, rotaInicial, type Acao, type Rota } from '@portaria/domain/rbac';
 
 interface AuthCtx {
   usuario: UsuarioSistema | null;
   pronto: boolean;
-  /** Retorna true se ainda falta o segundo fator. */
-  entrar: (login: string, senha: string) => Promise<{ requer2fa: boolean }>;
-  verificar2fa: (codigo: string) => Promise<void>;
+  // 2FA fica para a fase de segurança (pós-MVP): login é só usuário + senha.
+  entrar: (login: string, senha: string) => Promise<void>;
   sair: () => Promise<void>;
 }
 const Ctx = createContext<AuthCtx | null>(null);
@@ -27,14 +26,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [api]);
 
   const entrar = useCallback(async (login: string, senha: string) => {
-    const r = await api.auth.login({ login, senha });
-    if (!r.requer2fa && r.usuario) setUsuario(r.usuario);
-    return { requer2fa: r.requer2fa };
+    setUsuario(await api.auth.login({ login, senha }));
   }, [api]);
-  const verificar2fa = useCallback(async (codigo: string) => { setUsuario(await api.auth.verificar2fa(codigo)); }, [api]);
   const sair = useCallback(async () => { await api.auth.logout(); setUsuario(null); }, [api]);
 
-  const valor = useMemo(() => ({ usuario, pronto, entrar, verificar2fa, sair }), [usuario, pronto, entrar, verificar2fa, sair]);
+  const valor = useMemo(() => ({ usuario, pronto, entrar, sair }), [usuario, pronto, entrar, sair]);
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>;
 }
 

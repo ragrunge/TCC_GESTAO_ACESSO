@@ -2,7 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ApiProvider } from '../api';
 import { AuthProvider, RequireRole, RequireSession, useAuth } from '../auth/AuthContext';
 import { ToastProvider } from '../components/Toast';
-import { rotaInicial } from '../domain/rbac';
+import { rotaInicial } from '@portaria/domain/rbac';
 import { Layout } from './Layout';
 import { LoginPage } from '../features/auth/LoginPage';
 import { PainelPage } from '../features/portaria/PainelPage';
