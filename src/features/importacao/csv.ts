@@ -20,21 +20,38 @@ const ALIAS: Record<keyof Omit<LinhaPlanilha, 'linha'>, string[]> = {
   documento: ['documento', 'cpf', 'rg', 'doc'], telefone: ['telefone', 'celular', 'fone'], tipo: ['tipo', 'vinculo', 'tipovinculo'],
 };
 
-/** Lê um CSV (UTF-8, separador ; ou , detectado) e mapeia as colunas pelo cabeçalho. */
-export function lerCsv(texto: string): { linhas: LinhaPlanilha[]; faltando: string[] } {
-  const brutas = texto.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim());
-  if (brutas.length === 0) return { linhas: [], faltando: ['cabeçalho'] };
-  const sep = (brutas[0].match(/;/g)?.length ?? 0) >= (brutas[0].match(/,/g)?.length ?? 0) ? ';' : ',';
-  const cab = dividir(brutas[0], sep).map(norm);
+/** Mapeia uma matriz (primeira linha = cabeçalho) para as linhas da planilha. Serve a CSV e a .xlsx (RF-11). */
+export function mapearMatriz(matriz: string[][]): { linhas: LinhaPlanilha[]; faltando: string[] } {
+  if (matriz.length === 0) return { linhas: [], faltando: ['cabeçalho'] };
+  const cab = matriz[0].map(norm);
   const idx = {} as Record<string, number>;
   for (const [campo, aliases] of Object.entries(ALIAS)) idx[campo] = cab.findIndex((c) => aliases.includes(c));
   const faltando = ['torre', 'unidade', 'nome'].filter((c) => idx[c] < 0);
-  const linhas = brutas.slice(1).map((l, i): LinhaPlanilha => {
-    const c = dividir(l, sep);
+  const linhas = matriz.slice(1).map((c, i): LinhaPlanilha => {
     const v = (k: string) => (idx[k] >= 0 ? c[idx[k]] ?? '' : '');
     return { linha: i + 2, torre: v('torre'), unidade: v('unidade'), nome: v('nome'), documento: v('documento'), telefone: v('telefone'), tipo: v('tipo') };
   });
   return { linhas, faltando };
+}
+
+/** Lê um CSV (UTF-8, separador ; ou , detectado) e mapeia as colunas pelo cabeçalho. */
+export function lerCsv(texto: string): { linhas: LinhaPlanilha[]; faltando: string[] } {
+  const brutas = texto.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim());
+  if (brutas.length === 0) return { linhas: [], faltando: ['cabeçalho'] };
+  const sep = (brutas[0].match(/;/g)?.length ?? 0) >= (brutas[0].match(/,/g)?.length ?? 0) ? ';' : ',';
+  return mapearMatriz(brutas.map((l) => dividir(l, sep)));
+}
+
+/** Células do Excel (texto, número, data, vazio) viram texto; linhas totalmente vazias são descartadas. */
+export function matrizDeCelulas(celulas: readonly (readonly unknown[])[]): string[][] {
+  const txt = (c: unknown) => (c === null || c === undefined ? '' : c instanceof Date ? c.toISOString().slice(0, 10) : String(c).trim());
+  return celulas.map((l) => l.map(txt)).filter((l) => l.some((c) => c !== ''));
+}
+
+/** Lê a primeira planilha de um .xlsx (biblioteca read-excel-file; não usa o pacote `xlsx`/SheetJS). */
+export async function lerXlsx(arquivo: Blob): Promise<{ linhas: LinhaPlanilha[]; faltando: string[] }> {
+  const { readSheet } = await import('read-excel-file/browser');
+  return mapearMatriz(matrizDeCelulas(await readSheet(arquivo)));
 }
 
 function cpf(base: string): string {

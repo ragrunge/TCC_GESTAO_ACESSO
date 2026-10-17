@@ -9,7 +9,7 @@ import { Modal } from '../../components/Modal';
 import { PageHeader } from '../../components/PageHeader';
 import { Cel, CelUnidade, Lista, ListaCab, ListaLinha, Vazio } from '../../components/Table';
 import { useToast } from '../../components/Toast';
-import { ROTULO_CATEGORIA, ROTULO_VINCULO, type CategoriaPessoa, type TipoDocumento } from '../../domain/types';
+import { ROTULO_CATEGORIA, ROTULO_VINCULO, type CategoriaPessoa } from '@portaria/domain/types';
 import { mensagemErro, useAsync } from '../../app/useAsync';
 import { FichaPessoaModal } from './FichaPessoaModal';
 
@@ -90,7 +90,7 @@ export function CadastroPage() {
 
 function NovaPessoaModal({ onClose, onFeito }: { onClose: () => void; onFeito: (nome: string) => void }) {
   const api = useApi();
-  const [f, setF] = useState<NovaPessoaInput>({ nome: '', documentoTipo: 'cpf', documento: '', telefone: '', categoria: 'morador' });
+  const [f, setF] = useState<NovaPessoaInput>({ nome: '', documento: '', telefone: '', categoria: 'morador', semCpf: false });
   const [erro, setErro] = useState('');
   async function salvar(e: FormEvent) {
     e.preventDefault();
@@ -101,11 +101,18 @@ function NovaPessoaModal({ onClose, onFeito }: { onClose: () => void; onFeito: (
       rodape={<><Button type="submit" form="f-pessoa" variante="primario" grande className="flex-1">Cadastrar</Button><Button grande onClick={onClose}>Cancelar</Button></>}>
       <form id="f-pessoa" onSubmit={salvar} className="grid grid-cols-2 gap-[14px]">
         <Field label="Nome completo" className="col-span-2"><input data-autofocus className="input" value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} /></Field>
-        <Field label="Tipo de documento"><select className="input" value={f.documentoTipo} onChange={(e) => setF({ ...f, documentoTipo: e.target.value as TipoDocumento })}><option value="cpf">CPF</option><option value="rg">RG</option><option value="cnh">CNH</option><option value="passaporte">Passaporte</option><option value="outro">Outro</option></select></Field>
-        <Field label="Número" dica="Fica armazenado mascarado."><input className="input font-mono" value={f.documento} onChange={(e) => setF({ ...f, documento: e.target.value })} /></Field>
-        <Field label="Telefone"><input className="input" placeholder="(11) 9____-____" value={f.telefone} onChange={(e) => setF({ ...f, telefone: e.target.value })} /></Field>
-        <Field label="Tipo"><select className="input" value={f.categoria} onChange={(e) => setF({ ...f, categoria: e.target.value as CategoriaPessoa })}><option value="morador">Morador</option><option value="visitante">Visitante</option><option value="prestador">Prestador</option></select></Field>
+        <Field label="CPF" dica="Só o CPF é aceito. Fica guardado mascarado, com um hash para busca.">
+          <input className="input font-mono" inputMode="numeric" placeholder="000.000.000-00" disabled={f.semCpf} required={!f.semCpf} value={f.documento ?? ''} onChange={(e) => setF({ ...f, documento: e.target.value })} />
+        </Field>
+        <Field label="Telefone (obrigatório)"><input className="input" inputMode="tel" required placeholder="(11) 9____-____" value={f.telefone} onChange={(e) => setF({ ...f, telefone: e.target.value })} /></Field>
+        <Field label="Tipo"><select className="input" value={f.categoria} onChange={(e) => setF({ ...f, categoria: e.target.value as CategoriaPessoa, semCpf: e.target.value === 'morador' ? false : f.semCpf })}><option value="morador">Morador</option><option value="visitante">Visitante</option><option value="prestador">Prestador</option></select></Field>
         {f.categoria === 'prestador' && <><Field label="Empresa"><input className="input" value={f.empresa ?? ''} onChange={(e) => setF({ ...f, empresa: e.target.value })} /></Field><Field label="Serviço"><input className="input" value={f.servico ?? ''} onChange={(e) => setF({ ...f, servico: e.target.value })} /></Field></>}
+        {f.categoria !== 'morador' && (
+          <label className="col-span-2 flex cursor-pointer items-start gap-3 rounded-lg border border-[#B9C3CA] p-3">
+            <input type="checkbox" className="mt-1" checked={!!f.semCpf} onChange={(e) => setF({ ...f, semCpf: e.target.checked, documento: '' })} />
+            <span><span className="font-medium">Pessoa sem CPF</span><span className="block text-[13px] text-[#56616B]">Exceção: só entra por exceção do porteiro, com justificativa. Nome e telefone continuam obrigatórios.</span></span>
+          </label>
+        )}
         <div className="col-span-2 rounded-lg bg-[#E3F0F2] px-3 py-[10px] text-[14px] text-[#0B4450]">Morador cadastrado aqui ainda não tem acesso: peça o vínculo na tela da unidade. Foto é opcional e a recusa não impede o cadastro (RN-10).</div>
         {erro && <Alert tom="vermelho" role="alert" className="col-span-2">{erro}</Alert>}
       </form>

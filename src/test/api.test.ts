@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { entrarComo, esperaErro, id, novaApi } from './helpers';
-import { brt, relogio } from '../domain/time';
-import { verificarCadeia } from '../domain/hashChain';
-import type { EventoAcesso } from '../domain/types';
+import { brt, relogio } from '@portaria/domain/time';
+import { verificarCadeia } from '@portaria/domain/hashChain';
+import type { EventoAcesso } from '@portaria/domain/types';
 
 afterEach(() => { delete (globalThis as { window?: unknown }).window; });
 
@@ -144,9 +144,10 @@ describe('entrada de não morador', () => {
     const real = brt(2026, 10, 9, 12, 0);
     const ev = await api.eventos.criar({
       pessoaId: id.marcos, unidadeDestinoId: 'T4-32', autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana,
-      retroativo: true, ocorridoEm: real, observacao: 'Formulário nº 12',
+      retroativo: true, ocorridoEm: real, formularioContingencia: '12',
     });
     expect(ev.retroativo).toBe(true);
+    expect(ev.formularioContingencia).toBe('12');
     expect(ev.ocorridoEm).toBe(real);
     expect(ev.registradoEm).toBeGreaterThan(ev.ocorridoEm);
     const futuro = await esperaErro(api.eventos.criar({
@@ -264,7 +265,8 @@ describe('vínculos (RN-03, RF-06)', () => {
     await entrarComo(api, 'joao.lima');
     const e = await esperaErro(api.encomendas.entregar({ id: 'K102', pessoaId: id.rodrigo }));
     expect(e.code).toBe('PESSOA_SEM_VINCULO');
-    expect((await esperaErro(api.eventos.criar({ pessoaId: id.rodrigo, unidadeDestinoId: 'T9-13' }))).code).toBe('VINCULO_SEM_ACESSO');
+    // sem vínculo válido não há acesso de morador: segue a regra de visitante (RN-01)
+    expect((await esperaErro(api.eventos.criar({ pessoaId: id.rodrigo, unidadeDestinoId: 'T9-13' }))).code).toBe('AUTORIZADO_POR_OBRIGATORIO');
   });
 });
 
@@ -296,16 +298,17 @@ describe('RBAC e usuários', () => {
     expect((await esperaErro(api.usuarios.listar())).status).toBe(403);
     await entrarComo(api, 'roberto.faria');
     const novo = await api.usuarios.criar({ nome: 'Teste Auditor', login: 'teste.auditor', papel: 'auditor' });
-    expect(novo.totpAtivo).toBe(true); // perfis não porteiro exigem 2FA
     const des = await api.usuarios.desativar(novo.id);
     expect(des.ativo).toBe(false);
   });
 
-  it('login: 2FA só para administração e síndico; código precisa ter 6 dígitos', async () => {
+  it('login é só usuário + senha para todos os papéis (2FA fica para o pós-MVP)', async () => {
     const api = novaApi();
-    expect((await api.auth.login({ login: 'joao.lima', senha: 'x' })).requer2fa).toBe(false);
-    expect((await api.auth.login({ login: 'paula.nogueira', senha: 'x' })).requer2fa).toBe(true);
-    expect((await esperaErro(api.auth.verificar2fa('12'))).code).toBe('CODIGO_INVALIDO');
-    expect((await api.auth.verificar2fa('123456')).papel).toBe('administracao');
+    expect((await api.auth.login({ login: 'joao.lima', senha: 'x' })).papel).toBe('porteiro');
+    expect((await api.auth.login({ login: 'paula.nogueira', senha: 'x' })).papel).toBe('administracao');
+    expect((await api.auth.login({ login: 'roberto.faria', senha: 'x' })).papel).toBe('sindico');
+    expect((await api.auth.me())?.login).toBe('roberto.faria');
+    expect(Object.keys((api.auth as object))).not.toContain('verificar2fa');
+    expect((await esperaErro(api.auth.login({ login: 'joao.lima', senha: '' }))).code).toBe('CREDENCIAIS_INVALIDAS');
   });
 });

@@ -1,27 +1,32 @@
 import { Ban, TriangleAlert } from 'lucide-react';
 import { Badge, type Tom } from '../../components/Badge';
-import { ROTULO_CATEGORIA, ROTULO_MEIO, ROTULO_MEIO_CURTO, type EventoView } from '../../domain/types';
-import { fmtDataCurta, fmtHora, inicioDoDia } from '../../domain/time';
+import { ROTULO_CATEGORIA, ROTULO_MEIO, ROTULO_MEIO_CURTO, type EventoView } from '@portaria/domain/types';
+import { fmtDataCurta, fmtHora, inicioDoDia } from '@portaria/domain/time';
 
 /** Nome de quem autorizou, no formato curto das listas (uma linha só). */
 export function textoAutorizacao(ev: EventoView): string {
   if (ev.tipo === 'negado') return 'Entrada não permitida';
   if (ev.tipo === 'saida') return 'Saída registrada';
   if (ev.tipo === 'correcao') return 'Correção de registro';
+  if (ev.tipo === 'recusado') return `Recusado por ${ev.autorizadoPorNome ?? '—'}`;
   if (!ev.autorizadoPorTipo) return '—';
   if (ev.autorizadoPorTipo === 'excecao_porteiro') return ev.operadorNome;
   if (ev.autorizadoPorTipo === 'escala') return 'Escala do condomínio';
   return ev.autorizadoPorNome ?? '—';
 }
 export const textoMeioLongo = (ev: EventoView) =>
-  ev.tipo === 'negado' ? 'Entrada negada (restrição)' : ev.autorizadoPorTipo ? ROTULO_MEIO[ev.autorizadoPorTipo] : '—';
+  ev.tipo === 'negado' ? 'Entrada negada (restrição)'
+    : ev.tipo === 'recusado' ? `Visita recusada pelo morador (${ev.autorizadoPorTipo ? ROTULO_MEIO[ev.autorizadoPorTipo].toLowerCase() : '—'})`
+    : ev.autorizadoPorTipo ? ROTULO_MEIO[ev.autorizadoPorTipo] : '—';
 
 /** Chip do meio de autorização: neutro; âmbar na exceção; vermelho no negado. */
 export function chipDoEvento(ev: EventoView): { texto: string; tom: Tom; icone?: typeof Ban } {
   if (ev.tipo === 'negado') return { texto: 'Negado', tom: 'vermelho', icone: Ban };
+  if (ev.tipo === 'recusado') return { texto: 'Recusado', tom: 'ambar', icone: Ban };
   if (ev.tipo === 'saida') return { texto: 'Saída', tom: 'neutro' };
   if (ev.tipo === 'correcao') return { texto: 'Correção', tom: 'petroleo' };
   if (ev.autorizadoPorTipo === 'excecao_porteiro') return { texto: 'Exceção', tom: 'ambar', icone: TriangleAlert };
+  if (ev.autorizacaoSemSolicitante) return { texto: 'Sem solicitante', tom: 'ambar', icone: TriangleAlert };
   return { texto: ev.autorizadoPorTipo ? ROTULO_MEIO_CURTO[ev.autorizadoPorTipo] : '—', tom: 'neutro' };
 }
 
@@ -50,4 +55,5 @@ export function quandoCurto(ts: number, agora: number): string {
 
 /** Fundo da linha: âmbar para exceção, vermelho claro para negado. */
 export const destaqueEvento = (ev: EventoView) =>
-  ev.tipo === 'negado' ? ('vermelho' as const) : ev.autorizadoPorTipo === 'excecao_porteiro' ? ('ambar' as const) : undefined;
+  ev.tipo === 'negado' ? ('vermelho' as const)
+    : ev.autorizadoPorTipo === 'excecao_porteiro' || ev.autorizacaoSemSolicitante ? ('ambar' as const) : undefined;

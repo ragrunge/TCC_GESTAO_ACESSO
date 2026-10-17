@@ -13,10 +13,10 @@ import { Tabs } from '../../components/Tabs';
 import { TowerUnitPicker } from '../../components/TowerUnitPicker';
 import { useToast } from '../../components/Toast';
 import { UnitTag } from '../../components/UnitTag';
-import { ROTULO_VINCULO, type Encomenda } from '../../domain/types';
-import { diasDesde, encomendaAtrasada } from '../../domain/rules';
-import { rotuloUnidade, unidadeId } from '../../domain/units';
-import { fmtDataHora } from '../../domain/time';
+import { ROTULO_VINCULO, type Encomenda } from '@portaria/domain/types';
+import { diasDesde, encomendaAtrasada } from '@portaria/domain/rules';
+import { rotuloUnidade, unidadeId } from '@portaria/domain/units';
+import { fmtDataHora } from '@portaria/domain/time';
 import { mensagemErro, useAgora, useAsync } from '../../app/useAsync';
 
 const TRANSPORTADORAS = ['Correios', 'Mercado Livre', 'Amazon', 'Shopee', 'Loggi', 'Jadlog', 'Outra'];

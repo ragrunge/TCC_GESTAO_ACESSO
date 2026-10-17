@@ -8,10 +8,10 @@ import { Button } from '../../components/Button';
 import { PageHeader } from '../../components/PageHeader';
 import { Tabs } from '../../components/Tabs';
 import { useToast } from '../../components/Toast';
-import { ROTULO_VINCULO } from '../../domain/types';
-import { MIN_JUSTIFICATIVA, exigeJustificativaParaAprovar, justificativaValida } from '../../domain/rules';
-import { fmtData, fmtDataHora } from '../../domain/time';
-import { rotuloUnidade } from '../../domain/units';
+import { ROTULO_VINCULO } from '@portaria/domain/types';
+import { MIN_JUSTIFICATIVA, exigeJustificativaParaAprovar, justificativaValida } from '@portaria/domain/rules';
+import { fmtData, fmtDataHora } from '@portaria/domain/time';
+import { rotuloUnidade } from '@portaria/domain/units';
 import { mensagemErro, useAsync } from '../../app/useAsync';
 
 export function VinculosPage() {
@@ -92,7 +92,7 @@ export function VinculosPage() {
             </div>
 
             <div className="grid grid-cols-4 gap-[14px]">
-              <div className="flex flex-col gap-0.5"><span className={rot}>Documento</span><span className="font-mono">{atual.pessoaDocumento}</span></div>
+              <div className="flex flex-col gap-0.5"><span className={rot}>CPF</span><span className="font-mono">{atual.pessoaDocumento}</span></div>
               <div className="flex flex-col gap-0.5"><span className={rot}>Vigência</span><span>{atual.vigenciaInicio ? fmtData(atual.vigenciaInicio) : '—'} a {atual.vigenciaFim ? fmtData(atual.vigenciaFim) : 'indeterminada'}</span></div>
               <div className="flex flex-col gap-0.5"><span className={rot}>Solicitado em</span><span>{fmtDataHora(atual.solicitadoEm)}</span></div>
               <div className="flex flex-col gap-0.5"><span className={rot}>Solicitado por</span><span>{atual.solicitadoPor}</span></div>
@@ -111,7 +111,7 @@ export function VinculosPage() {
                       <div className="mt-1.5 flex flex-col gap-1.5"><div className="h-[6px] rounded-sm bg-[#ECE9E0]" /><div className="h-[6px] w-[85%] rounded-sm bg-[#ECE9E0]" /><div className="h-[6px] w-[70%] rounded-sm bg-[#ECE9E0]" /></div>
                       <div className="mt-auto grid grid-cols-2 gap-5 text-center text-[11px]"><div className="border-t border-[#555] pt-1">Assinatura 1</div><div className="border-t border-[#555] pt-1">Assinatura 2</div></div>
                     </>
-                  ) : <p className="font-sans text-[#56616B]">Sem documento anexado.</p>}
+                  ) : <p className="font-sans text-[#56616B]">Nenhum documento anexado. O anexo não é exigido; a decisão é da administração.</p>}
                 </div>
                 <div className="mt-2 text-center text-[12px] text-[#56616B]">Documento anexado à solicitação · visualização</div>
               </div>
@@ -131,6 +131,7 @@ export function VinculosPage() {
                 {atual.status === 'pendente' && (
                   <>
                     {falhas && <div role="note" className="rounded-lg border border-[#FDA29B] bg-[#FEE4E2] px-3 py-[10px] text-[14px] text-[#912018]"><strong>Há itens que não conferem.</strong> Recomenda-se rejeitar. Aprovar só é possível com justificativa de no mínimo {MIN_JUSTIFICATIVA} caracteres, gravada junto da decisão.</div>}
+                    {!atual.pessoaCadastroCompleto && <Alert tom="ambar">Cadastro incompleto: a pessoa precisa ter CPF válido (não “sem CPF”) e telefone para o vínculo ser aprovado. Complete o cadastro ou rejeite.</Alert>}
                     {acao ? (
                       <div className="flex flex-col gap-[10px]">
                         <label htmlFor="just-vinc" className="flex flex-col gap-1.5 text-[14px] font-medium">{acao === 'rejeitar' ? 'Justificativa da rejeição (obrigatória)' : `Justificativa da aprovação (mínimo ${MIN_JUSTIFICATIVA} caracteres)`}
@@ -140,7 +141,7 @@ export function VinculosPage() {
                         <span className="text-[13px] text-[#56616B]">{acao === 'rejeitar' ? `${just.trim().length} caracteres` : `${just.trim().length} de ${MIN_JUSTIFICATIVA} caracteres`}</span>
                         {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
                         <div className="flex gap-[10px]">
-                          <Button variante={acao === 'rejeitar' ? 'perigo' : 'primario'} grande className="flex-1" disabled={!justOk} carregando={salvando} onClick={() => void decidir(acao)}>
+                          <Button variante={acao === 'rejeitar' ? 'perigo' : 'primario'} grande className="flex-1" disabled={!justOk || (acao === 'aprovar' && !atual.pessoaCadastroCompleto)} carregando={salvando} onClick={() => void decidir(acao)}>
                             {acao === 'rejeitar' ? 'Confirmar rejeição' : falhas ? 'Aprovar mesmo assim' : 'Confirmar aprovação'}
                           </Button>
                           <Button grande onClick={() => { setAcao(null); setJust(''); setErro(''); }}>Cancelar</Button>
@@ -153,11 +154,11 @@ export function VinculosPage() {
                           {falhas ? (
                             <>
                               <Button variante="perigo" grande className="flex-1" onClick={() => setAcao('rejeitar')}>Rejeitar</Button>
-                              <Button grande className="flex-1" onClick={() => setAcao('aprovar')}>Aprovar com justificativa…</Button>
+                              <Button grande className="flex-1" disabled={!atual.pessoaCadastroCompleto} onClick={() => setAcao('aprovar')}>Aprovar com justificativa…</Button>
                             </>
                           ) : (
                             <>
-                              <Button variante="primario" grande className="flex-1" onClick={() => void decidir('aprovar')} carregando={salvando}>Aprovar</Button>
+                              <Button variante="primario" grande className="flex-1" disabled={!atual.pessoaCadastroCompleto} onClick={() => void decidir('aprovar')} carregando={salvando}>Aprovar</Button>
                               <button type="button" onClick={() => setAcao('rejeitar')} className="h-12 flex-1 rounded-lg border-2 border-[#B42318] bg-white font-semibold text-[#B42318] hover:bg-[#FEF3F2]">Rejeitar</button>
                             </>
                           )}

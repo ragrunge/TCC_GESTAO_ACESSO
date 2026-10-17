@@ -8,9 +8,9 @@ import { Modal } from '../../components/Modal';
 import { PageHeader } from '../../components/PageHeader';
 import { Cel, CelUnidade, Lista, ListaCab, ListaLinha, Vazio } from '../../components/Table';
 import { useToast } from '../../components/Toast';
-import { ROTULO_CATEGORIA, ROTULO_PAPEL, type EventoView } from '../../domain/types';
-import { descreverJanela, encomendaAtrasada } from '../../domain/rules';
-import { fmtHora, partes } from '../../domain/time';
+import { ROTULO_CATEGORIA, ROTULO_PAPEL, type EventoView } from '@portaria/domain/types';
+import { descreverJanela, encomendaAtrasada } from '@portaria/domain/rules';
+import { fmtHora, partes } from '@portaria/domain/time';
 import { mensagemErro, useAgora, useAsync } from '../../app/useAsync';
 import { AutorizacaoEvento, destaqueEvento, quandoCurto } from '../common/evento';
 import { EventoGaveta } from '../historico/EventoGaveta';
@@ -164,7 +164,7 @@ export function PainelPage() {
           <div className="grid grid-cols-2 gap-[10px]">
             {[
               ['Pessoas ainda no condomínio', r?.pessoasDentro], ['Encomendas aguardando', r?.encomendasPendentes],
-              ['Ocorrências abertas', r?.ocorrenciasAbertas], ['Exceções no turno', r?.excecoesNoTurno],
+              ['Ocorrências abertas', r?.ocorrenciasAbertas], ['Exceções hoje', r?.excecoesHoje],
               ['Autorizações prévias hoje', r?.autorizacoesHoje], ['Restrições pendentes', r?.restricoesPendentes],
             ].map(([k, v]) => (
               <div key={String(k)} className="flex items-center justify-between rounded-lg border border-[#DCE1E5] px-[14px] py-3"><span className="text-[14px]">{k}</span><span className="font-mono text-[20px] font-semibold">{v ?? '…'}</span></div>

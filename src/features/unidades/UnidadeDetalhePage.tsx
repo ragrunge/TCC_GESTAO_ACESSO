@@ -10,10 +10,10 @@ import { Field } from '../../components/Field';
 import { Modal } from '../../components/Modal';
 import { PessoaPicker } from '../../components/PessoaPicker';
 import { useToast } from '../../components/Toast';
-import { ROTULO_VINCULO, type EventoView, type TipoVinculo } from '../../domain/types';
-import { descreverJanela } from '../../domain/rules';
-import { DIAS_SEMANA_ABREV, fmtData, fromInput, toInputDate, agora } from '../../domain/time';
-import { unidadeExiste } from '../../domain/units';
+import { ROTULO_VINCULO, type EventoView, type TipoVinculo } from '@portaria/domain/types';
+import { MIN_JUSTIFICATIVA, descreverJanela } from '@portaria/domain/rules';
+import { DIAS_SEMANA_ABREV, fmtData, fromInput, toInputDate, agora } from '@portaria/domain/time';
+import { unidadeExiste } from '@portaria/domain/units';
 import { mensagemErro, useAsync } from '../../app/useAsync';
 import { chipDoEvento, quandoCurto, textoAutorizacao } from '../common/evento';
 import { EventoGaveta } from '../historico/EventoGaveta';
@@ -91,7 +91,9 @@ export function UnidadeDetalhe({ id }: { id: string }) {
                   <Check className="mt-[3px] h-4 w-4 shrink-0 text-[#05603A]" strokeWidth={2.6} aria-hidden />
                   <div className="flex min-w-0 flex-1 flex-col">
                     <span className="font-medium">{a.pessoaNome}</span>
-                    <span className="text-[13px] text-[#56616B]">Até {fmtData(a.validaAte)} · {descreverJanela(a)} · por {a.solicitadaPorNome}</span>
+                    <span className="text-[13px] text-[#56616B]">Até {fmtData(a.validaAte)} · {descreverJanela(a)}{a.semSolicitante ? ` · cadastrada por ${a.cadastradaPorNome}` : ` · por ${a.solicitadaPorNome}`}</span>
+                    {a.semSolicitante && <span className="mt-0.5 self-start"><Badge tom="ambar" tamanho="xs">Sem solicitante</Badge></span>}
+                    {a.semSolicitante && a.justificativa && <span className="text-[13px] text-[#7A2E0E]">Justificativa: {a.justificativa}</span>}
                     {a.estado !== 'valida' && <span className="mt-0.5 self-start"><Badge tom="ambar" tamanho="xs">Fora da janela agora</Badge></span>}
                   </div>
                   {podePrevia && <button type="button" className={link} aria-label={`Revogar autorização de ${a.pessoaNome}`} onClick={() => void revogarPrevia(a)}>Revogar</button>}
@@ -161,8 +163,6 @@ function VinculoModal({ unidade, onClose, onFeito }: { unidade: string; onClose:
   const [tipo, setTipo] = useState<TipoVinculo>('proprietario');
   const [ini, setIni] = useState(toInputDate(agora()));
   const [fim, setFim] = useState('');
-  const [docTipo, setDocTipo] = useState('Contrato de locação residencial');
-  const [arquivo, setArquivo] = useState('');
   const [erro, setErro] = useState('');
   async function salvar(e: FormEvent) {
     e.preventDefault();
@@ -170,7 +170,7 @@ function VinculoModal({ unidade, onClose, onFeito }: { unidade: string; onClose:
     try {
       await api.vinculos.criar({
         pessoaId: pessoa.id, unidadeId: unidade, tipo, vigenciaInicio: fromInput(ini)!, vigenciaFim: fim ? fromInput(fim) : null,
-        documento: { titulo: docTipo.toUpperCase(), linhas: [['Arquivo anexado', arquivo || '(não informado)']] }, solicitadoPor: '',
+        solicitadoPor: '', // sem documento anexado: a aprovação da administração é o que vale (RF-04)
       });
       onFeito();
     } catch (err) { setErro(mensagemErro(err)); }
@@ -182,10 +182,8 @@ function VinculoModal({ unidade, onClose, onFeito }: { unidade: string; onClose:
         <PessoaPicker rotulo="Pessoa" valor={pessoa} onChange={setPessoa} autoFocus />
         <div className="grid grid-cols-2 gap-3">
           <Field label="Tipo de vínculo"><select className="input" value={tipo} onChange={(e) => setTipo(e.target.value as TipoVinculo)}>{(Object.keys(ROTULO_VINCULO) as TipoVinculo[]).map((t) => <option key={t} value={t}>{ROTULO_VINCULO[t]}</option>)}</select></Field>
-          <Field label="Documento comprobatório"><select className="input" value={docTipo} onChange={(e) => setDocTipo(e.target.value)}><option>Contrato de locação residencial</option><option>Escritura</option><option>Contrato de compra e venda</option><option>Certidão de nascimento</option><option>Outro</option></select></Field>
           <Field label="Início da vigência"><input type="date" className="input" value={ini} onChange={(e) => setIni(e.target.value)} /></Field>
           <Field label="Fim da vigência" dica={tipo === 'inquilino' ? 'Obrigatório para inquilino.' : 'Em branco = indeterminada.'}><input type="date" className="input" value={fim} onChange={(e) => setFim(e.target.value)} /></Field>
-          <Field label="Arquivo do documento" className="col-span-2"><input type="file" className="input" onChange={(e) => setArquivo(e.target.files?.[0]?.name ?? '')} /></Field>
         </div>
         <Alert tom="neutro">O vínculo nasce <strong>pendente</strong> e só concede acesso depois da aprovação da administração ou do síndico.</Alert>
         {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
@@ -198,6 +196,7 @@ function PreviaModal({ unidade, onClose, onFeito }: { unidade: string; onClose: 
   const api = useApi();
   const [pessoa, setPessoa] = useState<PessoaBusca | null>(null);
   const [pedidaPor, setPedidaPor] = useState('');
+  const [justificativa, setJustificativa] = useState('');
   const [ate, setAte] = useState(''); // sem valor padrão: a validade é obrigatória (RN-07)
   const [dias, setDias] = useState<number[]>([]);
   const [hi, setHi] = useState('');
@@ -211,6 +210,7 @@ function PreviaModal({ unidade, onClose, onFeito }: { unidade: string; onClose: 
       await api.autorizacoes.criar({
         unidadeId: unidade, pessoaId: pessoa.id, validaAte: ate ? fromInput(ate) : null, diasSemana: dias.length ? dias : null,
         horaInicio: hi || null, horaFim: hf || null, solicitadaPorPessoaId: pedidaPor || null,
+        justificativa: pedidaPor ? null : justificativa,
       });
       onFeito();
     } catch (err) { setErro(mensagemErro(err)); }
@@ -221,6 +221,11 @@ function PreviaModal({ unidade, onClose, onFeito }: { unidade: string; onClose: 
       <form id="f-prev" onSubmit={salvar} className="flex flex-col gap-[14px]">
         <PessoaPicker rotulo="Pessoa autorizada" valor={pessoa} onChange={setPessoa} autoFocus />
         <Field label="Morador que pediu"><select className="input" value={pedidaPor} onChange={(e) => setPedidaPor(e.target.value)}><option value="">Selecione…</option>{(aut.data ?? []).map((a) => <option key={a.pessoa.id} value={a.pessoa.id}>{a.pessoa.nome}</option>)}</select></Field>
+        {!pedidaPor && (
+          <Field label={`Justificativa (obrigatória sem morador solicitante, mínimo ${MIN_JUSTIFICATIVA} caracteres)`} dica="A autorização ficará marcada como “Sem solicitante” e contará como exceção de quem a cadastrou.">
+            <textarea className="input" rows={2} value={justificativa} onChange={(e) => setJustificativa(e.target.value)} />
+          </Field>
+        )}
         <Field label="Válida até (obrigatório)" dica="Não existe autorização por prazo indeterminado (RN-07)."><input type="date" className="input" required value={ate} min={toInputDate(agora())} onChange={(e) => setAte(e.target.value)} /></Field>
         <fieldset><legend className="mb-1.5 text-[14px] font-medium">Dias da semana (nenhum marcado = todos os dias)</legend>
           <div className="flex gap-2">{DIAS_SEMANA_ABREV.map((n, i) => (

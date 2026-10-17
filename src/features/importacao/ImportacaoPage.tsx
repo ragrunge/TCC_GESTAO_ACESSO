@@ -4,9 +4,9 @@ import { useApi, type LinhaPlanilha, type RelatorioImportacao, type ResultadoImp
 import { Alert } from '../../components/Alert';
 import { Button } from '../../components/Button';
 import { PageHeader } from '../../components/PageHeader';
-import { fmtData } from '../../domain/time';
+import { fmtData } from '@portaria/domain/time';
 import { mensagemErro } from '../../app/useAsync';
-import { csvExemplo, lerCsv } from './csv';
+import { csvExemplo, lerCsv, lerXlsx } from './csv';
 
 const COL = 'minmax(0,1.2fr) 130px 50px 50px 100px 150px';
 
@@ -28,11 +28,11 @@ export function ImportacaoPage() {
   async function aoEscolher(f: File | undefined) {
     if (!f) return;
     setErro(''); setRel(null); setRes(null);
-    if (/\.xlsx?$/i.test(f.name)) {
-      setErro('Esta versão lê apenas CSV (UTF-8). No Excel, use Arquivo > Salvar como > CSV UTF-8 e envie novamente. A leitura direta de .xlsx fica para a versão com backend.');
-      return;
-    }
-    const { linhas: ls, faltando } = lerCsv(await f.text());
+    if (/\.xls$/i.test(f.name)) { setErro('O formato .xls (Excel antigo) não é lido. Salve como .xlsx ou CSV UTF-8 e envie novamente.'); return; }
+    let lido: { linhas: LinhaPlanilha[]; faltando: string[] };
+    try { lido = /\.xlsx$/i.test(f.name) ? await lerXlsx(f) : lerCsv(await f.text()); }
+    catch { setErro('Não foi possível ler a planilha. Confira se o arquivo é um .xlsx válido ou um CSV UTF-8.'); return; }
+    const { linhas: ls, faltando } = lido;
     if (faltando.length) { setErro(`Colunas obrigatórias não encontradas no cabeçalho: ${faltando.join(', ')}.`); return; }
     await analisar(f.name, ls);
   }
@@ -49,7 +49,7 @@ export function ImportacaoPage() {
   return (
     <div className="flex max-w-[1080px] flex-col gap-5">
       <PageHeader titulo="Importar planilha" descricao="Carga inicial a partir da planilha atual. Moradores entram com status Legado até a regularização do vínculo." />
-      <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls,text/csv" className="sr-only" aria-label="Selecionar arquivo da planilha" tabIndex={-1} onChange={(e) => { void aoEscolher(e.target.files?.[0]); e.target.value = ''; }} />
+      <input ref={inputRef} type="file" accept=".csv,.xlsx,text/csv" className="sr-only" aria-label="Selecionar arquivo da planilha" tabIndex={-1} onChange={(e) => { void aoEscolher(e.target.files?.[0]); e.target.value = ''; }} />
       {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
 
       {!rel && !res && (
@@ -57,8 +57,8 @@ export function ImportacaoPage() {
           <button type="button" onClick={() => inputRef.current?.click()}
             className="flex h-60 flex-col items-center justify-center gap-[10px] rounded-xl border-2 border-dashed border-[#9AA7B0] bg-white hover:border-[#0B5563] hover:bg-[#F5FAFB]">
             <Upload className="h-9 w-9 text-[#0B5563]" strokeWidth={1.8} aria-hidden />
-            <span className="text-[18px] font-semibold">Selecionar arquivo .csv</span>
-            <span className="text-[14px] text-[#56616B]">Colunas esperadas: nome, documento, torre, unidade, tipo de vínculo, telefone. O número completo do documento nunca é gravado.</span>
+            <span className="text-[18px] font-semibold">Selecionar arquivo .csv ou .xlsx</span>
+            <span className="text-[14px] text-[#56616B]">Colunas esperadas: nome, CPF, torre, unidade, tipo de vínculo, telefone. O CPF não é guardado em claro; linha sem CPF entra como legado, a regularizar.</span>
           </button>
           <Button className="self-start" onClick={() => void analisar('planilha-exemplo.csv', lerCsv(csvExemplo()).linhas)} carregando={ocupado}>Usar planilha de exemplo</Button>
         </>

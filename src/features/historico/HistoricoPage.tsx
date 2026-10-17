@@ -1,21 +1,23 @@
 import { useMemo, useState } from 'react';
 import { Check, ShieldCheck } from 'lucide-react';
 import { useApi, type FiltroEventos } from '../../api';
-import type { ResultadoIntegridade } from '../../domain/hashChain';
+import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
 import { useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
+import { Tabs } from '../../components/Tabs';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { PageHeader } from '../../components/PageHeader';
 import { Cel, CelUnidade, Lista, ListaCab, ListaLinha, Vazio } from '../../components/Table';
 import { useToast } from '../../components/Toast';
-import { ROTULO_MEIO, ROTULO_CATEGORIA, type EventoView, type MeioAutorizacao } from '../../domain/types';
-import { DIA, agora, fimDoDia, fromInput, inicioDoDia, toInputDate } from '../../domain/time';
-import { normalizarUnidade } from '../../domain/units';
+import { ROTULO_MEIO, ROTULO_CATEGORIA, type EventoView, type MeioAutorizacao } from '@portaria/domain/types';
+import { DIA, agora, fimDoDia, fromInput, inicioDoDia, toInputDate } from '@portaria/domain/time';
+import { normalizarUnidade } from '@portaria/domain/units';
 import { mensagemErro, useAsync } from '../../app/useAsync';
 import { AutorizacaoEvento, destaqueEvento, quandoCurto } from '../common/evento';
 import { EventoGaveta } from './EventoGaveta';
 import { baixarArquivo } from './download';
+import { TrilhaAlteracoes } from './TrilhaAlteracoes';
 
 const LIMITE = 150;
 const COLUNAS = '110px minmax(0,1.2fr) 80px 100px minmax(0,1.9fr) 120px 140px';
@@ -35,6 +37,7 @@ export function HistoricoPage() {
   const [exc, setExc] = useState(false);
   const [retro, setRetro] = useState(false);
   const [mais, setMais] = useState(false);
+  const [aba, setAba] = useState<'acessos' | 'alteracoes'>('acessos');
   const [aberto, setAberto] = useState<EventoView | null>(null);
   const [integ, setInteg] = useState<ResultadoIntegridade | null>(null);
   const [verificando, setVerificando] = useState(false);
@@ -85,6 +88,11 @@ export function HistoricoPage() {
           {podeExportar && <Button variante="primario" onClick={() => void exportar()}>Exportar trilha (arquivo verificável)</Button>}
         </>} />
 
+      {podeVerificar && (
+        <Tabs rotulo="Trilhas" ativa={aba} onChange={setAba}
+          abas={[{ id: 'acessos', rotulo: 'Trilha de acessos' }, { id: 'alteracoes', rotulo: 'Trilha de alterações' }]} />
+      )}
+      {aba === 'alteracoes' && podeVerificar ? <TrilhaAlteracoes /> : <>
       {verificando && <div role="status" className="rounded-lg border border-[#D5DDE2] bg-[#EEF2F4] px-4 py-3 text-[#33424B]">Verificando a cadeia de hashes…</div>}
       {integ && (integ.valido
         ? <div role="status" className="flex items-center gap-[10px] rounded-lg border border-[#75E0A7] bg-[#DCFAE6] px-4 py-3 font-medium text-[#05603A]">
@@ -111,7 +119,7 @@ export function HistoricoPage() {
           <select className={entrada} value={operadorId} onChange={(e) => setOperadorId(e.target.value)}><option value="">Todos</option>{(operadores.data ?? []).map(([id, nome]) => <option key={id} value={id}>{nome}</option>)}</select>
         </label>
         <label className={campo}>Tipo de registro
-          <select className={entrada} value={tipo} onChange={(e) => setTipo(e.target.value)}><option value="">Todos</option><option value="entrada">Entrada</option><option value="saida">Saída</option><option value="negado">Negado</option><option value="correcao">Correção</option></select>
+          <select className={entrada} value={tipo} onChange={(e) => setTipo(e.target.value)}><option value="">Todos</option><option value="entrada">Entrada</option><option value="saida">Saída</option><option value="negado">Negado</option><option value="recusado">Recusado</option><option value="correcao">Correção</option></select>
         </label>
         <label className={campo}>Meio de autorização
           <select className={entrada} value={meio} onChange={(e) => setMeio(e.target.value)}><option value="">Todos</option>{(Object.keys(ROTULO_MEIO) as MeioAutorizacao[]).map((m) => <option key={m} value={m}>{ROTULO_MEIO[m]}</option>)}</select>
@@ -148,6 +156,8 @@ export function HistoricoPage() {
         {!lista.loading && dados.length === 0 && <Vazio>Nenhum evento com estes filtros.</Vazio>}
       </div>
       {dados.length > LIMITE && !mais && <div><Button onClick={() => setMais(true)}>Mostrar todos os {dados.length} registros</Button></div>}
+
+      </>}
 
       {aberto && <EventoGaveta ev={aberto} onClose={() => setAberto(null)} onCorrigido={() => { setAberto(null); void lista.recarregar(); }} />}
     </div>

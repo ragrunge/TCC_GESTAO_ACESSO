@@ -4,8 +4,8 @@ import { Badge, SeloVinculo } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
 import { Avatar } from '../../components/UnitTag';
-import { ROTULO_CATEGORIA, ROTULO_VINCULO } from '../../domain/types';
-import { agora, fmtDataHora } from '../../domain/time';
+import { ROTULO_CATEGORIA, ROTULO_VINCULO } from '@portaria/domain/types';
+import { agora, fmtDataHora } from '@portaria/domain/time';
 import { useAsync } from '../../app/useAsync';
 import { chipDoEvento, quandoCurto, textoAutorizacao } from '../common/evento';
 

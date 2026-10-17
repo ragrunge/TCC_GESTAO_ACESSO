@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useApi } from '../../api';
 import { Alert } from '../../components/Alert';
 import { BotoesTorre, GradeAndares } from '../../components/TowerUnitPicker';
-import { parseUnidadeId, unidadeId } from '../../domain/units';
+import { parseUnidadeId, unidadeId } from '@portaria/domain/units';
 import { useAsync } from '../../app/useAsync';
 import { UnidadeDetalhe } from './UnidadeDetalhePage';
 

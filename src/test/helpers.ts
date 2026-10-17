@@ -1,7 +1,7 @@
 import { createMockApi } from '../api/mock/createMockApi';
 import type { Api } from '../api/types';
 import { ApiError } from '../api/types';
-import { INICIO_SIMULADO, relogio } from '../domain/time';
+import { INICIO_SIMULADO, relogio } from '@portaria/domain/time';
 
 export type Perfil = 'joao.lima' | 'sergio.matos' | 'paula.nogueira' | 'roberto.faria' | 'luiza.campos';
 
@@ -12,8 +12,7 @@ export function novaApi(opts: { ferramentasDev?: boolean } = {}): Api {
 }
 
 export async function entrarComo(api: Api, login: Perfil) {
-  const r = await api.auth.login({ login, senha: 'qualquer' });
-  if (r.requer2fa) await api.auth.verificar2fa('123456');
+  await api.auth.login({ login, senha: 'qualquer' });
 }
 
 /** Espera uma rejeição com ApiError e devolve o erro para asserções. */

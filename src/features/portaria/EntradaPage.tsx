@@ -14,19 +14,26 @@ import { TowerUnitPicker, type TowerUnitPickerHandle } from '../../components/To
 import { useToast } from '../../components/Toast';
 import { Avatar } from '../../components/UnitTag';
 import {
-  ROTULO_CATEGORIA, ROTULO_MEIO, ROTULO_PAPEL, type CategoriaPessoa, type Funcionario, type MeioAutorizacao, type TipoDocumento,
-} from '../../domain/types';
+  ROTULO_CATEGORIA, ROTULO_MEIO, ROTULO_PAPEL, type CategoriaPessoa, type Funcionario, type MeioAutorizacao,
+} from '@portaria/domain/types';
 import {
   descreverHorario, descreverJanela, escalaVigente, estadoAutorizacaoPrevia, justificativaValida, meiosAceitos, MIN_JUSTIFICATIVA,
   podeConfirmarEntrada, type DadosAutorizacao,
-} from '../../domain/rules';
-import { fmtData, fmtHora, fromInput, toInputDate, toInputTime } from '../../domain/time';
-import { rotuloUnidade, unidadeId } from '../../domain/units';
+} from '@portaria/domain/rules';
+import { fmtData, fmtHora, fromInput, toInputDate, toInputTime } from '@portaria/domain/time';
+import { rotuloUnidade, unidadeId } from '@portaria/domain/units';
 import { mensagemErro, useAgora } from '../../app/useAsync';
+import { garantirNegado } from './negado';
 
 const SUGESTOES_EXCECAO = ['Morador não atende o interfone', 'Emergência médica', 'Serviço público (luz, água, gás)'];
 
-const NP_VAZIA = { nome: '', documentoTipo: 'cpf' as TipoDocumento, documento: '', telefone: '', categoria: 'visitante' as CategoriaPessoa, empresa: '', servico: '', foto: '' };
+const NP_VAZIA = { nome: '', documento: '', telefone: '', semCpf: false, categoria: 'visitante' as CategoriaPessoa, empresa: '', servico: '', foto: '' };
+
+const LIMITE_SUGESTOES = 8;
+/** Quem tem vínculo válido aparece na busca com o rótulo "Morador da T4-32" (pode visitar outra unidade). */
+const rotuloPessoa = (p: PessoaBusca) => (p.unidadesVinculadas.length > 0
+  ? `Morador da ${p.unidadesVinculadas[0]}${p.unidadesVinculadas.length > 1 ? ` +${p.unidadesVinculadas.length - 1}` : ''}`
+  : ROTULO_CATEGORIA[p.categoria]);
 
 export function EntradaPage() {
   const api = useApi();
@@ -44,6 +51,7 @@ export function EntradaPage() {
   const [sugestoes, setSugestoes] = useState<PessoaBusca[]>([]);
   const [idx, setIdx] = useState(0);
   const [buscando, setBuscando] = useState(false);
+  const [mais, setMais] = useState(false); // havia mais resultados que o limite da lista
   const [pessoa, setPessoa] = useState<PessoaBusca | null>(null);
   const [funcionario, setFuncionario] = useState<Funcionario | null>(null);
   const [novoModo, setNovoModo] = useState(false);
@@ -56,6 +64,8 @@ export function EntradaPage() {
   const [previas, setPrevias] = useState<AutorizacaoView[]>([]);
   const [autorizadores, setAutorizadores] = useState<Autorizador[]>([]);
   const [restricao, setRestricao] = useState<RestricaoView[] | null>(null);
+  // Negado que o servidor JÁ gravou (422 PESSOA_EM_RESTRICAO na confirmação): o modal não pode gravar outro
+  const [negadoGravado, setNegadoGravado] = useState<{ eventoId: string; codigo: string } | null>(null);
   // --- Passo 3: autorização
   const [meio, setMeio] = useState<MeioAutorizacao | null>(null);
   const [residenteId, setResidenteId] = useState<string | null>(null);
@@ -67,6 +77,7 @@ export function EntradaPage() {
   // --- Envio
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState('');
+  const [recusando, setRecusando] = useState(false);
 
   const buscaRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<TowerUnitPickerHandle>(null);
@@ -78,14 +89,14 @@ export function EntradaPage() {
 
   // Busca incremental
   useEffect(() => {
-    if (pessoa || novoModo || query.trim().length < 1) { setSugestoes([]); return; }
+    if (pessoa || novoModo || query.trim().length < 1) { setSugestoes([]); setMais(false); return; }
     let vivo = true;
     setBuscando(true);
     const t = setTimeout(() => {
-      api.pessoas.buscar(query, { semMoradores: true })
+      api.pessoas.buscar(query, { limite: LIMITE_SUGESTOES + 1 })
         .then((r) => {
           if (!vivo) return;
-          setSugestoes(r); setIdx(0);
+          setMais(r.length > LIMITE_SUGESTOES); setSugestoes(r.slice(0, LIMITE_SUGESTOES)); setIdx(0);
           // Enter digitado antes de a lista chegar: escolhe o primeiro resultado
           if (enterPendente.current && r[0]) { enterPendente.current = false; void escolherPessoaRef.current(r[0]); }
         })
@@ -108,10 +119,11 @@ export function EntradaPage() {
   function limpar(manterFoco = true) {
     setPessoa(null); setFuncionario(null); setQuery(''); setSugestoes([]); setNovoModo(false); setNp(NP_VAZIA); setErroNp('');
     setTorre(null); setNumero(null); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setJustificativa('');
-    setErro(''); setFormulario(''); setHoraReal('');
+    setErro(''); setFormulario(''); setHoraReal(''); setRestricao(null); setNegadoGravado(null);
     if (manterFoco) setTimeout(() => buscaRef.current?.focus(), 0);
   }
   const limparUnidade = () => {
+    setRestricao(null); setNegadoGravado(null);
     setTorre(null); setNumero(null); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setJustificativa('');
     setTimeout(() => pickerRef.current?.focusTorre(), 0);
   };
@@ -120,19 +132,28 @@ export function EntradaPage() {
   const unidadeAtual = torre && numero ? unidadeId(torre, numero) : null;
 
   useEffect(() => {
-    if (!pessoa || !unidadeAtual) return;
+    if (!pessoa) return;
+    // Funcionário sem unidade (entrada por escala): só vale restrição do condomínio, verificada logo ao escolher a pessoa
+    if (!unidadeAtual) {
+      if (pessoa.categoria !== 'funcionario') return;
+      let vivo = true;
+      api.restricoes.verificar(pessoa.id, null)
+        .then((rest) => { if (vivo && rest.restrita) { setNegadoGravado(null); setRestricao(rest.alertas); } })
+        .catch((e) => vivo && setErro(mensagemErro(e)));
+      return () => { vivo = false; };
+    }
     let vivo = true;
     setCarregandoUnidade(true); setMeio(null); setResidenteId(null); setErro('');
     (async () => {
       try {
         const rest = await api.restricoes.verificar(pessoa.id, unidadeAtual);
         if (!vivo) return;
-        if (rest.restrita) { setRestricao(rest.alertas); setCarregandoUnidade(false); return; }
+        if (rest.restrita) { setNegadoGravado(null); setRestricao(rest.alertas); setCarregandoUnidade(false); return; }
         const [aps, auts] = await Promise.all([api.autorizacoes.vigentes(pessoa.id, unidadeAtual), api.vinculos.autorizadores(unidadeAtual)]);
         if (!vivo) return;
         setPrevias(aps); setAutorizadores(auts);
         const valida = aps.find((a) => estadoAutorizacaoPrevia(a, agoraRef.current) === 'valida');
-        if (valida) setMeio('autorizacao_previa');
+        if (valida && !pessoa.semCpf) setMeio('autorizacao_previa');
         focarMeio.current = true;
       } catch (e) { if (vivo) setErro(mensagemErro(e)); }
       finally { if (vivo) setCarregandoUnidade(false); }
@@ -157,11 +178,13 @@ export function EntradaPage() {
 
   const previaValida = useMemo(() => previas.find((a) => quando !== null && estadoAutorizacaoPrevia(a, quando) === 'valida'), [previas, quando]);
   const previaFora = useMemo(() => (previaValida ? undefined : previas.find((a) => quando !== null && estadoAutorizacaoPrevia(a, quando) === 'fora_da_janela')), [previas, previaValida, quando]);
-  const categoria = pessoa?.categoria;
+  // "Morador" em outra unidade (ou sem vínculo válido) é tratado como visitante também no servidor
+  const categoria = pessoa ? (pessoa.categoria === 'morador' ? 'visitante' : pessoa.categoria) : undefined;
   const meiosPermitidos = categoria ? meiosAceitos(categoria) : [];
+  const semCpf = !!pessoa?.semCpf;
 
   const dados: DadosAutorizacao | null = pessoa ? {
-    categoriaPessoa: pessoa.categoria, unidadeDestinoId: unidadeAtual, autorizadoPorTipo: meio,
+    categoriaPessoa: categoria!, semCpf, unidadeDestinoId: unidadeAtual, autorizadoPorTipo: meio,
     autorizadoPorPessoaId: meio === 'interfone' || meio === 'morador_presente' ? residenteId : null,
     autorizacaoPreviaId: meio === 'autorizacao_previa' ? previaValida?.id ?? null : null, justificativa,
   } : null;
@@ -169,7 +192,9 @@ export function EntradaPage() {
   const regraOk = !!dados && quando !== null && podeConfirmarEntrada(dados, {
     quando, moradoresValidosIds: new Set(autorizadores.map((a) => a.pessoa.id)), autorizacoes: previas, funcionario: funcionario ?? undefined,
   });
-  const pronto = !!pessoa && regraOk && retroValido && (!retroativo || formulario.trim().length > 0) && !carregandoUnidade && !restricao && !enviando;
+  // Morador não registra entrada na própria unidade no MVP; em outra unidade segue como visitante
+  const propriaUnidade = !!pessoa && !!unidadeAtual && pessoa.unidadesVinculadas.includes(unidadeAtual);
+  const pronto = !!pessoa && !propriaUnidade && regraOk && retroValido && (!retroativo || formulario.trim().length > 0) && !carregandoUnidade && !restricao && !enviando;
 
   const confirmar = useCallback(async () => {
     if (!pessoa || !dados || !pronto) return;
@@ -179,7 +204,7 @@ export function EntradaPage() {
         pessoaId: pessoa.id, unidadeDestinoId: unidadeAtual, autorizadoPorTipo: dados.autorizadoPorTipo,
         autorizadoPorPessoaId: dados.autorizadoPorPessoaId, autorizacaoPreviaId: dados.autorizacaoPreviaId,
         justificativa: meio === 'excecao_porteiro' ? justificativa : null, retroativo,
-        ocorridoEm: retroativo ? quando : null, observacao: retroativo ? `Formulário de contingência nº ${formulario.trim()}` : null,
+        ocorridoEm: retroativo ? quando : null, formularioContingencia: retroativo ? formulario.trim() : null,
       });
       const via = { interfone: 'via interfone', morador_presente: 'com o morador presente na portaria', autorizacao_previa: 'via autorização prévia', excecao_porteiro: 'por exceção do porteiro (justificativa registrada)', escala: 'por escala' }[meio!];
       const quem = ev.autorizadoPorTipo === 'excecao_porteiro' || ev.autorizadoPorTipo === 'escala' ? '' : `autorizada por ${ev.autorizadoPorNome ?? '—'} `;
@@ -191,7 +216,10 @@ export function EntradaPage() {
       nav('/painel');
     } catch (e) {
       if (ehApiError(e) && e.code === 'PESSOA_EM_RESTRICAO') {
-        setRestricao((e.detalhes as { restricoes: RestricaoView[] }).restricoes);
+        // O servidor já gravou o "negado": guarda o evento para o modal não gravar de novo
+        const det = e.detalhes as { restricoes: RestricaoView[]; eventoId: string; codigo: string };
+        setNegadoGravado({ eventoId: det.eventoId, codigo: det.codigo });
+        setRestricao(det.restricoes);
       } else setErro(mensagemErro(e));
       setEnviando(false);
     }
@@ -228,7 +256,10 @@ export function EntradaPage() {
     e.preventDefault();
     setErroNp('');
     try {
-      const input: NovaPessoaInput = { ...np, empresa: np.categoria === 'prestador' ? np.empresa : undefined, servico: np.categoria === 'prestador' ? np.servico : undefined };
+      const input: NovaPessoaInput = {
+        nome: np.nome, documento: np.semCpf ? undefined : np.documento, telefone: np.telefone, semCpf: np.semCpf, categoria: np.categoria,
+        empresa: np.categoria === 'prestador' ? np.empresa : undefined, servico: np.categoria === 'prestador' ? np.servico : undefined,
+      };
       const criada = await api.pessoas.criar(input);
       setNovoModo(false); setNp(NP_VAZIA);
       await escolherPessoa({ ...criada, ultimoAcesso: 'Sem acessos', unidadesVinculadas: [] });
@@ -237,26 +268,52 @@ export function EntradaPage() {
   }
 
   // Modal de restrição: ambos os caminhos gravam o evento "negado" (a gravação ocorre no servidor)
+  // Se a restrição veio no 422 da confirmação, o servidor já gravou o negado: NÃO chamar eventos.criar de novo.
   async function resolverRestricao(registrarOcorrencia: boolean) {
-    if (!pessoa || !unidadeAtual) return;
-    let eventoId = '', codigo = '';
+    if (!pessoa) return;
+    let eventoId: string, codigo: string;
     try {
-      await api.eventos.criar({ pessoaId: pessoa.id, unidadeDestinoId: unidadeAtual, autorizadoPorTipo: null, retroativo, ocorridoEm: retroativo ? quando : null });
-    } catch (e) {
-      if (ehApiError(e) && e.code === 'PESSOA_EM_RESTRICAO') {
-        const d = e.detalhes as { eventoId: string; codigo: string };
-        eventoId = d.eventoId; codigo = d.codigo;
-      } else { setErro(mensagemErro(e)); setRestricao(null); return; }
-    }
+      ({ eventoId, codigo } = await garantirNegado(negadoGravado, async () => {
+        try {
+          await api.eventos.criar({ pessoaId: pessoa.id, unidadeDestinoId: unidadeAtual, autorizadoPorTipo: null, retroativo, ocorridoEm: retroativo ? quando : null, formularioContingencia: retroativo ? formulario.trim() || null : null });
+          return { eventoId: '', codigo: '' };
+        } catch (e) {
+          if (ehApiError(e) && e.code === 'PESSOA_EM_RESTRICAO') {
+            const d = e.detalhes as { eventoId: string; codigo: string };
+            return { eventoId: d.eventoId, codigo: d.codigo };
+          }
+          throw e;
+        }
+      }));
+    } catch (e) { setErro(mensagemErro(e)); setRestricao(null); return; }
     const nome = pessoa.nome;
-    setRestricao(null);
-    avisar({ tom: 'vermelho', titulo: 'Entrada negada', texto: `${nome} não entrou na ${unidadeAtual}. Tentativa gravada na trilha (${codigo}).` });
+    const onde = unidadeAtual ? `na ${unidadeAtual}` : 'no condomínio';
+    setRestricao(null); setNegadoGravado(null);
+    avisar({ tom: 'vermelho', titulo: 'Entrada negada', texto: `${nome} não entrou ${onde}. Tentativa gravada na trilha (${codigo}).` });
     if (registrarOcorrencia) {
-      nav(`/ocorrencias?novo=1&tipo=tentativa_acesso_indevido&unidade=${unidadeAtual}&envolvidos=${encodeURIComponent(nome)}&evento=${eventoId}`);
-    } else {
+      nav(`/ocorrencias?novo=1&tipo=tentativa_acesso_indevido${unidadeAtual ? `&unidade=${unidadeAtual}` : ''}&envolvidos=${encodeURIComponent(nome)}&evento=${eventoId}`);
+    } else if (unidadeAtual) {
       setTorre(null); setNumero(null); setMeio(null);
       setTimeout(() => pickerRef.current?.focusTorre(), 0);
+    } else {
+      limpar(); // funcionário sem unidade: nada a refazer na unidade, recomeça pela pessoa
     }
+  }
+
+  // UC02 A4: o morador recusou a visita. Grava o evento "recusado" e limpa a tela.
+  const podeRecusar = !!pessoa && !!unidadeAtual && (meio === 'interfone' || meio === 'morador_presente') && !!residenteId
+    && retroValido && (!retroativo || formulario.trim().length > 0) && !carregandoUnidade && !restricao && !enviando && !recusando;
+  async function registrarRecusa() {
+    if (!podeRecusar || !pessoa || !unidadeAtual || (meio !== 'interfone' && meio !== 'morador_presente')) return;
+    setRecusando(true); setErro('');
+    try {
+      const ev = await api.eventos.registrarRecusa({
+        pessoaId: pessoa.id, unidadeDestinoId: unidadeAtual, meio, moradorPessoaId: residenteId!, retroativo,
+        ocorridoEm: retroativo ? quando : null, formularioContingencia: retroativo ? formulario.trim() : null,
+      });
+      avisar({ tom: 'ambar', titulo: 'Recusa registrada', texto: `${ev.autorizadoPorNome} recusou a visita de ${pessoa.nome} à ${unidadeAtual} (${ev.codigo}). Nenhuma entrada foi registrada.` });
+      limpar();
+    } catch (e) { setErro(mensagemErro(e)); } finally { setRecusando(false); }
   }
 
   const pr = restricao?.[0];
@@ -266,12 +323,13 @@ export function EntradaPage() {
   const autorizadoPor = !meio ? '—'
     : meio === 'excecao_porteiro' ? `${usuario!.nome} (exceção do porteiro)`
     : meio === 'escala' ? 'Escala do condomínio'
-    : meio === 'autorizacao_previa' ? previaValida?.solicitadaPorNome ?? '—'
+    : meio === 'autorizacao_previa' ? (previaValida ? (previaValida.semSolicitante ? `Sem solicitante — cadastrada por ${previaValida.cadastradaPorNome}` : previaValida.solicitadaPorNome) ?? '—' : '—')
     : residente ?? '—';
   const faltas: string[] = [];
   if (!pessoa) faltas.push('pessoa');
   else {
-    if (!unidadeAtual && pessoa.categoria !== 'funcionario') faltas.push('unidade');
+    if (propriaUnidade) faltas.push('outra unidade de destino (morador não registra entrada na própria)');
+    else if (!unidadeAtual && pessoa.categoria !== 'funcionario') faltas.push('unidade');
     else if (carregandoUnidade) faltas.push('verificação da unidade');
     if (!meio && !carregandoUnidade && (unidadeAtual || pessoa.categoria === 'funcionario')) faltas.push('quem autorizou');
     else if ((meio === 'interfone' || meio === 'morador_presente') && !residenteId) faltas.push('morador que autorizou');
@@ -311,7 +369,7 @@ export function EntradaPage() {
                 <Field label="Hora real do acesso" erro={horaReal && !retroValido ? 'Deve ser anterior ao momento atual.' : undefined}>
                   <input type="time" className="input" value={horaReal} max={dataReal === toInputDate(agora) ? toInputTime(agora) : undefined} onChange={(e) => setHoraReal(e.target.value)} />
                 </Field>
-                <Field label="Nº do formulário de papel" dica="Fica registrado na observação do evento."><input className="input" value={formulario} onChange={(e) => setFormulario(e.target.value)} /></Field>
+                <Field label="Nº do formulário de papel" dica="Obrigatório. Fica registrado no próprio evento (entra no hash)."><input className="input" value={formulario} onChange={(e) => setFormulario(e.target.value)} /></Field>
               </div>
               <p className="mt-3 flex items-center gap-1.5 text-[14px] text-[#0B4450]"><Clock className="h-4 w-4" aria-hidden />A hora do lançamento ({fmtHora(agora)}) é definida pelo sistema e gravada junto, com a etiqueta Retroativo.</p>
             </section>
@@ -326,7 +384,7 @@ export function EntradaPage() {
                   <input id="busca-pessoa" ref={buscaRef} autoComplete="off" role="combobox" aria-expanded={sugestoes.length > 0}
                     aria-controls="lista-sugestoes" aria-activedescendant={sugestoes[idx] ? `sug-${sugestoes[idx].id}` : undefined}
                     className="h-12 w-full rounded-lg border border-[#9AA7B0] bg-white pl-11 pr-[14px] text-[16px] text-ink placeholder:text-[#56616B]/70"
-                    value={query} onChange={(e) => { enterPendente.current = false; setQuery(e.target.value); }} placeholder="Nome ou documento da pessoa"
+                    value={query} onChange={(e) => { enterPendente.current = false; setQuery(e.target.value); }} placeholder="Nome, CPF ou placa da pessoa"
                     onKeyDown={(e) => {
                       if (e.key === 'ArrowDown') { e.preventDefault(); setIdx((i) => Math.min(i + 1, sugestoes.length - 1)); }
                       else if (e.key === 'ArrowUp') { e.preventDefault(); setIdx((i) => Math.max(i - 1, 0)); }
@@ -343,12 +401,13 @@ export function EntradaPage() {
                           <Avatar nome={p.nome} />
                           <span className="truncate font-semibold">{p.nome}</span>
                           <span className="font-mono text-[14px] text-[#33424B]">{p.documentoMascarado}</span>
-                          <span className="text-[14px]">{ROTULO_CATEGORIA[p.categoria]}</span>
+                          <span className="truncate text-[14px]">{rotuloPessoa(p)}</span>
                           <span className="truncate text-[13px] text-[#56616B]">Último: {p.ultimoAcesso}</span>
                         </button>
                       </li>
                     ))}
                   </ul>
+                  {mais && <p className="px-0.5 py-1 text-[13px] text-[#56616B]">Mais resultados — refine a busca</p>}
                   {query.trim() && !buscando && sugestoes.length === 0 && <p className="px-0.5 py-1 text-[#56616B]">Nenhuma pessoa encontrada com “{query}”.</p>}
                   <button type="button" onClick={() => { setNovoModo(true); setNp({ ...NP_VAZIA, nome: query }); }}
                     className="flex min-h-[48px] items-center gap-[10px] rounded-lg border border-dashed border-[#9AA7B0] bg-white px-3 text-left font-semibold text-[#0B5563] hover:bg-[#EEF5F6]">
@@ -362,13 +421,12 @@ export function EntradaPage() {
             {novoModo && !pessoa && (
               <form onSubmit={cadastrarNova} className="grid grid-cols-2 gap-[14px]">
                 <Field label="Nome completo" className="col-span-2"><input className="input" autoFocus required value={np.nome} onChange={(e) => setNp({ ...np, nome: e.target.value })} /></Field>
-                <Field label="Tipo de documento">
-                  <select className="input" value={np.documentoTipo} onChange={(e) => setNp({ ...np, documentoTipo: e.target.value as TipoDocumento })}>
-                    <option value="cpf">CPF</option><option value="rg">RG</option><option value="cnh">CNH</option><option value="passaporte">Passaporte</option><option value="outro">Outro</option>
-                  </select>
-                </Field>
-                <Field label="Número"><input className="input font-mono" required value={np.documento} onChange={(e) => setNp({ ...np, documento: e.target.value })} /></Field>
-                <Field label="Telefone"><input className="input" inputMode="tel" placeholder="(11) 9____-____" value={np.telefone} onChange={(e) => setNp({ ...np, telefone: e.target.value })} /></Field>
+                <Field label="CPF" dica="Só CPF. Guardado mascarado, com hash para busca."><input className="input font-mono" inputMode="numeric" placeholder="000.000.000-00" disabled={np.semCpf} required={!np.semCpf} value={np.documento} onChange={(e) => setNp({ ...np, documento: e.target.value })} /></Field>
+                <Field label="Telefone (obrigatório)"><input className="input" inputMode="tel" required placeholder="(11) 9____-____" value={np.telefone} onChange={(e) => setNp({ ...np, telefone: e.target.value })} /></Field>
+                <label className="col-span-2 flex cursor-pointer items-start gap-3 rounded-lg border border-[#B9C3CA] p-3">
+                  <input type="checkbox" className="mt-1" checked={np.semCpf} onChange={(e) => setNp({ ...np, semCpf: e.target.checked, documento: '' })} />
+                  <span><span className="font-medium">Pessoa sem CPF</span><span className="block text-[13px] text-[#56616B]">Exceção: nome e telefone continuam obrigatórios e a pessoa só entra por exceção do porteiro, com justificativa.</span></span>
+                </label>
                 <Field label="Tipo">
                   <select className="input" value={np.categoria} onChange={(e) => setNp({ ...np, categoria: e.target.value as CategoriaPessoa })}>
                     <option value="visitante">Visitante</option><option value="prestador">Prestador</option>
@@ -398,7 +456,7 @@ export function EntradaPage() {
                 <Avatar nome={pessoa.nome} tamanho={44} />
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="text-[16px] font-semibold">{pessoa.nome}</span>
-                  <span className="text-[14px] text-[#33424B]"><span className="font-mono">{pessoa.documentoMascarado}</span> · {ROTULO_CATEGORIA[pessoa.categoria]}
+                  <span className="text-[14px] text-[#33424B]"><span className="font-mono">{pessoa.documentoMascarado}</span> · {rotuloPessoa(pessoa)}
                     {pessoa.empresa && <> · {pessoa.empresa}{pessoa.servico ? ` (${pessoa.servico})` : ''}</>} · último acesso: {pessoa.ultimoAcesso}</span>
                 </div>
                 <Button pequeno onClick={() => limpar()}>Trocar</Button>
@@ -414,6 +472,7 @@ export function EntradaPage() {
                   onChange={(t, n) => { setTorre(t); setNumero(n); if (!n) { setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); } }}
                   onAlterar={limparUnidade}
                   onComplete={() => { /* o efeito de [unidade] consulta restrições e autorizações */ }} />
+                {propriaUnidade && <Alert tom="ambar" role="alert">Morador não registra entrada na própria unidade no MVP.</Alert>}
               </div>
             )}
           </CartaoPasso>
@@ -427,7 +486,7 @@ export function EntradaPage() {
                     <div role="status" className="flex items-start gap-3 rounded-[10px] border border-[#75E0A7] bg-[#DCFAE6] p-4 text-[#05603A]">
                       <Check className="h-[22px] w-[22px] shrink-0" strokeWidth={2.4} aria-hidden />
                       <div className="flex flex-col gap-1">
-                        <span className="text-[16px] font-semibold">Autorização prévia de {previaValida.solicitadaPorNome} ({previaValida.unidadeId}), válida até {fmtData(previaValida.validaAte)}, {descreverJanela(previaValida)}.</span>
+                        <span className="text-[16px] font-semibold">Autorização prévia {previaValida.semSolicitante ? 'sem solicitante' : `de ${previaValida.solicitadaPorNome}`} ({previaValida.unidadeId}), válida até {fmtData(previaValida.validaAte)}, {descreverJanela(previaValida)}.</span>
                         <span className="text-[14px]">Autorizador preenchido automaticamente. Sem restrições para esta unidade.</span>
                       </div>
                     </div>
@@ -438,10 +497,13 @@ export function EntradaPage() {
                     </Alert>
                   )}
 
+                  {semCpf && <Alert tom="ambar" titulo="Pessoa cadastrada sem CPF">Só pode entrar por exceção do porteiro, com justificativa. Interfone, morador presente e autorização prévia ficam desabilitados.</Alert>}
+
                   <fieldset ref={grupoMeioRef} className="grid gap-[10px]" style={{ gridTemplateColumns: `repeat(${Math.max(meiosVisiveis.length, 1)}, minmax(0, 1fr))` }}>
                     <legend className="sr-only">Meio de autorização</legend>
                     {meiosVisiveis.map((m) => {
-                      const desabilitado = m === 'autorizacao_previa' && !previaValida;
+                      const bloqueioSemCpf = semCpf && m !== 'excecao_porteiro';
+                      const desabilitado = (m === 'autorizacao_previa' && !previaValida) || bloqueioSemCpf;
                       const [titulo, desc] = LABEL_MEIO[m];
                       return (
                         <label key={m} className={`flex min-h-[76px] flex-col gap-1 rounded-[10px] border-2 p-3 text-left [&:has(:focus-visible)]:outline [&:has(:focus-visible)]:outline-[3px] [&:has(:focus-visible)]:outline-offset-2 [&:has(:focus-visible)]:outline-[#0B5563] ${
@@ -449,7 +511,7 @@ export function EntradaPage() {
                           <input type="radio" name="meio" className="sr-only" disabled={desabilitado} checked={meio === m}
                             onChange={() => { setMeio(m); setResidenteId(null); }} />
                           <span className="font-semibold">{titulo}</span>
-                          <span className="text-[13px] text-[#56616B]">{desabilitado ? (previaFora ? 'Fora da janela de horário' : 'Sem autorização válida') : desc}</span>
+                          <span className="text-[13px] text-[#56616B]">{desabilitado ? (bloqueioSemCpf ? 'Pessoa sem CPF' : previaFora ? 'Fora da janela de horário' : 'Sem autorização válida') : desc}</span>
                         </label>
                       );
                     })}
@@ -473,6 +535,13 @@ export function EntradaPage() {
                             ))}
                           </div>
                         )}
+                    </div>
+                  )}
+
+                  {(meio === 'interfone' || meio === 'morador_presente') && residenteId && (
+                    <div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-dashed border-[#C5CDD3] px-4 py-3">
+                      <Button disabled={!podeRecusar} carregando={recusando} onClick={() => void registrarRecusa()}>Morador recusou</Button>
+                      <span className="text-[13px] text-[#56616B]">O morador não autorizou a visita: grava o evento “Recusado” na trilha, sem registrar entrada, e limpa a tela.</span>
                     </div>
                   )}
 
@@ -540,8 +609,8 @@ export function EntradaPage() {
         </aside>
       </div>
 
-      {restricao && pr && unidadeAtual && pessoa && (
-        <Modal titulo={`Entrada não permitida para ${unidadeAtual}`} tom="vermelho" largura={600} gap={14} tituloId="titulo-restricao" onClose={() => void resolverRestricao(false)}
+      {restricao && pr && pessoa && (
+        <Modal titulo={unidadeAtual ? `Entrada não permitida para ${unidadeAtual}` : 'Entrada não permitida no condomínio'} tom="vermelho" largura={600} gap={14} tituloId="titulo-restricao" onClose={() => void resolverRestricao(false)}
           rodape={<>
             <Button variante="perigo" grande className="flex-1" onClick={() => void resolverRestricao(true)}>Registrar ocorrência</Button>
             <Button grande atalho="Esc" data-autofocus onClick={() => void resolverRestricao(false)}>Cancelar</Button>

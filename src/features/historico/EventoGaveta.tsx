@@ -1,28 +1,37 @@
 import { useState } from 'react';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
-import { useApi } from '../../api';
+import { useApi, type PessoaBusca } from '../../api';
 import { useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { Gaveta } from '../../components/Modal';
+import { PessoaPicker } from '../../components/PessoaPicker';
 import { useToast } from '../../components/Toast';
-import { ROTULO_CATEGORIA, type EventoView } from '../../domain/types';
-import { MIN_JUSTIFICATIVA, justificativaValida } from '../../domain/rules';
-import { fmtData, fmtDataHora, fmtHora } from '../../domain/time';
-import { rotuloUnidade } from '../../domain/units';
+import { ROTULO_CATEGORIA, type EventoView, type ValoresCorrecao } from '@portaria/domain/types';
+import { MIN_JUSTIFICATIVA, justificativaValida } from '@portaria/domain/rules';
+import { fmtData, fmtDataHora, fmtHora, fromInput } from '@portaria/domain/time';
+import { normalizarUnidade, rotuloUnidade } from '@portaria/domain/units';
 import { mensagemErro, useAsync } from '../../app/useAsync';
 import { textoAutorizacao, textoMeioLongo } from '../common/evento';
+import { baixarArquivo } from './download';
 
 /** Gaveta de detalhe do evento (prototipo: painel lateral de 560px com integridade e linha do tempo). */
 export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onClose: () => void; onCorrigido?: () => void }) {
   const api = useApi();
   const { avisar } = useToast();
   const podeCorrigir = useCan('evento.corrigir');
+  const podeExportar = useCan('auditoria.exportar');
   const [corrigindo, setCorrigindo] = useState(false);
   const [just, setJust] = useState('');
   const [obs, setObs] = useState('');
   const [erro, setErro] = useState('');
+  // Valores corrigidos (todos opcionais): só o que for preenchido substitui o original
+  const [vUnidade, setVUnidade] = useState('');
+  const [vData, setVData] = useState('');
+  const [vHora, setVHora] = useState('');
+  const [vPessoa, setVPessoa] = useState<PessoaBusca | null>(null);
+  const [vAutorizador, setVAutorizador] = useState('');
   // Selo por registro: íntegro se a cadeia está válida ou se o primeiro registro inválido vem depois dele
   const integ = useAsync(() => api.auditoria.verificarIntegridade().catch(() => null), [ev.id]);
   const todos = useAsync(() => api.eventos.listar(), []);
@@ -32,16 +41,38 @@ export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onC
   // Linha do tempo: entrada, saída, correções e retroativo
   const passos: { quando: number; texto: string }[] = [];
   if (ev.retroativo) passos.push({ quando: ev.ocorridoEm, texto: `Acesso real (${ev.tipo}), anotado no formulário de contingência` });
-  else passos.push({ quando: ev.ocorridoEm, texto: ev.tipo === 'entrada' ? 'Entrada registrada' : ev.tipo === 'saida' ? 'Saída registrada' : ev.tipo === 'negado' ? 'Entrada negada por restrição' : 'Correção registrada' });
+  else passos.push({ quando: ev.ocorridoEm, texto: ev.tipo === 'entrada' ? 'Entrada registrada' : ev.tipo === 'saida' ? 'Saída registrada' : ev.tipo === 'negado' ? 'Entrada negada por restrição' : ev.tipo === 'recusado' ? 'Visita recusada pelo morador' : 'Correção registrada' });
   if (ev.retroativo) passos.push({ quando: ev.registradoEm, texto: 'Lançamento retroativo gravado na trilha' });
   if (ev.saida) passos.push({ quando: ev.saida.em, texto: `Saída registrada (${ev.saida.codigo}), ligada a esta entrada` });
   for (const c of (todos.data ?? []).filter((x) => x.corrigeEventoId === ev.id)) passos.push({ quando: c.ocorridoEm, texto: `Correção por ${c.operadorNome}: ${c.justificativa} (${c.codigo})` });
   if (ev.entradaCodigo) passos.push({ quando: ev.ocorridoEm, texto: `Vinculado à entrada ${ev.entradaCodigo}` });
   passos.sort((a, b) => a.quando - b.quando);
 
+  // RF-32: arquivo verificável só com este evento (manifesto + evento + resumo)
+  async function exportarEvento() {
+    try {
+      const p = await api.auditoria.exportar({ eventoId: ev.id });
+      baixarArquivo(p.nomeArquivo, p.conteudo);
+      avisar({ titulo: 'Evento exportado', texto: `${ev.codigo} com hashes em ${p.nomeArquivo}.` });
+    } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
+  }
+
   async function corrigir() {
     try {
-      const novo = await api.eventos.corrigir(ev.id, { justificativa: just, observacao: obs });
+      const valores: Partial<ValoresCorrecao> = {};
+      if (vUnidade.trim()) {
+        const un = normalizarUnidade(vUnidade);
+        if (!un) { setErro('Unidade inexistente. Use o formato T4-32.'); return; }
+        valores.unidadeDestinoId = un;
+      }
+      if (vData || vHora) {
+        const t = vData && vHora ? fromInput(vData, vHora) : null;
+        if (t === null) { setErro('Informe data e hora juntas para corrigir o horário.'); return; }
+        valores.ocorridoEm = t;
+      }
+      if (vPessoa) valores.pessoaId = vPessoa.id;
+      if (vAutorizador.trim()) valores.autorizadoPorNome = vAutorizador.trim();
+      const novo = await api.eventos.corrigir(ev.id, { justificativa: just, observacao: obs, valores: Object.keys(valores).length ? valores : undefined });
       avisar({ texto: `Correção ${novo.codigo} registrada. O registro original permanece inalterado.` });
       onCorrigido?.(); onClose();
     } catch (e) { setErro(mensagemErro(e)); }
@@ -86,6 +117,28 @@ export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onC
           <span className="font-medium">{ev.saida ? `${fmtHora(ev.saida.em)} (${ev.saida.codigo})` : ev.tipo === 'entrada' && ev.dentro ? 'Ainda no condomínio' : '—'}</span></div>
       </div>
 
+      {ev.valoresOriginais && ev.correcao && (
+        <div className="flex flex-col gap-2 rounded-lg border border-[#A9D2D8] bg-[#E3F0F2] px-[14px] py-3 text-[14px] text-[#0B4450]">
+          <div className="font-semibold">Corrigido por {ev.correcao.operadorNome} ({ev.correcao.codigo}). Os valores acima já são os corrigidos; o registro original permanece inalterado.</div>
+          <table className="w-full text-left">
+            <thead><tr className="text-[13px] text-[#56616B]"><th className="font-semibold">Campo</th><th className="font-semibold">Original</th><th className="font-semibold">Corrigido</th></tr></thead>
+            <tbody>
+              {linhasCorrecao(ev).map(([campo, antes, depois]) => <tr key={campo}><td className="pr-2 align-top">{campo}</td><td className="pr-2 align-top line-through">{antes}</td><td className="align-top font-semibold">{depois}</td></tr>)}
+            </tbody>
+          </table>
+          {ev.correcao.justificativa && <div>Justificativa: {ev.correcao.justificativa}</div>}
+        </div>
+      )}
+      {ev.tipo === 'correcao' && ev.valoresCorrigidos && (
+        <div className="rounded-lg border border-[#A9D2D8] bg-[#E3F0F2] px-[14px] py-3 text-[14px] text-[#0B4450]">
+          <div className="font-semibold">Valores corrigidos por este registro</div>
+          <ul className="list-disc pl-5">
+            {Object.entries(ev.valoresCorrigidos).map(([k, v]) => <li key={k}>{ROTULO_CAMPO[k as keyof ValoresCorrecao]}: {k === 'pessoaId' ? ev.pessoaNomeCorrigida ?? String(v) : formatarValor(k as keyof ValoresCorrecao, v)}</li>)}
+          </ul>
+        </div>
+      )}
+      {ev.formularioContingencia && <div className="text-[14px]"><span className={rot}>Formulário de contingência</span><div className="font-mono">nº {ev.formularioContingencia}</div></div>}
+
       {ev.justificativa && (
         <div className="rounded-lg border border-[#FEC84B] bg-[#FEF0C7] px-[14px] py-3 text-[#7A2E0E]"><div className="text-[13px] font-semibold">Justificativa</div><div>{ev.justificativa}</div></div>
       )}
@@ -110,15 +163,46 @@ export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onC
             <p className="font-semibold">Registrar correção (novo evento, o original não é alterado)</p>
             <Field label={`Justificativa (mínimo ${MIN_JUSTIFICATIVA} caracteres)`}><textarea className="input" rows={2} value={just} onChange={(e) => setJust(e.target.value)} /></Field>
             <Field label="O que deve ser corrigido (opcional)"><input className="input" value={obs} onChange={(e) => setObs(e.target.value)} /></Field>
+            <fieldset className="flex flex-col gap-3 rounded-lg border border-dashed border-[#C5CDD3] p-3">
+              <legend className="px-1 text-[13px] font-medium text-[#56616B]">Valores corretos (preencha só o que mudou)</legend>
+              <Field label="Unidade de destino"><input className="input font-mono" placeholder="T4-32" value={vUnidade} onChange={(e) => setVUnidade(e.target.value)} /></Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Data real"><input type="date" className="input" value={vData} onChange={(e) => setVData(e.target.value)} /></Field>
+                <Field label="Hora real"><input type="time" className="input" value={vHora} onChange={(e) => setVHora(e.target.value)} /></Field>
+              </div>
+              <PessoaPicker rotulo="Pessoa correta" valor={vPessoa} onChange={setVPessoa} />
+              {ev.autorizadoPorTipo && <Field label="Nome de quem autorizou"><input className="input" value={vAutorizador} onChange={(e) => setVAutorizador(e.target.value)} /></Field>}
+            </fieldset>
             {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
             <div className="flex gap-[10px]"><Button variante="primario" disabled={!justificativaValida(just)} onClick={() => void corrigir()}>Gravar correção</Button><Button onClick={() => setCorrigindo(false)}>Cancelar</Button></div>
           </div>
         ) : <Button pequeno className="self-start" onClick={() => setCorrigindo(true)}>Registrar correção…</Button>
       )}
 
+      {podeExportar && <Button pequeno className="self-start" onClick={() => void exportarEvento()}>Exportar este evento</Button>}
+
       <div className="border-t border-[#E6EAED] pt-2 text-[13px] text-[#56616B]">
         Registros de acesso não podem ser editados ou excluídos. Correções são feitas por novo registro com justificativa. Sequência {ev.seq} · hash anterior <span className="break-all font-mono text-[12px]">{ev.hashAnterior}</span>
       </div>
     </Gaveta>
   );
+}
+
+const ROTULO_CAMPO: Record<keyof ValoresCorrecao, string> = {
+  unidadeDestinoId: 'Unidade', ocorridoEm: 'Data e hora', pessoaId: 'Pessoa', autorizadoPorNome: 'Autorizado por',
+};
+function formatarValor(campo: keyof ValoresCorrecao, v: unknown): string {
+  if (v === null || v === undefined || v === '') return '—';
+  if (campo === 'ocorridoEm') return fmtDataHora(Number(v));
+  if (campo === 'unidadeDestinoId') return rotuloUnidade(String(v));
+  return String(v);
+}
+/** [campo, original, corrigido] para os campos que a última correção substituiu. */
+function linhasCorrecao(ev: EventoView): [string, string, string][] {
+  const orig = ev.valoresOriginais ?? {};
+  return (Object.keys(orig) as (keyof ValoresCorrecao)[]).map((k) => [
+    ROTULO_CAMPO[k],
+    k === 'pessoaId' ? ev.pessoaNomeOriginal ?? String(orig[k]) : formatarValor(k, orig[k]),
+    k === 'pessoaId' ? ev.pessoaNome : formatarValor(k, ev[k]),
+  ]);
 }

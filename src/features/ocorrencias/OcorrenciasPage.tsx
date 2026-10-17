@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Check } from 'lucide-react';
 import { useApi } from '../../api';
-import { useCan } from '../../auth/AuthContext';
+import { useAuth, useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
 import { SeloOcorrencia } from '../../components/Badge';
 import { Button } from '../../components/Button';
@@ -11,9 +11,9 @@ import { Modal } from '../../components/Modal';
 import { PageHeader } from '../../components/PageHeader';
 import { Cel, Lista, ListaCab, ListaLinha, Vazio } from '../../components/Table';
 import { useToast } from '../../components/Toast';
-import { ROTULO_TIPO_OCORRENCIA, type Ocorrencia, type StatusOcorrencia, type TipoOcorrencia } from '../../domain/types';
-import { agora as agoraSim, fmtDataHora } from '../../domain/time';
-import { normalizarUnidade } from '../../domain/units';
+import { ROTULO_STATUS_OCORRENCIA, ROTULO_TIPO_OCORRENCIA, type Ocorrencia, type StatusOcorrencia, type TipoOcorrencia } from '@portaria/domain/types';
+import { agora as agoraSim, fmtDataHora } from '@portaria/domain/time';
+import { normalizarUnidade } from '@portaria/domain/units';
 import { mensagemErro, useAsync } from '../../app/useAsync';
 import { chipDoEvento, quandoCurto, textoAutorizacao } from '../common/evento';
 
@@ -24,6 +24,7 @@ export function OcorrenciasPage() {
   const [params, setParams] = useSearchParams();
   const { avisar } = useToast();
   const podeOperar = useCan('ocorrencia.operar');
+  const { usuario } = useAuth();
   const lista = useAsync(() => api.ocorrencias.listar(), []);
   const [nova, setNova] = useState<Record<string, string> | null>(null);
   const [aberta, setAberta] = useState<Ocorrencia | null>(null);
@@ -37,7 +38,7 @@ export function OcorrenciasPage() {
   }, [params, podeOperar, setParams]);
 
   async function mudarStatus(o: Ocorrencia, status: StatusOcorrencia) {
-    try { const r = await api.ocorrencias.alterarStatus(o.id, status); setAberta(r); void lista.recarregar(); avisar({ texto: `${o.codigo} agora está “${status === 'encerrada' ? 'Encerrada' : 'Em análise'}”.` }); }
+    try { const r = await api.ocorrencias.alterarStatus(o.id, status); setAberta(r); void lista.recarregar(); avisar({ texto: `${o.codigo} agora está “${status === 'encerrada' ? 'Encerrada' : 'Em andamento'}”.` }); }
     catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
   }
 
@@ -63,7 +64,7 @@ export function OcorrenciasPage() {
         {!lista.loading && dados.length === 0 && <Vazio>Nenhuma ocorrência registrada.</Vazio>}
       </Lista>
       {nova && <NovaOcorrenciaModal inicial={nova} onClose={() => setNova(null)} onFeito={(o) => { setNova(null); avisar({ texto: `Ocorrência ${o.codigo} registrada.` }); void lista.recarregar(); }} />}
-      {aberta && <DetalheModal o={aberta} podeOperar={podeOperar} onClose={() => setAberta(null)} onStatus={mudarStatus} />}
+      {aberta && <DetalheModal o={aberta} podeOperar={podeOperar && (usuario?.papel !== 'porteiro' || aberta.abertaPorId === usuario.id)} onClose={() => setAberta(null)} onStatus={mudarStatus} />}
     </div>
   );
 }
@@ -75,8 +76,9 @@ function DetalheModal({ o, podeOperar, onClose, onStatus }: { o: Ocorrencia; pod
   return (
     <Modal titulo={`${ROTULO_TIPO_OCORRENCIA[o.tipo]} · ${o.unidadeId ?? 'Área comum'}`} largura={640} gap={14} onClose={onClose}
       rodape={<>
-        {podeOperar && o.status === 'aberta' && <Button onClick={() => onStatus(o, 'em_andamento')}>Marcar em análise</Button>}
-        {podeOperar && o.status !== 'encerrada' && <Button onClick={() => onStatus(o, 'encerrada')}>Encerrar ocorrência</Button>}
+        {/* Fluxo único: aberta, em andamento, encerrada. Encerrada é final; porteiro só mexe nas que abriu. */}
+        {podeOperar && o.status === 'aberta' && <Button onClick={() => onStatus(o, 'em_andamento')}>Marcar em andamento</Button>}
+        {podeOperar && o.status === 'em_andamento' && <Button onClick={() => onStatus(o, 'encerrada')}>Encerrar ocorrência</Button>}
         <Button className="ml-auto" data-autofocus onClick={onClose}>Fechar</Button>
       </>}>
       <div className="-mt-[10px] font-mono text-[13px] text-[#56616B] order-first">{o.codigo} · {fmtDataHora(o.abertaEm)}</div>
@@ -86,6 +88,13 @@ function DetalheModal({ o, podeOperar, onClose, onStatus }: { o: Ocorrencia; pod
         <div className="flex flex-col"><span className={rot}>Registrado por</span><span>{o.abertaPorNome}</span></div>
         <div className="flex flex-col items-start"><span className={rot}>Status</span><SeloOcorrencia status={o.status} /></div>
       </div>
+      {o.historicoStatus.length > 0 && (
+        <div className="flex flex-col gap-1"><span className={rot}>Mudanças de status</span>
+          {o.historicoStatus.map((h, i) => (
+            <span key={i} className="text-[14px]">{fmtDataHora(h.em)} · {ROTULO_STATUS_OCORRENCIA[h.de]} para {ROTULO_STATUS_OCORRENCIA[h.para]} · {h.porNome}</span>
+          ))}
+        </div>
+      )}
       <div className="flex flex-col"><span className={rot}>Anexos</span><span>{o.anexos.length > 0 ? o.anexos.join(', ') : 'Nenhum anexo'}</span></div>
       {o.eventoIds.length > 0 && (
         <div className="flex flex-col gap-1.5"><span className={rot}>Eventos de acesso vinculados</span>
