@@ -1,12 +1,12 @@
 # Sistema de Controle de Acesso e Gestão de Portaria — Documento de Requisitos
 
-> Proposta conceitual para o Condomínio Residencial do Parque (Jardim Jaqueline, São Paulo–SP). Insumo para a seção **4. Resultados** do artigo *Controle e Gestão de Acesso em Condomínio Residencial: contribuições para a segurança patrimonial, administrativa e jurídica*. Especificação técnica de implementação: `02_especificacao_tecnica.md`. Diagramas de casos de uso: `../diagramas/` (seção 12).
+> Proposta conceitual para um condomínio residencial vertical na cidade de São Paulo–SP, aqui chamado apenas de "o condomínio". O nome do condomínio e o do entrevistado foram omitidos para preservar a identidade dos participantes. Insumo para a seção **4. Resultados** do artigo *Controle e Gestão de Acesso em Condomínio Residencial: contribuições para a segurança patrimonial, administrativa e jurídica*. Especificação técnica de implementação: `02_especificacao_tecnica.md`. Diagramas de casos de uso: `../diagramas/` (seção 12).
 
 | Item | Valor |
 | --- | --- |
 | Versão | 0.3 |
 | Data | 2026-10-17 |
-| Fonte primária | Entrevista semi-estruturada com o síndico Carlos Buosi, 16/05/2026 (10 perguntas, respostas escritas e assinadas) |
+| Fonte primária | Entrevista semiestruturada com o síndico do condomínio, 16/05/2026 (10 perguntas, respostas escritas e assinadas) |
 | Referência de mercado | Modelo de cadastro e eventos do Nice/Linear-HCS Guarita |
 | Alterações nesta versão | Ver seção 14 |
 
