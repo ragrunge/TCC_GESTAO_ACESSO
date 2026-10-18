@@ -475,7 +475,7 @@ Regra: o lançamento retroativo nunca substitui um evento existente (RN-04) e ap
 
 ## 13. Telas principais
 
-Inventário que orienta o protótipo navegável (ver `03_prompt_prototipo.md`).
+Inventário que orienta o protótipo navegável (`../prototipo/Portaria.dc.html`).
 
 | Tela | Perfil | Casos de uso | Requisitos centrais |
 | --- | --- | --- | --- |

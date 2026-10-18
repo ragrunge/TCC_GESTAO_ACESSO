@@ -2,8 +2,8 @@
 
 Aplicação React (Vite + TypeScript estrito + Tailwind) do Condomínio Residencial do Parque, produto do TCC de Sistemas de
 Informação. Roda **localmente, sem backend**: uma API simulada em memória aplica as regras de negócio como se fosse o
-servidor. Requisitos, especificação e protótipo de referência estão em `../../docs/01_requisitos.md`, `../../docs/02_especificacao_tecnica.md`,
-`../../docs/03_prompt_prototipo.md`, `../../docs/04_prompt_correcoes_prototipo.md` e `../../prototipo/Portaria.dc.html`.
+servidor. Requisitos, especificação e protótipo de referência estão em `../../docs/01_requisitos.md`, `../../docs/02_especificacao_tecnica.md`
+e `../../prototipo/Portaria.dc.html`.
 
 ## Como rodar
 
