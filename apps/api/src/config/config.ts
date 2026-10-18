@@ -1,0 +1,103 @@
+// Configuração da API, lida UMA vez do ambiente e validada no boot: valor ausente ou ambíguo derruba o processo
+// em vez de virar um default silencioso (ex.: COOKIE_SECURE=1 não significa nada e é recusado).
+import { Buffer } from 'node:buffer';
+
+export const CONFIG = Symbol('CONFIG');
+
+export type Ambiente = 'dev' | 'producao';
+
+export interface Config {
+  ambiente: Ambiente;
+  /** false: sem proxy (req.ip = socket). Número: quantos saltos de proxy confiáveis há na frente da API. */
+  trustProxy: false | number;
+  /** Origens exatas para CORS com credenciais. Vazio: CORS desligado (produção usa a mesma origem via rewrite). */
+  corsOrigens: string[];
+  cookie: { secure: boolean; nome: string };
+  sessao: { absolutaMin: number; inatividadeMin: number; /** intervalo mínimo entre gravações de ultimo_uso_em */ toqueSeg: number };
+  login: {
+    maxFalhasLogin: number;
+    maxFalhasIp: number;
+    janelaMin: number;
+    bloqueioMin: number;
+    /** atraso crescente nas falhas: base * 2^(n-1), limitado a atrasoMaxMs */
+    atrasoBaseMs: number;
+    atrasoMaxMs: number;
+  };
+  /** spec §5.1: 64 MiB, 3 iterações, paralelismo 1. `concorrencia` limita hashes simultâneos POR PROCESSO (memória). */
+  argon2: { memoriaKib: number; iteracoes: number; paralelismo: number; concorrencia: number; filaMax: number };
+  /** Chave do HMAC do CPF; a API deriva dela (HKDF) uma subchave para o login_limite, sem reusar a chave em si. */
+  hmacCpfKey: Buffer;
+}
+
+/** Valores da spec §5.1 que não vêm do ambiente (mudam com código + revisão, não com uma variável esquecida). */
+export const PADROES_LOGIN: Config['login'] = {
+  maxFalhasLogin: 5, maxFalhasIp: 5, janelaMin: 15, bloqueioMin: 15, atrasoBaseMs: 250, atrasoMaxMs: 3000,
+};
+export const PADROES_ARGON2: Config['argon2'] = { memoriaKib: 64 * 1024, iteracoes: 3, paralelismo: 1, concorrencia: 2, filaMax: 50 };
+
+export const nomeCookie = (secure: boolean) => (secure ? '__Host-portaria_sessao' : 'portaria_sessao');
+
+class ErroConfig extends Error {}
+
+function exigir(env: NodeJS.ProcessEnv, nome: string): string {
+  const v = env[nome];
+  if (v === undefined || v.trim() === '') throw new ErroConfig(`${nome} não definida`);
+  return v.trim();
+}
+
+function booleano(env: NodeJS.ProcessEnv, nome: string): boolean {
+  const v = exigir(env, nome);
+  // Só 'true'/'false': coerção por truthiness ligaria a flag com a string 'false'.
+  if (v !== 'true' && v !== 'false') throw new ErroConfig(`${nome} deve ser 'true' ou 'false'`);
+  return v === 'true';
+}
+
+function inteiro(env: NodeJS.ProcessEnv, nome: string, padrao: number, min: number, max: number): number {
+  const bruto = env[nome]?.trim();
+  if (bruto === undefined || bruto === '') return padrao;
+  if (!/^\d+$/.test(bruto)) throw new ErroConfig(`${nome} deve ser inteiro`);
+  const n = Number(bruto);
+  if (n < min || n > max) throw new ErroConfig(`${nome} deve estar entre ${min} e ${max}`);
+  return n;
+}
+
+export function carregarConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  const ambiente = exigir(env, 'PORTARIA_AMBIENTE');
+  if (ambiente !== 'dev' && ambiente !== 'producao') throw new ErroConfig("PORTARIA_AMBIENTE deve ser 'dev' ou 'producao'");
+
+  const secure = booleano(env, 'COOKIE_SECURE');
+  // Cookie sem Secure só faz sentido em http://localhost. Em produção, recusar no boot é mais barato que descobrir depois.
+  if (ambiente === 'producao' && !secure) throw new ErroConfig('COOKIE_SECURE=false não é permitido com PORTARIA_AMBIENTE=producao');
+
+  const tp = exigir(env, 'TRUST_PROXY');
+  let trustProxy: false | number;
+  if (tp === 'false') trustProxy = false;
+  else if (/^[1-3]$/.test(tp)) trustProxy = Number(tp);
+  else throw new ErroConfig("TRUST_PROXY deve ser 'false' ou o número de proxies confiáveis (1 a 3)");
+
+  const corsOrigens = (env.CORS_ORIGENS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  for (const o of corsOrigens) {
+    let origem: string;
+    try { origem = new URL(o).origin; } catch { throw new ErroConfig(`CORS_ORIGENS: origem inválida (${o})`); }
+    // Origem exata (sem barra, sem caminho, sem curinga): CORS que reflete Origin anula o SameSite.
+    if (origem !== o) throw new ErroConfig(`CORS_ORIGENS: use a origem exata, sem caminho nem barra final (${o})`);
+  }
+
+  const absolutaMin = inteiro(env, 'SESSAO_ABSOLUTA_MIN', 720, 5, 24 * 60);
+  const inatividadeMin = inteiro(env, 'SESSAO_INATIVIDADE_MIN', 30, 1, 24 * 60);
+  if (inatividadeMin > absolutaMin) throw new ErroConfig('SESSAO_INATIVIDADE_MIN não pode passar de SESSAO_ABSOLUTA_MIN');
+
+  const hmacCpfKey = Buffer.from(exigir(env, 'PORTARIA_HMAC_CPF_KEY'), 'base64');
+  if (hmacCpfKey.length < 32) throw new ErroConfig('PORTARIA_HMAC_CPF_KEY precisa de pelo menos 32 bytes (base64)');
+
+  return {
+    ambiente,
+    trustProxy,
+    corsOrigens,
+    cookie: { secure, nome: nomeCookie(secure) },
+    sessao: { absolutaMin, inatividadeMin, toqueSeg: 60 },
+    login: { ...PADROES_LOGIN },
+    argon2: { ...PADROES_ARGON2 },
+    hmacCpfKey,
+  };
+}

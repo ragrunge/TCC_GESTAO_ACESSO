@@ -1,9 +1,22 @@
 import { Module } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { AuditoriaModule } from './auditoria/auditoria.service';
+import { AuthModule } from './auth/auth.module';
+import { PapelGuard, SessaoGuard } from './auth/guards';
+import { FiltroExcecao } from './comum/filtro-excecao';
+import { ConfigModule } from './config/config.module';
 import { DatabaseModule } from './database/database.module';
 import { SaudeController } from './saude/saude.controller';
+import { UsuariosModule } from './usuarios/usuarios.module';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [ConfigModule, DatabaseModule, AuditoriaModule, AuthModule, UsuariosModule],
   controllers: [SaudeController],
+  providers: [
+    // Ordem importa: autenticação antes de autorização. Os dois respeitam @Publico() (o /saude continua aberto).
+    { provide: APP_GUARD, useClass: SessaoGuard },
+    { provide: APP_GUARD, useClass: PapelGuard },
+    { provide: APP_FILTER, useClass: FiltroExcecao },
+  ],
 })
 export class AppModule {}

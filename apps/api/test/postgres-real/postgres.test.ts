@@ -121,6 +121,32 @@ describe.skipIf(!URL_ADMIN)('PostgreSQL real', () => {
     }
   });
 
+  it('0003 (login app_rw): sessão e limite de login com GRANT mínimo, UPSERT concorrente sem perder contagem', async () => {
+    const tok = 'a'.repeat(64);
+    const { rows: [s] } = await rw.query(
+      `INSERT INTO sessao (token_hash, usuario_id, expira_em) VALUES ($1, $2, now() + interval '12 hours') RETURNING id`, [tok, ids.operador]);
+    await rw.query(`UPDATE sessao SET ultimo_uso_em = now() WHERE id = $1`, [s.id]);
+    await rw.query(`UPDATE sessao SET revogada_em = now(), motivo_revogacao = 'logout' WHERE id = $1`, [s.id]);
+    for (const q of [`UPDATE sessao SET token_hash = '${'b'.repeat(64)}'`, `UPDATE sessao SET expira_em = now() + interval '1 year'`,
+      `UPDATE sessao SET usuario_id = usuario_id`, 'DELETE FROM sessao', 'DELETE FROM login_limite', 'TRUNCATE login_limite']) {
+      await expect(rw.query(q), q).rejects.toThrow(/permission denied/);
+    }
+    // O mesmo UPSERT do LimiteLoginService, simplificado, em 10 conexões: o contador fecha em 20 (nenhum incremento perdido).
+    const chave = 'c'.repeat(64);
+    // Pool próprio, encerrado aqui: conexões ainda fechando quando o afterAll faz DROP ... WITH (FORCE) recebem FATAL
+    // 57P01 sem handler e viram "unhandled error" no vitest.
+    const p = new pg.Pool({ connectionString: urlPara(URL_ADMIN!, NOME_DB, 'app_rw', SENHA_APP), max: 10 });
+    try {
+      const upsert = () => p.query(`INSERT INTO login_limite AS l (tipo, chave, falhas, janela_inicio) VALUES ('login', $1, 1, now())
+        ON CONFLICT (tipo, chave) DO UPDATE SET falhas = l.falhas + 1, atualizado_em = now() RETURNING falhas`, [chave]);
+      await Promise.all(Array.from({ length: 20 }, upsert));
+      const { rows: [l] } = await p.query(`SELECT falhas FROM login_limite WHERE chave = $1`, [chave]);
+      expect(l.falhas).toBe(20);
+    } finally {
+      await p.end();
+    }
+  });
+
   it('app_rw não é dono de nada e não cria objetos no schema', async () => {
     const { rows } = await rw.query(`SELECT count(*)::int AS n FROM pg_tables WHERE schemaname = 'public' AND tableowner = 'app_rw'`);
     expect(rows[0].n).toBe(0);

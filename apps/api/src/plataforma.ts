@@ -1,0 +1,26 @@
+// Configuração HTTP compartilhada por main.ts e pelos testes (o que é testado é o que roda).
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import type { NextFunction, Request, Response } from 'express';
+import type { Config } from './config/config';
+import { logDeRequisicao } from './comum/log';
+
+export function configurarApp(app: NestExpressApplication, config: Config) {
+  app.setGlobalPrefix('api/v1');
+  // trust proxy: só com proxy de verdade na frente (TRUST_PROXY=n saltos). Sem proxy, X-Forwarded-For seria
+  // entrada do cliente e o limite de login por IP viraria opcional para quem forja o cabeçalho.
+  app.set('trust proxy', config.trustProxy);
+  app.disable('x-powered-by');
+  app.use(logDeRequisicao);
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    // Respostas da API carregam dado pessoal e, na redefinição, a senha temporária: nada em cache.
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    next();
+  });
+  // CORS só para as origens exatas listadas (dev com front em outra porta). Produção: mesma origem via rewrite,
+  // lista vazia, CORS desligado. Nunca refletir Origin: com credentials, isso anularia o SameSite.
+  if (config.corsOrigens.length) {
+    app.enableCors({ origin: config.corsOrigens, credentials: true, methods: ['GET', 'POST', 'PATCH'], allowedHeaders: ['Content-Type'] });
+  }
+  app.enableShutdownHooks();
+}

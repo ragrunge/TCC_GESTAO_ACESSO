@@ -88,14 +88,59 @@ export const usuarioSistema = pgTable('usuario_sistema', {
   papel: papel('papel').notNull(),
   ativo: boolean('ativo').notNull().default(true),
   ultimoAcesso: instante('ultimo_acesso'),
-  falhasLogin: smallint('falhas_login').notNull().default(0),
-  bloqueadoAte: instante('bloqueado_ate'),
+  /** Senha criada por terceiro (cadastro ou redefinição): só /auth/me, /auth/logout e /auth/trocar-senha até trocar. */
+  deveTrocarSenha: boolean('deve_trocar_senha').notNull().default(true),
+  senhaAlteradaEm: instante('senha_alterada_em'),
+  // O bloqueio por falhas de login NÃO fica aqui (0003): vive em `login_limite`, por login e por IP, para tratar igual
+  // login existente e inexistente (sem enumeração) e funcionar com várias réplicas.
   criadoEm: criadoEm(),
   atualizadoEm: atualizadoEm(),
 }, (t) => [
   uniqueIndex('usuario_login_uq').on(sql`lower(${t.login})`),
   check('usuario_senha_argon2id_ck', sql`senha_hash LIKE '$argon2id$%'`),
-  check('usuario_falhas_ck', sql`falhas_login >= 0`),
+]);
+
+// ----- Sessões (spec §5.1): token opaco no cookie; aqui só o SHA-256 dele --------------------------------------
+// Revogação lógica (`revogada_em`): app_rw não tem DELETE. Expiração absoluta em `expira_em`; a de inatividade é
+// `ultimo_uso_em` + SESSAO_INATIVIDADE_MIN, calculada na API (o valor é configurável sem migração).
+export const sessao = pgTable('sessao', {
+  id: pk(),
+  /** SHA-256 (hex) do token. O token tem 256 bits aleatórios, então hash sem sal basta e permite a busca. */
+  tokenHash: text('token_hash').notNull(),
+  usuarioId: uuid('usuario_id').notNull().references(() => usuarioSistema.id),
+  criadaEm: instante('criada_em').notNull().defaultNow(),
+  ultimoUsoEm: instante('ultimo_uso_em').notNull().defaultNow(),
+  expiraEm: instante('expira_em').notNull(),
+  revogadaEm: instante('revogada_em'),
+  /** logout, desativacao, troca_senha, redefinicao_senha. */
+  motivoRevogacao: text('motivo_revogacao'),
+  ip: inet('ip'),
+  userAgent: text('user_agent'),
+}, (t) => [
+  uniqueIndex('sessao_token_uq').on(t.tokenHash),
+  index('sessao_usuario_ix').on(t.usuarioId),
+  check('sessao_token_hash_ck', sql`token_hash ~ '^[0-9a-f]{64}$'`),
+  check('sessao_expira_ck', sql`expira_em > criada_em`),
+  check('sessao_revogacao_ck', sql`num_nonnulls(revogada_em, motivo_revogacao) IN (0, 2)`),
+  check('sessao_motivo_ck', sql`motivo_revogacao IS NULL OR motivo_revogacao IN ('logout', 'desativacao', 'troca_senha', 'redefinicao_senha')`),
+  check('sessao_user_agent_ck', sql`user_agent IS NULL OR length(user_agent) <= 300`),
+]);
+
+// ----- Limite de tentativas de login (spec §5.1): contador por chave, persistente ------------------------------
+// Uma linha por (tipo, chave), atualizada por UPSERT atômico: vale entre réplicas e não cresce por tentativa.
+// `chave` é HMAC (subchave derivada de PORTARIA_HMAC_CPF_KEY) do login normalizado ou do IP: o login digitado pode ser um CPF.
+export const loginLimite = pgTable('login_limite', {
+  tipo: text('tipo').notNull(),
+  chave: text('chave').notNull(),
+  falhas: smallint('falhas').notNull(),
+  janelaInicio: instante('janela_inicio').notNull(),
+  bloqueadoAte: instante('bloqueado_ate'),
+  atualizadoEm: instante('atualizado_em').notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ name: 'login_limite_pk', columns: [t.tipo, t.chave] }),
+  check('login_limite_tipo_ck', sql`tipo IN ('login', 'ip')`),
+  check('login_limite_chave_ck', sql`chave ~ '^[0-9a-f]{64}$'`),
+  check('login_limite_falhas_ck', sql`falhas >= 0`),
 ]);
 
 // ----- Documentos cifrados (RNF-03, spec §9.2): foto e anexos de ocorrência. O comprovante de vínculo NÃO vem para cá ----

@@ -1,0 +1,65 @@
+import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
+import { z } from 'zod';
+import { CONFIG, type Config } from '../config/config';
+import { erroApi } from '../comum/erros';
+import { ZodPipe } from '../comum/zod.pipe';
+import { AuthService, MENSAGEM_CREDENCIAIS } from './auth.service';
+import { gravarCookieSessao, limparCookieSessao } from './cookie';
+import { Autenticado, Ctx, ipDe, Publico } from './decorators';
+import { SENHA_MAX } from './senha.service';
+import type { Contexto } from './tipos';
+
+const LoginDto = z.strictObject({
+  login: z.string().trim().min(1, 'Informe o login.').max(200),
+  senha: z.string().min(1, 'Informe a senha.').max(SENHA_MAX),
+});
+
+const TrocarSenhaDto = z.strictObject({
+  senhaAtual: z.string().min(1).max(SENHA_MAX),
+  novaSenha: z.string().min(1).max(SENHA_MAX),
+});
+
+@Controller('auth')
+export class AuthController {
+  constructor(
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(CONFIG) private readonly config: Config,
+  ) {}
+
+  @Post('login')
+  @Publico()
+  @HttpCode(200)
+  async login(@Body(new ZodPipe(LoginDto)) body: z.infer<typeof LoginDto>, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const r = await this.auth.login(body.login, body.senha, ipDe(req), req.get('user-agent'));
+    if (!r.ok && r.motivo === 'bloqueado') {
+      res.setHeader('Retry-After', String(Math.max(1, Math.ceil((r.ate.getTime() - Date.now()) / 1000))));
+      throw erroApi(429, 'LOGIN_BLOQUEADO', 'Muitas tentativas de login. Aguarde alguns minutos e tente novamente.');
+    }
+    if (!r.ok) throw erroApi(401, 'CREDENCIAIS_INVALIDAS', MENSAGEM_CREDENCIAIS);
+    gravarCookieSessao(res, this.config, r.token, r.expiraEm);
+    return { usuario: r.usuario, sessao: { expiraEm: r.expiraEm.toISOString(), inatividadeMin: this.config.sessao.inatividadeMin } };
+  }
+
+  @Post('logout')
+  @Autenticado({ permiteTrocaPendente: true })
+  @HttpCode(204)
+  async logout(@Ctx() ctx: Contexto, @Res({ passthrough: true }) res: Response) {
+    await this.auth.logout(ctx);
+    limparCookieSessao(res, this.config);
+  }
+
+  @Get('me')
+  @Autenticado({ permiteTrocaPendente: true })
+  async me(@Ctx() ctx: Contexto, @Req() req: Request) {
+    const usuario = await this.auth.me(ctx);
+    return { usuario, sessao: { expiraEm: req.auth!.expiraEm.toISOString(), inatividadeMin: this.config.sessao.inatividadeMin } };
+  }
+
+  @Post('trocar-senha')
+  @Autenticado({ permiteTrocaPendente: true })
+  @HttpCode(200)
+  async trocarSenha(@Ctx() ctx: Contexto, @Body(new ZodPipe(TrocarSenhaDto)) body: z.infer<typeof TrocarSenhaDto>) {
+    return { usuario: await this.auth.trocarSenha(ctx, body.senhaAtual, body.novaSenha) };
+  }
+}

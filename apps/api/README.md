@@ -1,18 +1,28 @@
 # apps/api
 
-Backend NestJS 11 + Drizzle ORM + PostgreSQL. Hoje: esqueleto (`GET /api/v1/saude`) e a camada de banco
-(schema, migrações, verificador da cadeia de hash, testes). Regras de negócio e autenticação ainda não existem.
+Backend NestJS 11 + Drizzle ORM + PostgreSQL. Hoje: `GET /api/v1/saude`, autenticação por sessão (login, logout, me,
+troca de senha), autorização pela matriz RBAC do domain, gestão de usuários, trilha `audit_log` e a camada de banco
+(schema, migrações, verificador da cadeia de hash, testes). Os módulos de negócio (pessoas, vínculos, eventos...) ainda não existem.
 
 ```
-src/main.ts              bootstrap: prefixo api/v1, 0.0.0.0:3000, shutdown hooks
-src/app.module.ts        AppModule
+src/main.ts              bootstrap: lê a config e chama configurarApp; 0.0.0.0:3000
+src/plataforma.ts        configurarApp (usado também pelos testes): prefixo api/v1, trust proxy, CORS, log, no-store
+src/app.module.ts        AppModule: guards globais (SessaoGuard -> PapelGuard) e filtro global de exceção
+src/config/              config validada no boot (falha em vez de default silencioso) + relógio injetável
+src/comum/               erros { codigo, mensagem }, filtro global (acesso.negado em todo 403), ZodPipe, log JSON em allowlist
+src/auditoria/           AuditoriaService.registrar(tx, ...) e o snapshot (snake_case, sem segredo, CPF/telefone mascarados)
+src/auth/                login/logout/me/trocar-senha, sessão, limite de login, senha (argon2id), guards e decorators
+src/usuarios/            gestão de usuários (usuario.gerenciar / usuario.gerenciar_sindico)
+src/cli/seed-dev.ts      seed de dev: estrutura + 4 usuários (um por papel), senha de SEED_SENHA_DEV
 src/database/            DatabaseModule global: Pool do pg + Drizzle (node-postgres), DATABASE_URL, fecha o pool no shutdown
 src/saude/               GET /api/v1/saude: select 1 + ultimo_seq da cadeia; 503 se o banco cair
 src/db/schema.ts         schema Drizzle (fonte das migrações geradas)
 src/db/cadeia.ts         serialização canônica v1 e verificador independente da cadeia (RF-32, RF-37)
 src/db/cpf.ts            máscara e HMAC do CPF
 src/db/seed.ts           165 unidades + portaria social + áreas comuns (idempotente)
-drizzle/                 0000_init.sql (gerada), 0001_regras_imutabilidade.sql (manual), 0002_conferencia_comprovante.sql (gerada + trigger manual)
+src/db/seed-usuarios.ts  usuários de dev (mesmos nomes do mock), idempotente
+drizzle/                 0000_init.sql (gerada), 0001_regras_imutabilidade.sql (manual), 0002_conferencia_comprovante.sql (gerada + trigger manual),
+                         0003_autenticacao_sessao.sql (gerada: sessao, login_limite, deve_trocar_senha + GRANT manual)
 test/                    vitest + PGlite com as migrações reais; postgres-real/ só com PG_TEST_URL
 Dockerfile               multi-stage (deps, build, migrate, prod, runtime), node:22-alpine
 ```
@@ -20,15 +30,26 @@ Dockerfile               multi-stage (deps, build, migrate, prod, runtime), node
 ## Ambiente Docker
 
 Compose único na raiz do monorepo: `db` (postgres:17-alpine) -> `migrate` (drizzle-kit como `app_migrator`, roda e termina)
--> `api` (como `app_rw`, usuário `node`, nunca migra). Detalhes, bootstrap de roles e variáveis: [../../db/README.md](../../db/README.md).
+-> `api` (como `app_rw`, nunca migra).
+
+Reload (target `dev`, padrão): o estágio `dev` do Dockerfile roda `tsc-watch`, e o `develop.watch` do compose sincroniza
+`apps/api/src` para dentro do container. Mudanças em `packages/domain/src`, `package.json`, `package-lock.json` ou
+`tsconfig.build.json` reconstroem a imagem. Sem bind mount: no macOS ele perde eventos de arquivo e misturaria o
+`node_modules` do host (darwin) com o do container (musl, binário do argon2). O dev usa ~340 MiB (tsc-watch + API),
+por isso `mem_limit` padrão de 768m; para medir com o limite de produção: `API_MEM_LIMIT=384m API_TARGET=runtime`. Detalhes, bootstrap de roles e variáveis: [../../db/README.md](../../db/README.md).
 
 ```bash
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"   # CLI do Docker Desktop
 cd 05_Sistema/app
 cp .env.example .env            # preencher; o .env (raiz) tem segredos e não deve ser distribuído
-docker compose up -d --build    # sobe tudo; API em http://127.0.0.1:3000, Postgres em 127.0.0.1:${DB_HOST_PORT:-5432}
+docker compose up --build --watch   # sobe tudo com reload: salvar em apps/api/src recompila e reinicia a API (~3 s)
+docker compose up -d --build    # sobe tudo sem reload; API em http://127.0.0.1:3000, Postgres em 127.0.0.1:${DB_HOST_PORT:-5432}
+docker compose watch            # liga o reload numa stack já de pé
+API_TARGET=runtime docker compose up -d --build   # imagem de produção (sem tsc-watch, usuário node)
+docker compose run --rm migrate # depois de criar migração nova (o migrate só roda sozinho na subida)
 docker compose ps
-curl http://127.0.0.1:3000/api/v1/saude    # {"status":"ok","banco":"ok","ultimoSeq":0}
+curl http://127.0.0.1:3000/api/v1/saude    # {"status":"ok","banco":"ok","ultimoSeq":0,"em":"..."}
+docker compose exec api node dist/cli/seed-dev.js   # 4 usuários de dev; senha = SEED_SENHA_DEV do .env
 docker compose logs -f api
 docker compose down             # derruba (mantém os dados)
 docker compose down -v          # derruba e ZERA o volume do Postgres
@@ -51,6 +72,92 @@ DATABASE_URL=postgres://app_rw:SENHA@127.0.0.1:5433/portaria npm run start:dev -
 npm run db:generate -w apps/api      # após mudar schema.ts
 ```
 
+## Autenticação e autorização (spec §5.1, §5.2, §6.1)
+
+Fluxo de dev com `curl` (no `.env` local: `PORTARIA_AMBIENTE=dev`, `COOKIE_SECURE=false`, `TRUST_PROXY=false`):
+
+```bash
+B=http://127.0.0.1:3000/api/v1
+curl -c /tmp/j -H 'Content-Type: application/json' -d '{"login":"roberto.faria","senha":"<SEED_SENHA_DEV>"}' $B/auth/login
+curl -b /tmp/j $B/auth/me
+curl -b /tmp/j $B/usuarios                  # 200 para síndico/administração, 403 para porteiro/auditor
+curl -b /tmp/j -X POST $B/auth/logout        # 204; o mesmo cookie passa a dar 401
+```
+
+Usuários do seed: `roberto.faria` (síndico), `paula.nogueira` (administração), `joao.lima` (porteiro), `luiza.campos` (auditor).
+Rode o curl via `!` no terminal se não quiser a senha no histórico do chat.
+
+**Toda rota declara uma política**, senão é negada:
+
+```ts
+@Publico()                                 // sem sessão (só /saude e /auth/login)
+@Autenticado()                             // qualquer usuário logado
+@Autenticado({ permiteTrocaPendente: true }) // também quem ainda deve trocar a senha (me, logout, trocar-senha)
+@Acao('evento.registrar')                  // pode(papel, acao) da MATRIZ de @portaria/domain/rbac (fonte única)
+```
+
+Regra de autorização que depende do REGISTRO (ex.: "administração não mexe em síndico", "porteiro edita só a ocorrência
+que abriu") fica no serviço: `throw new AcessoNegado('usuario.gerenciar_sindico')`. O filtro global grava o
+`acesso.negado` de TODO 403, depois do rollback da transação (gravar dentro dela perderia o registro).
+
+Contexto do usuário: `@Ctx() ctx: Contexto` (`ator`, `sessaoId`, `ip`), passado explicitamente ao serviço. Sem
+AsyncLocalStorage (nada vaza entre requisições).
+
+Validação: Zod, um pipe por parâmetro, `@Body(new ZodPipe(Schema))` com `z.strictObject` (campo desconhecido é 400);
+`@Param('id', uuidParam)`. Não há `ValidationPipe` global (o `whitelist` do class-validator esvaziaria o corpo do Zod).
+Escolha: Zod já é TypeScript (schema = tipo), não depende de `emitDecoratorMetadata` (o vitest/esbuild não emite) e é o
+mesmo idioma que o front pode usar; class-validator exigiria classes decoradas e o pipe global com metadata.
+
+### Auditoria: padrão para os próximos módulos
+
+Toda escrita de cadastro grava `audit_log` **na mesma transação**, passando a `tx` como executor:
+
+```ts
+await this.db.transaction(async (tx) => {
+  const [antes] = await tx.select().from(pessoa).where(eq(pessoa.id, id)).for('update');
+  const [depois] = await tx.update(pessoa).set(valores).where(eq(pessoa.id, id)).returning();
+  await this.auditoria.registrar(tx, {
+    ator: ctx.ator, ip: ctx.ip, acao: 'pessoa.editar', entidade: 'pessoa', registroId: id, antes, depois,
+  });
+});
+```
+
+- `antes`/`depois` podem ser a linha do Drizzle (camelCase): o snapshot converte para **snake_case** (nome de coluna),
+  que é o que `lgpd_redigir_audit_pessoa` remove (`nome`, `telefone`, `documento_mascarado`, `empresa`, `servico`).
+- Some do snapshot: `senha*`, `token*`, `documento_busca`. Telefone vira `(**) *****-1234`; sequências de 9+ dígitos
+  (CPF digitado em texto livre) viram asteriscos; uuid e `*_id` passam intactos; Date vira ISO.
+- O nome da pessoa PODE aparecer (spec §3.3: é redigível na anonimização). Segredo e documento em claro, nunca.
+- `entidade` = nome da tabela. `acao` = `entidade.verbo` (CHECK `audit_log_acao_ck`), validada antes do SQL: erro de SQL
+  aborta a transação do chamador, e try/catch sem savepoint não salva.
+- Leitura não audita; 403 é auditado pelo filtro; 401 não é auditado.
+
+### Logs
+
+Uma linha JSON por requisição (`request_id` gerado no servidor, `usuario_id`, método, **padrão** da rota, status, ms),
+com campos em allowlist (`src/comum/log.ts`): corpo, cookie, login digitado, senha e query nunca entram. Erro de banco
+loga só SQLSTATE e constraint (a mensagem do `DrizzleQueryError` traz SQL e parâmetros).
+
+### Variáveis (repassadas uma a uma no docker-compose.yml)
+
+| Variável | Valores | Observação |
+|---|---|---|
+| `PORTARIA_AMBIENTE` | `dev` \| `producao` | producao recusa `COOKIE_SECURE=false`; o seed em producao cria usuários com troca obrigatória |
+| `COOKIE_SECURE` | `true` \| `false` | só essas grafias; `false` só em http://localhost |
+| `TRUST_PROXY` | `false` \| 1 a 3 | saltos de proxy confiáveis; produção com rewrite da Vercel + Caddy: 2 (spec §14, nº 26) |
+| `CORS_ORIGENS` | origens exatas, vírgula | vazio = CORS desligado (produção, mesma origem) |
+| `SESSAO_ABSOLUTA_MIN`, `SESSAO_INATIVIDADE_MIN` | 720, 30 | minutos |
+| `PORTARIA_HMAC_CPF_KEY` | base64, 32+ bytes | também origem (HKDF) da chave do `login_limite` |
+| `SEED_SENHA_DEV` | 12+ caracteres | só o seed usa; vazio em produção |
+
+Limites de login e parâmetros do argon2 são constantes da spec em `src/config/config.ts` (`PADROES_LOGIN`, `PADROES_ARGON2`),
+não variáveis: mudam com revisão de código, não com uma variável esquecida.
+
+### Dev do front contra a API
+
+Preferir o proxy do Vite (`server.proxy: { '/api': 'http://127.0.0.1:3000' }`): mesma origem, igual ao rewrite de
+produção, sem CORS. Alternativa: `CORS_ORIGENS=http://localhost:5173` (localhost:5173 e :3000 são o mesmo site, então o
+cookie Strict viaja).
+
 ## Decisões de build
 
 - **tsc, não `nest build`/SWC.** O esqueleto não precisa do CLI; `tsc` com `emitDecoratorMetadata` basta e há uma ferramenta a menos.
@@ -68,7 +175,14 @@ npm run db:generate -w apps/api      # após mudar schema.ts
   `typesVersions` dá os `.d.ts` ao build CommonJS da API (`moduleResolution: Node10` não lê `exports`). A serialização canônica
   do hash e o verificador vivem em `@portaria/domain/hashChain`; `src/db/cadeia.ts` só reexporta e mapeia a linha do Drizzle.
   O Dockerfile compila o domain no estágio `build` e copia `package.json` + `dist` para o runtime.
-- Segredos `PORTARIA_HMAC_CPF_KEY` e `PORTARIA_KEK` existem no `.env`, mas a API ainda não os recebe (o compose só repassa `DATABASE_URL`).
+- `PORTARIA_KEK` já é repassada à API, mas ainda não é usada (documentos cifrados não foram implementados).
+- `/auth/reautenticar` (desbloqueio de tela da portaria) não foi implementado.
+- Bootstrap do primeiro síndico em produção: hoje só pelo seed (`PORTARIA_AMBIENTE=producao` cria os 4 usuários com troca
+  obrigatória). Falta um comando que crie só o síndico, com login e nome informados.
+- Rehash de senha quando os parâmetros do argon2 mudarem (hoje o hash antigo continua valendo com os parâmetros dele).
+- Ajustar os parâmetros do argon2 por medição na VPS (alvo de ~250 ms; no Mac de dev, ~120 ms).
+- `login_limite` cresce uma linha por login ou IP distinto e não tem limpeza (app_rw não tem DELETE); um job de manutenção
+  como app_migrator resolve quando o volume importar.
 - `test:pg` sobrescreve a senha do `app_rw` no cluster (ver db/README.md).
 - Serviços `web`, `mailhog` e `minio` da spec §12.2 não foram incluídos.
 - A imagem `migrate` carrega as dependências de desenvolvimento inteiras (591 MB); é só de dev, mas pode virar um estágio enxuto.

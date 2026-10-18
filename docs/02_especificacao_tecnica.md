@@ -211,9 +211,19 @@ O seed (`apps/api/src/db/seed.ts`) cria as 165 unidades, o ponto de acesso e as 
 | senha_hash | text | NN, CHECK formato argon2id (`$argon2id$...`) |
 | papel | enum (sindico, administracao, porteiro, auditor) | NN |
 | ativo | boolean | NN; desativar não apaga o histórico (FKs de evento e trilha) |
-| ultimo_acesso, falhas_login, bloqueado_ate | | controle de login |
+| ultimo_acesso | timestamptz | gravado no login |
+| deve_trocar_senha | boolean | NN, default true: senha criada por terceiro (cadastro ou redefinição) só dá acesso a `/auth/me`, `/auth/logout` e `/auth/trocar-senha` |
+| senha_alterada_em | timestamptz | última troca ou redefinição |
 
-Sem colunas de 2FA no MVP: o 2FA foi para a fase de segurança.
+Sem colunas de 2FA no MVP: o 2FA foi para a fase de segurança. `falhas_login` e `bloqueado_ate` saíram na migração 0003:
+o bloqueio vive em `login_limite`, igual para login existente e inexistente.
+
+#### sessao e login_limite (§5.1, migração 0003)
+
+| Tabela | Colunas | Restrições e permissões |
+|---|---|---|
+| sessao | id, token_hash (SHA-256 hex do token opaco), usuario_id, criada_em, ultimo_uso_em, expira_em, revogada_em, motivo_revogacao, ip, user_agent | UQ token_hash; CHECK do formato do hash, `expira_em > criada_em`, motivo em (logout, desativacao, troca_senha, redefinicao_senha) junto com revogada_em. `app_rw`: SELECT, INSERT e UPDATE só de ultimo_uso_em, revogada_em e motivo_revogacao; sem DELETE |
+| login_limite | (tipo, chave) PK, falhas, janela_inicio, bloqueado_ate, atualizado_em | tipo em (login, ip); chave = HMAC-SHA256 (subchave HKDF de `PORTARIA_HMAC_CPF_KEY`) do login normalizado ou do IP, porque o login digitado pode ser um CPF. Uma linha por chave, atualizada por UPSERT atômico. `app_rw`: SELECT, INSERT e UPDATE das colunas do contador; sem DELETE |
 
 #### pessoa (RF-02, RN-10)
 
@@ -565,11 +575,13 @@ aqui (01_requisitos.md, seção 11).
 | Hash de senha | argon2id (parâmetros iniciais: memória 64 MiB, 3 iterações, paralelismo 1; ajustar por teste de tempo, alvo ~250 ms no servidor) |
 | Política de senha | Mínimo de 12 caracteres, checagem contra lista de senhas vazadas comuns, sem expiração periódica forçada |
 | Segundo fator | Fora do MVP. Na fase de segurança: TOTP (RFC 6238) obrigatório para síndico e administração; opcional para porteiro e auditor |
-| Sessão | Token opaco em cookie `HttpOnly; Secure; SameSite=Strict`, guardado hasheado em `sessao`; expiração absoluta de 12 h e por inatividade de 30 min (valores configuráveis) |
+| Sessão | Token opaco (256 bits, base64url) em cookie `HttpOnly; Secure; SameSite=Strict; Path=/`, com prefixo `__Host-` quando `Secure`; no banco só o SHA-256 (`sessao.token_hash`). Expiração absoluta de 12 h (`expira_em`) e por inatividade de 30 min (`ultimo_uso_em`, gravado no máximo uma vez por minuto), configuráveis por `SESSAO_ABSOLUTA_MIN` e `SESSAO_INATIVIDADE_MIN`. Logout, desativação do usuário e redefinição de senha revogam no banco (`revogada_em`); a troca de senha revoga as outras sessões e mantém a atual. Papel e `ativo` são relidos a cada requisição: rebaixar ou desativar vale na próxima chamada |
+| Mesmo site (CSRF) | `SameSite=Strict` é a proteção de CSRF inteira: exige front e API no mesmo site. Como `vercel.app` está na Public Suffix List, front na Vercel e API em outro domínio quebram o login. A decisão de deploy (seção 14, nº 26) é o rewrite de `/api/*` pela Vercel |
 | Portaria | Bloqueio de tela por inatividade (parâmetro, valor inicial de 2 min): a SPA ofusca a tela e exige re-autenticação rápida (senha ou PIN do próprio operador) sem encerrar a sessão; a troca de turno exige logout e novo login (RN-05) |
-| Rate limit | Por IP e por login: 5 falhas em 15 min bloqueiam o login por 15 min, com atraso crescente; limite global na rota `/auth/login`; resposta sem distinguir "usuário inexistente" de "senha errada" |
-| Registro | Login, logout, falha e bloqueio gravados em `audit_log` (sem a senha tentada) |
-| Recuperação | Redefinição de senha por administração, com troca obrigatória no próximo login; a recuperação do TOTP (quem redefine o TOTP do síndico é decisão em aberto, nº 11) fica para a fase de segurança |
+| Rate limit | Por IP e por login: 5 falhas em 15 min bloqueiam o login por 15 min (429 `LOGIN_BLOQUEADO` com `Retry-After`), com atraso crescente (250 ms × 2^(n-1), teto de 3 s); resposta sem distinguir "usuário inexistente" de "senha errada", inclusive no tempo (login inexistente verifica contra um hash fictício). Contador persistente em `login_limite`, não em memória, porque a API pode ter mais de uma réplica. A tentativa é contada ANTES de verificar a senha (UPSERT atômico), então uma rajada paralela não ganha mais que 5 palpites; o sucesso zera o contador do login e só desfaz a própria tentativa no do IP. O limite "global" da rota é um semáforo POR PROCESSO de hashes argon2 simultâneos (2, fila de 50, depois 503): protege a memória do container (64 MiB por hash). A troca de senha conta no mesmo limite do login (sessão roubada adivinhando a senha atual) |
+| Registro | `auth.login`, `auth.logout`, `auth.login_falha` (motivo: login_inexistente, usuario_inativo, senha_incorreta ou bloqueado), `auth.bloqueio`, `auth.trocar_senha` e `auth.trocar_senha_falha` em `audit_log`, sem a senha tentada; o login digitado tem sequências de 9+ dígitos mascaradas. Todo 403 grava `acesso.negado` com a ação RBAC tentada |
+| Validação e erros | DTOs em Zod (`z.strictObject`: campo desconhecido é 400), um pipe por parâmetro. Filtro global no formato `{ codigo, mensagem, detalhes? }`; erro de driver nunca chega ao cliente nem ao log (só SQLSTATE e constraint) |
+| Recuperação | Redefinição de senha por administração (`usuario.gerenciar`; alvo síndico exige `usuario.gerenciar_sindico`): gera senha temporária de 16 caracteres mostrada uma única vez, marca `deve_trocar_senha`, revoga as sessões do alvo e desbloqueia o login dele; a recuperação do TOTP (quem redefine o TOTP do síndico é decisão em aberto, nº 11) fica para a fase de segurança |
 
 ### 5.2 Matriz RBAC
 
@@ -603,7 +615,7 @@ Legenda: S = permitido, N = negado, L = somente leitura, P = próprio (só os re
 
 Pontos de projeto:
 
-- A matriz é aplicada na API por guards NestJS declarativos (`@Roles()`); a SPA apenas oculta o que o papel não pode, sem ser fonte de autorização.
+- A matriz é aplicada na API por guards NestJS globais e declarativos: `@Acao('usuario.gerenciar')` decide com `pode()` e a `MATRIZ` de `@portaria/domain/rbac` (fonte única, a mesma do mock). Toda rota declara `@Publico()`, `@Autenticado()` ou `@Acao()`; rota sem política é negada. A SPA apenas oculta o que o papel não pode, sem ser fonte de autorização.
 - Porteiro não edita nem exclui evento (RN-04) e não aprova vínculo (RN-03); a API rejeita com 403 e grava a tentativa.
 - Auditor: todas as rotas de escrita retornam 403; nenhum privilégio de escrita no role de banco dele é necessário porque a API é o único cliente, mas as rotas de leitura de auditoria usam conexão `SELECT only` quando possível.
 - Papéis são fixos no MVP (`enum`); permissões granulares configuráveis ficam fora do escopo.
@@ -624,11 +636,19 @@ quando listado).
 |---|---|---|---|
 | POST | /auth/login | público (rate limit) | Login e senha (na fase de segurança, retorna se TOTP é exigido) |
 | POST | /auth/totp/verificar | público com pré-sessão | Segundo fator (fase de segurança, fora do MVP) |
-| POST | /auth/logout | todos | Encerra a sessão |
-| POST | /auth/reautenticar | todos | Desbloqueio de tela da portaria |
-| GET | /auth/me | todos | Usuário e papel atuais |
+| POST | /auth/logout | todos | Revoga a sessão no banco e limpa o cookie (204) |
+| POST | /auth/reautenticar | todos | Desbloqueio de tela da portaria (não implementado) |
+| GET | /auth/me | todos | Usuário, papel, `deveTrocarSenha` e expiração da sessão |
+| POST | /auth/trocar-senha | todos | `{ senhaAtual, novaSenha }`; 12+ caracteres, fora da lista comum, sem conter o login; revoga as outras sessões |
 | POST | /auth/totp/ativar | todos | Cadastro do TOTP (fase de segurança, fora do MVP) |
-| GET/POST/PATCH | /usuarios | SI, AD | Gestão de usuários (RNF-04) |
+| GET | /usuarios | SI, AD | Lista (sem hash) |
+| POST | /usuarios | SI, AD | `{ nome, login, papel }`; responde `{ usuario, senhaTemporaria }` uma vez. Papel síndico: só SI |
+| PATCH | /usuarios/:id | SI, AD | `{ papel }`; promover ou rebaixar síndico: só SI; ninguém altera o próprio papel |
+| POST | /usuarios/:id/desativar, /reativar | SI, AD | Desativar revoga as sessões abertas; alvo síndico: só SI; ninguém desativa a si mesmo |
+| POST | /usuarios/:id/redefinir-senha | SI, AD | Senha temporária mostrada uma vez, troca obrigatória, sessões do alvo revogadas |
+
+Usuário com `deveTrocarSenha` recebe 403 `TROCA_DE_SENHA_OBRIGATORIA` em qualquer rota fora de me, logout e trocar-senha.
+Respostas da API saem com `Cache-Control: no-store`.
 
 ### 6.2 M1 — Cadastro e vínculo
 
@@ -1259,3 +1279,5 @@ O morador não opera o sistema em nenhuma fase prevista: não há ator novo nem 
 | 23 | Retenção de dados pessoais fora da tabela da seção 7 | — | Em aberto: `encomenda.destinatario`, `importacao_inconsistencia.mensagem` (cita nomes), `audit_log.usuario_nome` em `auth.login_falha` (o texto digitado pode ser um CPF) e `autorizacao_retirada`. Proposta: mesmo prazo de 3 anos, anonimizados pelo job | Síndico com validação jurídica |
 | 24 | Morador importado sem telefone | Bloquear a importação; permitir e exigir na aprovação | **Resolvida:** `telefone` só pode ser nulo em pessoa importada (`importacao_id`) ou anonimizada; aprovar o vínculo exige telefone (regra da API) | Resolvida |
 | 25 | Modelo da conferência do comprovante (RF-05) | Colunas no vínculo (uma conferência vigente); tabela própria com histórico de conferências; manter o arquivo cifrado em `documento` | **Resolvida (2026-10-17):** colunas `conferencia_*` e `conferido_por_id` em `vinculo_unidade`, sem arquivo. A regra "aprovado exige conferência" fica num CHECK da própria linha, sem trigger entre tabelas, e o histórico de conferências refeitas já está no `audit_log` (`vinculo.conferir`, antes e depois). Uma tabela própria só se justificaria se fosse preciso consultar várias conferências por vínculo, e nenhum RF pede isso. Saíram `documento_id`, o checklist `conferencias` (jsonb de texto livre, que costumava citar nomes e CPF parcial) e o valor `comprovante_vinculo` de `tipo_documento`. Com isso, aprovar "com item que não confere mediante justificativa" deixa de existir: comprovante que não confere não é registrado, e o vínculo é rejeitado (RN-02) | Resolvida |
+| 26 | Deploy do front (Vercel) e da API (VPS) com cookie `SameSite=Strict` | Domínios separados (`*.vercel.app` e domínio da VPS) com `SameSite=None` + CORS + CSRF por cabeçalho; rewrite de `/api/*` pela Vercel para a VPS (mesma origem); domínio próprio com subdomínios (`app.` e `api.` do mesmo site); front servido pela própria VPS | **Resolvida (2026-10-18): rewrite pela Vercel** no `apps/web/vercel.json`, ANTES do fallback da SPA: `{ "source": "/api/:caminho*", "destination": "https://API_DA_VPS/api/:caminho*" }` (placeholder; a VPS ainda não existe). O navegador vê uma origem só, o cookie fica `Strict` e o CORS fica desligado em produção (`CORS_ORIGENS` vazio). Descartado `SameSite=None`: perde a proteção de CSRF sem código, exige CSRF por cabeçalho e CORS exato, e cada combinação parcial falha parecendo bug. **Custo aceito:** o IP do cliente chega à API só pelo `X-Forwarded-For` que a Vercel monta, e quem acessar a VPS direto pode forjar esse cabeçalho. Por isso o limite por IP é auxiliar, e o controle que vale é o limite por login. Configuração: no proxy da VPS (Caddy), confiar no salto da Vercel e repassar o XFF (a Vercel não publica faixa fixa de IP, então na prática é um `trusted_proxies` amplo, e daí vem a possibilidade de forjar), e na API `TRUST_PROXY=2` (Vercel + Caddy). Com `TRUST_PROXY` errado, o IP visto vira o da borda da Vercel, e 5 falhas de qualquer pessoa bloqueiam o login de todos por trás daquela borda: conferir com `curl` no deploy. Evolução sem esse custo: domínio próprio com `api.` no mesmo site (IP real pelo Caddy, sem a Vercel no caminho da autenticação) | Responsável técnico |
+| 27 | Limite por IP com a guarita atrás de NAT | Manter 5 falhas por IP (spec); limite por IP maior que o por login; só limite por login | **Em aberto:** todos os computadores da guarita saem pelo mesmo IP público, então 5 erros de digitação de porteiros diferentes em 15 min bloqueiam o login da guarita inteira, inclusive na troca de turno. Hoje vale a spec (5); o valor está em `PADROES_LOGIN.maxFalhasIp` (`apps/api/src/config/config.ts`). Recomendação: 20 por IP, mantendo 5 por login | Síndico, com apoio técnico |

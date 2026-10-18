@@ -1,11 +1,17 @@
 import { Global, Inject, Logger, Module, type OnApplicationShutdown } from '@nestjs/common';
-import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
+import type { ExtractTablesWithRelations } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import type { PgDatabase, PgQueryResultHKT, PgTransaction } from 'drizzle-orm/pg-core';
 import { Pool } from 'pg';
 import * as schema from '../db/schema';
 
 export const PG_POOL = Symbol('PG_POOL');
 export const DB = Symbol('DB');
-export type Db = NodePgDatabase<typeof schema>;
+/** Tipo comum aos drivers (node-postgres em produção, PGlite nos testes). */
+export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
+export type Tx = PgTransaction<PgQueryResultHKT, typeof schema, ExtractTablesWithRelations<typeof schema>>;
+/** Onde uma escrita roda: a conexão do pool ou a transação do chamador. */
+export type Executor = Db | Tx;
 
 @Global()
 @Module({
@@ -22,7 +28,7 @@ export type Db = NodePgDatabase<typeof schema>;
         return pool;
       },
     },
-    { provide: DB, inject: [PG_POOL], useFactory: (pool: Pool): Db => drizzle(pool, { schema }) },
+    { provide: DB, inject: [PG_POOL], useFactory: (pool: Pool): Db => drizzle(pool, { schema }) as unknown as Db },
   ],
   exports: [PG_POOL, DB],
 })
