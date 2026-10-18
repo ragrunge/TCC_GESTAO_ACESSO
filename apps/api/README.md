@@ -3,7 +3,8 @@
 Backend NestJS 11 + Drizzle ORM + PostgreSQL. Hoje: `GET /api/v1/saude`, autenticação por sessão (login, logout, me,
 troca de senha), autorização pela matriz RBAC do domain, gestão de usuários, unidades (CRUD e resumo paginado), catálogo,
 busca de pessoas e busca global (leitura), contagem de vínculos, trilha `audit_log` e a camada de banco (schema, migrações,
-verificador da cadeia de hash, testes). CRUD de pessoas, vínculos completos, autorizações, restrições e eventos ainda não existem.
+verificador da cadeia de hash, testes), pessoas, vínculos, funcionários, veículos, importação e o registro de acesso (eventos,
+presentes, turno, autorizações prévias, restrições, auditoria e relatórios). Encomendas, ocorrências e LGPD ainda não existem.
 
 ```
 src/main.ts              bootstrap: lê a config e chama configurarApp; 0.0.0.0:3000
@@ -16,7 +17,12 @@ src/auth/                login/logout/me/trocar-senha, sessão, limite de login,
 src/usuarios/            gestão de usuários (usuario.gerenciar / usuario.gerenciar_sindico)
 src/unidades/            GET /catalogo, GET/POST/PATCH /unidades, /unidades/:id/desativar|reativar; paraNovoUso (unidade inativa barra novo uso)
 src/pessoas/             POST /pessoas/busca e POST /busca (termo no corpo: pode ser CPF); nome sem acento, CPF por HMAC, unidade, placa
-src/vinculos/            GET /vinculos/contagem?status= e a regra "vínculo válido" em SQL (mesma do domain)
+src/vinculos/            vínculos (RF-03 a RF-07) e a regra "vínculo válido" em SQL (mesma do domain)
+src/eventos/             M2 (spec §6.3): entrada, recusa, saída, correção, listagem, presentes, turno, autorizações prévias e restrições.
+                         efetivo.ts: valores efetivos em SQL (original + última correção); evento-view.ts: a EventoView do mock em lote
+src/auditoria/auditoria.controller.ts  integridade no banco (lotes, selo, cabeça), exportação JSONL v2 e trilha de alterações paginada
+src/relatorios/          resumo (RF-30, RF-31) agregado no banco e CSV (construtor do domain)
+src/comum/transacao.ts   transação com retry curto em 40001/40P01
 src/cli/seed-dev.ts      seed de dev: estrutura + 4 usuários (um por papel), senha de SEED_SENHA_DEV; com PORTARIA_AMBIENTE=dev, pessoas fictícias
 src/database/            DatabaseModule global: Pool do pg + Drizzle (node-postgres), DATABASE_URL, fecha o pool no shutdown
 src/saude/               GET /api/v1/saude: select 1 + ultimo_seq da cadeia; 503 se o banco cair
@@ -164,6 +170,7 @@ loga só SQLSTATE e constraint (a mensagem do `DrizzleQueryError` traz SQL e par
 | `SEED_SENHA_DEV` | 12+ caracteres | só o seed usa (e o seed de pessoas fictícias); vazio em produção |
 | `LOGIN_MAX_FALHAS_LOGIN`, `LOGIN_MAX_FALHAS_IP` | 10 (3 a 50), 30 (3 a 500) | falhas na janela que bloqueiam; vazio = padrão (spec §14, nº 27) |
 | `LOGIN_JANELA_MIN`, `LOGIN_BLOQUEIO_MIN` | 15, 15 | minutos; vazio = padrão |
+| `IMPORTACAO_PRAZO_LEGADO_DIAS` | 90 (1 a 730) | prazo para regularizar o legado da planilha (RN-09), definido em assembleia; vazio = padrão (spec §14, nº 30) |
 
 Os padrões do limite de login ficam em `PADROES_LOGIN` (`src/config/config.ts`); valor fora da faixa derruba o boot.
 O atraso crescente e os parâmetros do argon2 (`PADROES_ARGON2`) continuam constantes: mudam com revisão de código.
@@ -202,3 +209,9 @@ cookie Strict viaja).
 - `test:pg` sobrescreve a senha do `app_rw` no cluster (ver db/README.md).
 - Serviços `web`, `mailhog` e `minio` da spec §12.2 não foram incluídos.
 - A imagem `migrate` carrega as dependências de desenvolvimento inteiras (591 MB); é só de dev, mas pode virar um estágio enxuto.
+- Registro de acesso: a busca (`ultimoAcesso`) ainda usa o valor gravado, não o efetivo depois de uma correção.
+- `pessoasDentro`, `presentes` e "já está dentro" fazem anti-join com as saídas de toda a trilha: medir quando passar de
+  centenas de milhares de eventos (uma coluna/tabela de "aberto" resolveria, com trigger próprio).
+- Verificação de integridade recalcula a cadeia inteira a cada pedido (lotes de 2.000): com centenas de milhares de eventos,
+  passa a ser de segundos; o próximo passo é verificar a partir do último selo conferido.
+- Exportação síncrona com teto de 20.000 eventos (`EXPORTACAO_GRANDE`); acima disso, exportação assíncrona (spec §6.6).

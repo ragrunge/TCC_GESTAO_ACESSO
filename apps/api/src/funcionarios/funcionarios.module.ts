@@ -1,7 +1,10 @@
 // Funcionários do condomínio (RF-09): pessoa (mesmas regras de CPF e telefone) + função, escala e ativo. Mesmas regras de
 // `funcionarios` do mock. Escala que atravessa a meia-noite (22:00–06:00) vale no dia do início do turno
 // (`escalaVigente` do domain; o CHECK funcionario_escala_ck só barra início = fim).
-// Leitura: pessoa.ver (como o mock; a portaria consulta a escala na entrada). Escrita: funcionario.gerenciar (SI, AD).
+// Leitura (lista e ficha): funcionario.ver — síndico, administração e auditor; o porteiro NÃO vê a lista (decisão do
+// usuário, 2026-10-18). A entrada por escala é validada pela própria API (eventos.service). Para a tela de entrada, a
+// portaria lê só a escala da pessoa sendo registrada (GET /funcionarios/:id/escala, sem dados da pessoa).
+// Escrita: funcionario.gerenciar (SI, AD).
 import { Body, Controller, Get, Inject, Injectable, Module, Param, Patch, Post, Query } from '@nestjs/common';
 import { escalaVigente, validarEscala } from '@portaria/domain/rules';
 import { and, asc, eq, sql, type SQL } from 'drizzle-orm';
@@ -139,12 +142,20 @@ export class FuncionariosController {
   constructor(@Inject(FuncionariosService) private readonly funcionarios: FuncionariosService) {}
 
   @Get()
-  @Acao('pessoa.ver')
+  @Acao('funcionario.ver')
   listar(@Query(new ZodPipe(PaginacaoDto)) q: z.infer<typeof PaginacaoDto>) { return this.funcionarios.listar(q); }
 
   @Get(':pessoaId')
-  @Acao('pessoa.ver')
+  @Acao('funcionario.ver')
   obter(@Param('pessoaId', uuidParam) id: string) { return this.funcionarios.obter(id); }
+
+  /** Só função, escala e se está em escala agora: o que a tela de entrada precisa para o meio "Escala". */
+  @Get(':pessoaId/escala')
+  @Acao('evento.registrar')
+  async escala(@Param('pessoaId', uuidParam) id: string) {
+    const f = await this.funcionarios.obter(id);
+    return { pessoaId: f.pessoaId, funcao: f.funcao, escala: f.escala, ativo: f.ativo, emEscalaAgora: f.emEscalaAgora };
+  }
 
   @Post()
   @Acao('funcionario.gerenciar')

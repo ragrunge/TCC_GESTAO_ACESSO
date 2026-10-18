@@ -4,7 +4,8 @@
 // - sem CPF ou CPF inválido: aviso; importa como legado "sem CPF" (o número inválido não é gravado);
 // - deduplicação com o banco: pelo HMAC do CPF; sem CPF, pelo nome na MESMA unidade (nunca só pelo nome);
 // - quem já tem vínculo ativo ou pendente na unidade é reaproveitado, sem duplicar;
-// - o resto vira pessoa (se ainda não existe) + vínculo LEGADO com prazo de regularização (90 dias).
+// - o resto vira pessoa (se ainda não existe) + vínculo LEGADO com prazo de regularização (RN-09: definido em assembleia,
+//   `IMPORTACAO_PRAZO_LEGADO_DIAS`, padrão 90 dias; ver config.ts).
 //
 // As linhas têm CPF em claro, e por isso a API NÃO as guarda entre a análise e a confirmação (nem em memória): o cliente
 // reenvia as linhas no confirmar, e a API confere o HMAC delas com o gravado na análise (`arquivo_sha256` guarda
@@ -29,7 +30,6 @@ import { documentoBusca, mascararCpf } from '../db/cpf';
 import { importacao, importacaoInconsistencia, pessoa, unidade, vinculoUnidade } from '../db/schema';
 import { normalizar } from '../pessoas/busca.service';
 
-export const PRAZO_REGULARIZACAO_DIAS = 90;
 const MAX_LINHAS = 3000;
 const LOTE = 400;
 
@@ -146,7 +146,7 @@ export class ImportacaoService {
 
   async analisar(ctx: Contexto, i: z.infer<typeof AnaliseDto>) {
     const agora = this.relogio.agora();
-    const prazo = somarDias(diaBrt(agora), PRAZO_REGULARIZACAO_DIAS);
+    const prazo = somarDias(diaBrt(agora), this.config.importacao.prazoLegadoDias);
     return this.db.transaction(async (tx) => {
       const r = await this.analisarLinhas(tx, i.linhas);
       const avisos = r.inconsistencias.filter((x) => x.tipo === 'aviso').length;

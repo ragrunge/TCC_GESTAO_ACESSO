@@ -73,6 +73,10 @@ describe('config do ambiente (falha no boot em vez de default silencioso)', () =
       .toMatchObject({ maxFalhasLogin: 8, maxFalhasIp: 40, janelaMin: 20, bloqueioMin: 30, atrasoBaseMs: 250 });
     expect(c.argon2).toMatchObject({ memoriaKib: 65536, iteracoes: 3, paralelismo: 1 });
     expect(carregarConfig({ ...base, COOKIE_SECURE: 'true' }).cookie.nome).toBe('__Host-portaria_sessao');
+    // RN-09: prazo do legado definido em assembleia; vazio = 90 dias
+    expect(c.importacao).toEqual({ prazoLegadoDias: 90 });
+    expect(carregarConfig({ ...base, IMPORTACAO_PRAZO_LEGADO_DIAS: '' }).importacao.prazoLegadoDias).toBe(90);
+    expect(carregarConfig({ ...base, IMPORTACAO_PRAZO_LEGADO_DIAS: '120' }).importacao.prazoLegadoDias).toBe(120);
   });
   it.each([
     [{ COOKIE_SECURE: '1' }, /COOKIE_SECURE/],
@@ -89,6 +93,9 @@ describe('config do ambiente (falha no boot em vez de default silencioso)', () =
     [{ SESSAO_INATIVIDADE_MIN: '800' }, /não pode passar/],
     [{ PORTARIA_HMAC_CPF_KEY: 'curta' }, /32 bytes/],
     [{ TRUST_PROXY: '' }, /TRUST_PROXY não definida/],
+    [{ IMPORTACAO_PRAZO_LEGADO_DIAS: '0' }, /IMPORTACAO_PRAZO_LEGADO_DIAS/],
+    [{ IMPORTACAO_PRAZO_LEGADO_DIAS: '1000' }, /IMPORTACAO_PRAZO_LEGADO_DIAS/],
+    [{ IMPORTACAO_PRAZO_LEGADO_DIAS: 'noventa' }, /IMPORTACAO_PRAZO_LEGADO_DIAS/],
   ])('recusa %o', (extra, erro) => {
     expect(() => carregarConfig({ ...base, ...extra })).toThrow(erro);
   });

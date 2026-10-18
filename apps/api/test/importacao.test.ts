@@ -132,3 +132,17 @@ describe('importação: análise', () => {
     expect(tudo).not.toContain(fmt(CPF_NOVO));
   });
 });
+
+describe('importação: prazo do legado configurável (RN-09, definido em assembleia)', () => {
+  it('IMPORTACAO_PRAZO_LEGADO_DIAS=30: análise e legados com o prazo da configuração', async () => {
+    const outra = await novaApi({ importacao: { prazoLegadoDias: 30 } });
+    try {
+      const { cookie } = await outra.como('administracao');
+      const linhas = [{ linha: 2, torre: '1', unidade: '13', nome: 'Prazo Curto', documento: cpfComDv('300000777'), telefone: '' }];
+      const r = await outra.http().post(`${V1}/importacoes`).set('Cookie', cookie).send({ arquivo: 'prazo.csv', linhas });
+      expect(r.body.data.prazoRegularizacao).toBe('2026-11-16'); // 17/10 + 30 dias
+      const c = await outra.http().post(`${V1}/importacoes/${r.body.data.id}/confirmar`).set('Cookie', cookie).send({ linhas });
+      expect(c.body.data).toMatchObject({ importados: 1, prazoRegularizacao: '2026-11-16' });
+    } finally { await outra.app.close(); await outra.client.close(); }
+  });
+});

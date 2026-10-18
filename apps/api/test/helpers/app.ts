@@ -39,6 +39,7 @@ export function configDeTeste(extra: Partial<Config> = {}): Config {
     // Parâmetros baixos SÓ no teste (velocidade); produção usa PADROES_ARGON2 (spec §5.1).
     argon2: { memoriaKib: 1024, iteracoes: 1, paralelismo: 1, concorrencia: 2, filaMax: 50 },
     hmacCpfKey: CHAVE_HMAC_TESTE,
+    importacao: { prazoLegadoDias: 90 },
     ...extra,
   };
 }

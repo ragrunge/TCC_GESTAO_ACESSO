@@ -219,11 +219,14 @@ describe('funcionários (RF-09)', () => {
     expect(r.body.data).toMatchObject({ funcao: 'Vigia', escala: escalaNoite, ativo: true, pessoa: { nome: 'Vigia Noturno', categoria: 'funcionario' } });
     const id = r.body.data.pessoaId;
     // Relógio: sábado 17/10/2026 09:00 BRT -> fora; sábado 02:00 BRT -> dentro (turno de sexta).
-    expect((await get('porteiro', `/funcionarios/${id}`)).body.data.emEscalaAgora).toBe(false);
+    // O porteiro lê só a escala da pessoa (tela de entrada), nunca a ficha nem a lista (decisão do usuário).
+    const esc = await get('porteiro', `/funcionarios/${id}/escala`);
+    expect(esc.body.data).toEqual({ pessoaId: id, funcao: 'Vigia', escala: escalaNoite, ativo: true, emEscalaAgora: false });
     const antes = api.relogio.atual;
     api.relogio.atual = new Date('2026-10-17T05:00:00.000Z');
-    try { expect((await get('porteiro', `/funcionarios/${id}`)).body.data.emEscalaAgora).toBe(true); }
+    try { expect((await get('porteiro', `/funcionarios/${id}/escala`)).body.data.emEscalaAgora).toBe(true); }
     finally { api.relogio.atual = antes; }
+    expect((await get('porteiro', `/funcionarios/${id}`)).status).toBe(403);
     const trilhaF = (await trilha(api, 'funcionario.criar')).at(-1)!;
     expect(trilhaF.registroId).toBe(id);
   });
@@ -238,11 +241,18 @@ describe('funcionários (RF-09)', () => {
     const e = await patch('administracao', `/funcionarios/${c.body.data.pessoaId}`, { ativo: false, funcao: 'Zelador-chefe' });
     expect(e.body.data).toMatchObject({ ativo: false, funcao: 'Zelador-chefe', emEscalaAgora: false });
     expect((await trilha(api, 'funcionario.editar')).at(-1)!.antes).toMatchObject({ ativo: true, funcao: 'Zelador' });
-    const l = await get('porteiro', '/funcionarios?limite=1');
+    // Lista: síndico, administração e auditor; o porteiro não (403, com acesso.negado na trilha)
+    const l = await get('auditor', '/funcionarios?limite=1');
     expect(l.body.data).toHaveLength(1);
     expect(l.body.pagination.hasNextPage).toBe(true);
+    for (const papel of ['sindico', 'administracao'] as const) expect((await get(papel, '/funcionarios?limite=1')).status).toBe(200);
+    const negado = await get('porteiro', '/funcionarios?limite=1');
+    expect(negado.status).toBe(403);
+    expect((await trilha(api, 'acesso.negado')).at(-1)!.depois).toMatchObject({ acao: 'funcionario.ver' });
     const ana = await pessoaPorNome('Ana Ribeiro');
-    expect((await get('porteiro', `/funcionarios/${ana.id}`)).body.code).toBe('FUNCIONARIO_NAO_ENCONTRADO');
+    expect((await get('auditor', `/funcionarios/${ana.id}`)).body.code).toBe('FUNCIONARIO_NAO_ENCONTRADO');
+    expect((await get('porteiro', `/funcionarios/${ana.id}/escala`)).body.code).toBe('FUNCIONARIO_NAO_ENCONTRADO');
+    expect((await get('auditor', `/funcionarios/${ana.id}/escala`)).status).toBe(403);
   });
 });
 
@@ -402,6 +412,35 @@ describe('vínculos: legado (RN-09)', () => {
     expect(l.body.data[0]).toMatchObject({ id: v!.id, legadoVencido: true, solicitadoPor: 'Importação da planilha teste.csv' });
     await patch('administracao', `/pessoas/${p!.id}`, { documento: cpf(), telefone: '11944440000' });
     expect((await post('administracao', `/vinculos/${v!.id}/regularizar`)).body.data.status).toBe('aprovado');
+  });
+});
+
+describe('vínculos: unidade desativada barra a aprovação (UNIDADE_INATIVA)', () => {
+  it('aprovar e regularizar em unidade desativada: 422; rejeitar continua possível; reativada, aprova', async () => {
+    const u = await post('administracao', '/unidades', { torre: 50, numero: '1' });
+    expect(u.status).toBe(201);
+    const uid = u.body.data.id as string;
+    const p1 = (await novaPessoa('administracao', { nome: 'Inativa Um', documento: cpf() })).body.data.id as string;
+    const p2 = (await novaPessoa('administracao', { nome: 'Inativa Dois', documento: cpf() })).body.data.id as string;
+    const v1 = (await post('administracao', '/vinculos', { pessoaId: p1, unidadeId: uid, tipo: 'proprietario' })).body.data.id as string;
+    const v2 = (await post('administracao', '/vinculos', { pessoaId: p2, unidadeId: uid, tipo: 'dependente' })).body.data.id as string;
+    for (const v of [v1, v2]) expect((await post('administracao', `/vinculos/${v}/conferencias`, { tipo: 'escritura' })).status).toBe(201);
+    expect((await post('administracao', `/unidades/${uid}/desativar`)).status).toBe(200);
+    const r = await post('administracao', `/vinculos/${v1}/aprovar`, {});
+    expect(r.status).toBe(422);
+    expect(r.body.code).toBe('UNIDADE_INATIVA');
+    expect((await api.db.select().from(s.vinculoUnidade).where(eq(s.vinculoUnidade.id, v1)))[0]!.status).toBe('pendente');
+    expect((await post('administracao', `/vinculos/${v2}/rejeitar`, { justificativa: 'Unidade desativada pela administração' })).status).toBe(200);
+    // Legado na unidade desativada: regularizar também é aprovar
+    const [leg] = await api.db.insert(s.vinculoUnidade).values({
+      pessoaId: p2, unidadeId: uid, tipo: 'dependente', status: 'legado', prazoRegularizacao: '2027-12-31',
+      registradoPorId: api.usuarios['paula.nogueira']!.id, conferenciaTipoDocumento: 'escritura', conferenciaData: '2026-10-01',
+      conferidoPorId: api.usuarios['paula.nogueira']!.id,
+    }).returning();
+    expect((await post('administracao', `/vinculos/${leg!.id}/regularizar`, {})).body.code).toBe('UNIDADE_INATIVA');
+    expect((await post('administracao', `/unidades/${uid}/reativar`)).status).toBe(200);
+    expect((await post('administracao', `/vinculos/${v1}/aprovar`, {})).body.data.status).toBe('aprovado');
+    expect((await post('administracao', `/vinculos/${leg!.id}/regularizar`, {})).body.data.status).toBe('aprovado');
   });
 });
 

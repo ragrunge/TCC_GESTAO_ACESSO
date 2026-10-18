@@ -27,6 +27,11 @@ export interface Config {
   argon2: { memoriaKib: number; iteracoes: number; paralelismo: number; concorrencia: number; filaMax: number };
   /** Chave do HMAC do CPF; a API deriva dela (HKDF) uma subchave para o login_limite, sem reusar a chave em si. */
   hmacCpfKey: Buffer;
+  /**
+   * Importação da planilha (RF-11, RN-09): prazo, em dias, para regularizar o vínculo legado. O valor é definido em
+   * assembleia (`IMPORTACAO_PRAZO_LEGADO_DIAS`, padrão 90, de 1 a 730).
+   */
+  importacao: { prazoLegadoDias: number };
 }
 
 /**
@@ -38,6 +43,8 @@ export interface Config {
 export const PADROES_LOGIN: Config['login'] = {
   maxFalhasLogin: 10, maxFalhasIp: 30, janelaMin: 15, bloqueioMin: 15, atrasoBaseMs: 250, atrasoMaxMs: 3000,
 };
+/** Prazo de regularização do legado (RN-09) quando a assembleia não definiu outro. */
+export const PRAZO_LEGADO_PADRAO_DIAS = 90;
 export const PADROES_ARGON2: Config['argon2'] = { memoriaKib: 64 * 1024, iteracoes: 3, paralelismo: 1, concorrencia: 2, filaMax: 50 };
 
 export const nomeCookie = (secure: boolean) => (secure ? '__Host-portaria_sessao' : 'portaria_sessao');
@@ -111,5 +118,6 @@ export function carregarConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     argon2: { ...PADROES_ARGON2 },
     hmacCpfKey,
+    importacao: { prazoLegadoDias: inteiro(env, 'IMPORTACAO_PRAZO_LEGADO_DIAS', PRAZO_LEGADO_PADRAO_DIAS, 1, 730) },
   };
 }

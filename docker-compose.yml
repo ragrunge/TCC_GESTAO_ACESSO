@@ -72,6 +72,8 @@ services:
       LOGIN_MAX_FALHAS_IP: ${LOGIN_MAX_FALHAS_IP:-}
       LOGIN_JANELA_MIN: ${LOGIN_JANELA_MIN:-}
       LOGIN_BLOQUEIO_MIN: ${LOGIN_BLOQUEIO_MIN:-}
+      # Prazo de regularização do legado (RN-09, definido em assembleia). Vazio = 90 dias.
+      IMPORTACAO_PRAZO_LEGADO_DIAS: ${IMPORTACAO_PRAZO_LEGADO_DIAS:-}
       PORTARIA_HMAC_CPF_KEY: ${PORTARIA_HMAC_CPF_KEY:?defina PORTARIA_HMAC_CPF_KEY no .env}
       PORTARIA_KEK: ${PORTARIA_KEK:?defina PORTARIA_KEK no .env}
       PORTARIA_KEK_VERSAO: ${PORTARIA_KEK_VERSAO:?defina PORTARIA_KEK_VERSAO no .env}

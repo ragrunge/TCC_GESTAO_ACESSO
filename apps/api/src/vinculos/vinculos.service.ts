@@ -216,6 +216,8 @@ export class VinculosService {
       if (!cadastroCompletoDe(p)) {
         throw erroApi(422, 'CADASTRO_INCOMPLETO', 'Para aprovar o vínculo a pessoa precisa ter CPF válido (não “sem CPF”) e telefone cadastrados.');
       }
+      // Aprovar é um novo uso da unidade: desativada, barra (422 UNIDADE_INATIVA). FOR SHARE segura a desativação concorrente.
+      await this.unidades.paraNovoUso(tx, antes.unidadeId);
       const erro = validarDecisaoVinculo('aprovar', undefined, antes.conferidoPorId ? { tipoDocumento: antes.conferenciaTipoDocumento!, data: 0, conferidoPorId: antes.conferidoPorId } : null);
       if (erro) throw erroApi(erro.status, erro.code, erro.message);
       const [depois] = await tx.update(v).set({ status: 'aprovado', decididoPorId: ctx.ator.id, decididoEm: agora, atualizadoEm: agora }).where(eq(v.id, id)).returning();
@@ -248,6 +250,7 @@ export class VinculosService {
       if (!cadastroCompletoDe(p)) {
         throw erroApi(422, 'CADASTRO_INCOMPLETO', 'Para regularizar, complete o cadastro (CPF válido e telefone) pela ficha da pessoa.');
       }
+      await this.unidades.paraNovoUso(tx, antes.unidadeId); // regularizar aprova: unidade desativada barra
       if (!antes.conferidoPorId) throw erroApi(422, 'CONFERENCIA_OBRIGATORIA', 'Registre a conferência do comprovante (RF-05) antes de regularizar.');
       const vigenciaFim = o.vigenciaFim !== undefined ? o.vigenciaFim : antes.vigenciaFim;
       if (antes.tipo === 'inquilino' && !vigenciaFim) throw erroApi(422, 'VIGENCIA_OBRIGATORIA', 'Inquilino exige data de fim da vigência para ser regularizado.');

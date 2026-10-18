@@ -203,7 +203,10 @@ export class PessoasService {
     return mapa;
   }
 
-  /** Ficha: pessoa, funcionário (se for), vínculos e eventos (null: o módulo de eventos ainda não existe na API). */
+  /**
+   * Ficha: pessoa, funcionário (se for) e vínculos. `eventos` continua null aqui: os últimos acessos vêm do módulo de
+   * eventos (`GET /eventos-acesso?pessoaId=`), que o adaptador do front chama em paralelo (sem acoplar os módulos).
+   */
   async ficha(ctx: Contexto, id: string) {
     const hoje = diaBrt(this.relogio.agora());
     const [p] = await this.db.select(colunasPessoa).from(pessoa).where(eq(pessoa.id, id));
