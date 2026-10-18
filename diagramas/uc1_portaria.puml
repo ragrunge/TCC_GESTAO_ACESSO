@@ -1,0 +1,45 @@
+@startuml uc1_portaria
+' Casos de uso da portaria — fonte: 01_requisitos.md, seção 12
+!include _estilo.iuml
+title Diagrama 1 — Operação da portaria (M2, M3, M4)
+
+actor "Porteiro" as P
+
+rectangle "Sistema de Controle de Acesso" {
+  usecase "UC01 Autenticar no sistema" as UC01
+  usecase "UC02 Registrar entrada\nde não morador" as UC02
+  usecase "UC03 Consultar restrições\nda unidade" as UC03
+  usecase "UC04 Identificar quem\nautorizou" as UC04
+  usecase "UC05 Liberar por exceção\n(com justificativa)" as UC05
+  usecase "UC06 Cadastrar visitante\nou prestador" as UC06
+  usecase "UC07 Registrar saída" as UC07
+  usecase "UC08 Lançar registro\nretroativo (contingência)" as UC08
+  usecase "UC09 Consultar pessoas\nno condomínio" as UC09
+  usecase "UC21 Registrar recebimento\nde encomenda" as UC21
+  usecase "UC22 Conferir unidade\nde destino" as UC22
+  usecase "UC23 Registrar retirada\nde encomenda" as UC23
+  usecase "UC24 Verificar vínculo\ncom a unidade" as UC24
+  usecase "UC25 Registrar ocorrência" as UC25
+  usecase "UC26 Vincular eventos\nde acesso" as UC26
+  usecase "UC27 Passar turno" as UC27
+}
+
+P -- UC01
+P -- UC02
+P -- UC07
+P -- UC08
+P -- UC09
+P -- UC21
+P -- UC23
+P -- UC25
+P -- UC27
+
+UC02 ..> UC03 : <<include>>
+UC02 ..> UC04 : <<include>>
+UC05 ..> UC02 : <<extend>>
+UC06 ..> UC02 : <<extend>>
+UC08 ..> UC04 : <<include>>
+UC21 ..> UC22 : <<include>>
+UC23 ..> UC24 : <<include>>
+UC26 ..> UC25 : <<extend>>
+@enduml

@@ -1,0 +1,16 @@
+' Estilo comum dos diagramas de casos de uso
+left to right direction
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #333333
+}
+skinparam actor {
+  BorderColor #333333
+}
+skinparam rectangle {
+  BorderColor #555555
+}
