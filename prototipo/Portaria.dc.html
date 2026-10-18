@@ -1,0 +1,1672 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+html,body{margin:0;padding:0;background:#F3F5F6}
+*{box-sizing:border-box}
+a{color:#0B5563}
+a:hover{color:#08434E}
+:focus-visible{outline:3px solid #0B5563;outline-offset:2px}
+</style>
+</helmet>
+<div style="font-family:'IBM Plex Sans',system-ui,sans-serif; font-size:15px; line-height:1.45; color:#1A2126; background:#F3F5F6; min-height:100vh; min-width:1280px">
+
+<sc-if value="{{ is.login }}" hint-placeholder-val="{{ true }}">
+<div style="min-height:100vh; display:grid; grid-template-columns:minmax(0,1fr) 560px">
+  <div style="background:#10262C; color:#fff; padding:56px 64px; display:flex; flex-direction:column; justify-content:space-between; gap:40px">
+    <div style="display:flex; align-items:center; gap:12px">
+      <div style="width:40px; height:40px; border-radius:9px; background:#0B5563; display:grid; place-items:center; font-weight:700">RP</div>
+      <div style="line-height:1.25"><div style="font-weight:600">Guarita</div><div style="font-size:13px; color:#9FB1B7">Controle de acesso e portaria</div></div>
+    </div>
+    <div style="max-width:540px">
+      <div style="font-size:42px; font-weight:600; line-height:1.12; letter-spacing:-0.02em; text-wrap:pretty">Condomínio Residencial do Parque</div>
+      <div style="margin-top:16px; color:#C8D3D7; font-size:17px; line-height:1.55; text-wrap:pretty">165 unidades em 9 torres. Cada entrada fica registrada com quem autorizou e quem registrou.</div>
+    </div>
+    <div style="font-size:13px; color:#8DA2A9">Protótipo acadêmico · TCC de Sistemas de Informação · dados fictícios</div>
+  </div>
+  <div style="display:flex; align-items:center; justify-content:center; padding:48px; background:#F3F5F6">
+    <div style="width:100%; max-width:400px; display:flex; flex-direction:column; gap:20px">
+      <sc-if value="{{ loginStep1 }}" hint-placeholder-val="{{ true }}">
+        <form onSubmit="{{ onLoginSubmit }}" style="display:flex; flex-direction:column; gap:16px">
+          <h1 style="margin:0 0 4px; font-size:28px; font-weight:600">Entrar</h1>
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:500">Usuário
+            <input value="{{ loginUser }}" onChange="{{ onLoginUser }}" style="height:46px; padding:0 14px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; background:#fff; color:#1A2126">
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; font-weight:500">Senha
+            <input type="password" value="{{ loginPass }}" onChange="{{ onLoginPass }}" style="height:46px; padding:0 14px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; background:#fff; color:#1A2126">
+          </label>
+          <button type="submit" style="height:48px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#08434E">Entrar</button>
+        </form>
+      </sc-if>
+      <sc-if value="{{ loginStep2 }}" hint-placeholder-val="{{ false }}">
+        <form onSubmit="{{ onLoginSubmit }}" style="display:flex; flex-direction:column; gap:16px">
+          <h1 style="margin:0; font-size:28px; font-weight:600">Verificação em duas etapas</h1>
+          <p style="margin:0; color:#56616B">Digite o código de 6 dígitos do aplicativo autenticador de {{ opName }}.</p>
+          <input autoFocus="{{ true }}" inputMode="numeric" maxLength="6" value="{{ code }}" onChange="{{ onCode }}" placeholder="000000" style="height:64px; padding:0 16px; border:1px solid #B9C3CA; border-radius:8px; font-family:'IBM Plex Mono',monospace; font-size:32px; letter-spacing:0.4em; text-align:center; background:#fff; color:#1A2126">
+          <sc-if value="{{ hasLoginErr }}"><div style="color:#B42318; font-size:14px; font-weight:500">{{ loginErr }}</div></sc-if>
+          <div style="font-size:13px; color:#56616B">Demonstração: qualquer código de 6 dígitos.</div>
+          <div style="display:flex; gap:10px">
+            <button type="submit" style="flex:1; height:48px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#08434E">Verificar</button>
+            <button type="button" onClick="{{ loginBack }}" style="height:48px; padding:0 18px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer">Voltar</button>
+          </div>
+        </form>
+      </sc-if>
+      <div style="display:flex; gap:10px; align-items:flex-start; padding:12px 14px; background:#E3F0F2; color:#0B4450; border-radius:8px; font-size:14px">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex-shrink:0; margin-top:1px"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path></svg>
+        <span>Cada operador usa o próprio login. Não compartilhe sua senha.</span>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px; margin-top:12px; padding-top:20px; border-top:1px dashed #C5CDD3">
+        <div style="font-size:13px; color:#56616B; font-weight:500">Perfil de demonstração</div>
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px">
+          <sc-for list="{{ profiles }}" as="p" hint-placeholder-count="4">
+            <button type="button" onClick="{{ p.onClick }}" style="height:40px; border:1px solid {{ p.bd }}; border-radius:7px; background:{{ p.bg }}; color:{{ p.fg }}; font:inherit; font-size:13px; font-weight:500; cursor:pointer">{{ p.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ is.app }}" hint-placeholder-val="{{ false }}">
+<div style="display:grid; grid-template-columns:248px minmax(0,1fr); height:100vh">
+  <aside style="background:#10262C; color:#C8D3D7; display:flex; flex-direction:column; gap:18px; padding:20px 12px; overflow:auto">
+    <div style="display:flex; align-items:center; gap:10px; padding:4px 10px 8px">
+      <div style="width:34px; height:34px; border-radius:8px; background:#0B5563; display:grid; place-items:center; color:#fff; font-weight:700; font-size:14px">RP</div>
+      <div style="line-height:1.2"><div style="color:#fff; font-weight:600; font-size:14px">Guarita</div><div style="font-size:12px; color:#9FB1B7">Residencial do Parque</div></div>
+    </div>
+    <sc-for list="{{ nav }}" as="sec" hint-placeholder-count="3">
+      <nav style="display:flex; flex-direction:column; gap:2px">
+        <div style="font-size:12px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#8DA2A9; padding:4px 12px 6px">{{ sec.title }}</div>
+        <sc-for list="{{ sec.items }}" as="it" hint-placeholder-count="3">
+          <button onClick="{{ it.onClick }}" style="min-height:40px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 12px 0 10px; border:none; border-left:3px solid {{ it.bar }}; border-radius:6px; background:{{ it.bg }}; color:{{ it.fg }}; font:inherit; font-size:14.5px; text-align:left; cursor:pointer" style-hover="color:#FFFFFF">
+            <span>{{ it.label }}</span>
+            <sc-if value="{{ it.hasBadge }}"><span style="min-width:22px; height:22px; padding:0 7px; border-radius:11px; background:#F79009; color:#1A1204; font-size:12px; font-weight:700; display:grid; place-items:center">{{ it.badge }}</span></sc-if>
+          </button>
+        </sc-for>
+      </nav>
+    </sc-for>
+    <div style="margin-top:auto; font-size:12px; color:#8DA2A9; padding:0 12px; line-height:1.5">Protótipo acadêmico · dados fictícios</div>
+  </aside>
+
+  <div style="display:flex; flex-direction:column; min-width:0; height:100vh">
+    <header style="height:64px; flex-shrink:0; background:#fff; border-bottom:1px solid #DCE1E5; display:flex; align-items:center; gap:24px; padding:0 24px">
+      <div style="font-weight:600; white-space:nowrap">Condomínio Residencial do Parque</div>
+      <div style="position:relative; flex:1; max-width:520px">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#56616B" stroke-width="2" stroke-linecap="round" style="position:absolute; left:12px; top:11px"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <input value="{{ gq }}" onChange="{{ onGq }}" placeholder="Buscar por nome, documento, unidade ou placa" style="width:100%; height:40px; padding:0 12px 0 40px; border:1px solid #C5CDD3; border-radius:8px; background:#F3F5F6; font:inherit; font-size:14.5px; color:#1A2126">
+        <sc-if value="{{ gOpen }}">
+          <div style="position:absolute; top:46px; left:0; right:0; background:#fff; border:1px solid #DCE1E5; border-radius:10px; box-shadow:0 12px 32px rgba(16,38,44,0.16); padding:6px; z-index:40; display:flex; flex-direction:column; gap:2px">
+            <sc-for list="{{ gRes }}" as="g" hint-placeholder-count="0">
+              <button onClick="{{ g.onClick }}" style="min-height:44px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 10px; border:none; border-radius:6px; background:#fff; font:inherit; text-align:left; cursor:pointer; color:#1A2126" style-hover="background:#EEF2F4">
+                <span style="display:flex; flex-direction:column"><span style="font-weight:500">{{ g.label }}</span><span style="font-size:13px; color:#56616B">{{ g.meta }}</span></span>
+                <span style="font-size:12px; color:#56616B; font-weight:600; text-transform:uppercase; letter-spacing:0.04em">{{ g.kind }}</span>
+              </button>
+            </sc-for>
+            <sc-if value="{{ gNone }}"><div style="padding:12px 10px; color:#56616B">Nenhum resultado para “{{ gq }}”.</div></sc-if>
+          </div>
+        </sc-if>
+      </div>
+      <div style="margin-left:auto; display:flex; align-items:center; gap:20px">
+        <div style="text-align:right; line-height:1.2"><div style="font-family:'IBM Plex Mono',monospace; font-size:19px; font-weight:600">{{ clock }}</div><div style="font-size:12px; color:#56616B">{{ dateL }}</div></div>
+        <div style="width:1px; height:32px; background:#DCE1E5"></div>
+        <div style="line-height:1.25"><div style="font-weight:600">{{ opName }}</div><div style="font-size:13px; color:#56616B">{{ opRole }}</div></div>
+        <button onClick="{{ logout }}" style="height:40px; padding:0 14px; border:1px solid #C5CDD3; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-size:14px; cursor:pointer" style-hover="background:#EEF2F4">Sair</button>
+      </div>
+    </header>
+
+    <main style="flex:1; overflow:auto; padding:28px 32px 56px">
+
+<sc-if value="{{ is.painel }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex; flex-direction:column; gap:24px">
+    <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px">
+      <div><h1 style="margin:0; font-size:26px; font-weight:600; letter-spacing:-0.01em">Painel da portaria</h1><p style="margin:4px 0 0; color:#56616B">Turno diurno · 06:00 às 18:00 · {{ opRole }} {{ opName }}</p></div>
+      <button onClick="{{ openTurno }}" style="height:44px; padding:0 18px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#EEF2F4">Passar turno</button>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px">
+      <button onClick="{{ startEntryBtn }}" style="height:112px; border:none; border-radius:12px; background:#0B5563; color:#fff; font:inherit; cursor:pointer; display:flex; align-items:center; justify-content:space-between; padding:0 28px; text-align:left" style-hover="background:#08434E">
+        <span style="display:flex; flex-direction:column; gap:4px"><span style="font-size:22px; font-weight:600">Nova entrada</span><span style="font-size:14px; color:#CFE6EA">Visitante, prestador ou funcionário</span></span>
+        <span style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; padding:6px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.45)">F2</span>
+      </button>
+      <button onClick="{{ openReceive }}" style="height:112px; border:1px solid #C5CDD3; border-radius:12px; background:#fff; color:#1A2126; font:inherit; cursor:pointer; display:flex; align-items:center; justify-content:space-between; padding:0 28px; text-align:left" style-hover="border-color:#0B5563">
+        <span style="display:flex; flex-direction:column; gap:4px"><span style="font-size:22px; font-weight:600">Encomenda</span><span style="font-size:14px; color:#56616B">Receber ou entregar</span></span>
+        <span style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; padding:6px 10px; border-radius:6px; border:1px solid #B9C3CA">F3</span>
+      </button>
+      <button onClick="{{ openOcc }}" style="height:112px; border:1px solid #C5CDD3; border-radius:12px; background:#fff; color:#1A2126; font:inherit; cursor:pointer; display:flex; align-items:center; justify-content:space-between; padding:0 28px; text-align:left" style-hover="border-color:#0B5563">
+        <span style="display:flex; flex-direction:column; gap:4px"><span style="font-size:22px; font-weight:600">Ocorrência</span><span style="font-size:14px; color:#56616B">Registrar fato do turno</span></span>
+        <span style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; padding:6px 10px; border-radius:6px; border:1px solid #B9C3CA">F4</span>
+      </button>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px">
+      <sc-for list="{{ cards }}" as="c" hint-placeholder-count="4">
+        <button onClick="{{ c.onClick }}" style="border:1px solid #DCE1E5; border-radius:10px; background:#fff; padding:18px 20px; font:inherit; color:#1A2126; text-align:left; cursor:pointer; display:flex; flex-direction:column; gap:6px" style-hover="border-color:#0B5563">
+          <span style="font-size:14px; color:#56616B">{{ c.label }}</span>
+          <span style="font-size:34px; font-weight:600; line-height:1.1; font-family:'IBM Plex Mono',monospace">{{ c.n }}</span>
+          <span style="font-size:13px; color:#0B5563; font-weight:500">{{ c.sub }}</span>
+        </button>
+      </sc-for>
+    </div>
+    <div style="background:#fff; border:1px solid #DCE1E5; border-radius:10px">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid #E6EAED">
+        <h2 style="margin:0; font-size:17px; font-weight:600">Últimas movimentações</h2>
+        <span style="font-size:13px; color:#56616B">Clique em uma linha para ver o registro completo</span>
+      </div>
+      <div style="display:grid; grid-template-columns:90px minmax(0,1.5fr) 80px 110px minmax(0,1.8fr) minmax(0,1fr); gap:12px; padding:10px 20px; font-size:13px; font-weight:600; color:#56616B; border-bottom:1px solid #E6EAED">
+        <span>Hora</span><span>Nome</span><span>Unidade</span><span>Tipo</span><span>Autorização</span><span>Registrado por</span>
+      </div>
+      <sc-for list="{{ moves }}" as="r" hint-placeholder-count="10">
+        <button onClick="{{ r.open }}" style="width:100%; display:grid; grid-template-columns:90px minmax(0,1.5fr) 80px 110px minmax(0,1.8fr) minmax(0,1fr); gap:12px; align-items:center; padding:9px 20px; min-height:48px; border:none; border-bottom:1px solid #EEF1F3; background:{{ r.rowBg }}; font:inherit; color:#1A2126; text-align:left; cursor:pointer" style-hover="background:#F5F8F9">
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:14px">{{ r.when }}</span>
+          <span style="font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ r.name }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace; font-weight:600">{{ r.unit }}</span>
+          <span style="font-size:14px; color:#33424B">{{ r.type }}</span>
+          <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0">
+            <span style="display:inline-flex; align-items:center; gap:5px; height:26px; padding:0 8px; border-radius:6px; font-size:13px; font-weight:600; background:{{ r.vBg }}; color:{{ r.vFg }}; border:1px solid {{ r.vBd }}; white-space:nowrap">
+              <sc-if value="{{ r.isExc }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 2.5 20h19L12 3.5z"></path><path d="M12 10v4.5"></path><path d="M12 17.5h.01"></path></svg></sc-if>
+              <sc-if value="{{ r.isDenied }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg></sc-if>
+              <span>{{ r.viaLabel }}</span>
+            </span>
+            <span style="font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ r.authL }}</span>
+            <sc-if value="{{ r.isRetro }}"><span style="height:24px; padding:0 7px; border-radius:6px; background:#E3F0F2; color:#0B4450; border:1px solid #A9D2D8; font-size:12px; font-weight:600; display:inline-flex; align-items:center">Retroativo</span></sc-if>
+          </span>
+          <span style="font-size:14px; color:#33424B">{{ r.op }}</span>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ is.entrada }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex; flex-direction:column; gap:20px">
+    <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px">
+      <div><h1 style="margin:0; font-size:26px; font-weight:600; letter-spacing:-0.01em">Registrar entrada</h1><p style="margin:4px 0 0; color:#56616B">Pessoa, unidade e quem autorizou. O registro não pode ser editado depois de confirmado.</p></div>
+    </div>
+    <div style="display:grid; grid-template-columns:minmax(0,1fr) 380px; gap:20px; align-items:start">
+      <div style="display:flex; flex-direction:column; gap:16px">
+
+        <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:20px">
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px"><span style="width:26px; height:26px; border-radius:13px; background:#0B5563; color:#fff; font-size:13px; font-weight:700; display:grid; place-items:center">1</span><h2 style="margin:0; font-size:17px; font-weight:600">Pessoa</h2></div>
+          <sc-if value="{{ en.showSearch }}">
+            <div style="position:relative">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#56616B" stroke-width="2" stroke-linecap="round" style="position:absolute; left:14px; top:14px"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+              <input ref="{{ qRef }}" value="{{ en.query }}" onChange="{{ onQuery }}" onKeyDown="{{ onQueryKey }}" placeholder="Nome ou documento da pessoa" style="width:100%; height:48px; padding:0 14px 0 44px; border:1px solid #9AA7B0; border-radius:8px; font:inherit; font-size:16px; background:#fff; color:#1A2126">
+            </div>
+            <div style="display:flex; flex-direction:column; gap:4px; margin-top:8px">
+              <sc-for list="{{ en.sug }}" as="p" hint-placeholder-count="0">
+                <button onClick="{{ p.onClick }}" style="display:grid; grid-template-columns:44px minmax(0,1fr) 150px 110px 190px; gap:12px; align-items:center; min-height:56px; padding:6px 10px; border:1px solid {{ p.bd }}; border-radius:8px; background:{{ p.bg }}; font:inherit; color:#1A2126; text-align:left; cursor:pointer" style-hover="background:#EEF5F6">
+                  <span style="width:40px; height:40px; border-radius:20px; background:#D5E6E9; color:#0B4450; font-weight:700; font-size:14px; display:grid; place-items:center">{{ p.ini }}</span>
+                  <span style="font-weight:600">{{ p.name }}</span>
+                  <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:#33424B">{{ p.doc }}</span>
+                  <span style="font-size:14px">{{ p.type }}</span>
+                  <span style="font-size:13px; color:#56616B">Último: {{ p.last }}</span>
+                </button>
+              </sc-for>
+              <sc-if value="{{ en.showNewOpt }}">
+                <button onClick="{{ openNew }}" style="min-height:48px; display:flex; align-items:center; gap:10px; padding:0 12px; border:1px dashed #9AA7B0; border-radius:8px; background:#fff; font:inherit; color:#0B5563; font-weight:600; cursor:pointer; text-align:left" style-hover="background:#EEF5F6">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                  Pessoa sem cadastro
+                </button>
+              </sc-if>
+              <sc-if value="{{ en.hintType }}"><div style="font-size:13px; color:#56616B; padding:4px 2px">Digite ao menos 2 letras. Use ↑ ↓ para escolher e Enter para selecionar.</div></sc-if>
+            </div>
+          </sc-if>
+          <sc-if value="{{ en.newMode }}">
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px">
+              <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500; grid-column:span 2">Nome completo
+                <input value="{{ en.np.name }}" onChange="{{ npOn.name }}" style="height:44px; padding:0 12px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; background:#fff; color:#1A2126">
+              </label>
+              <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Tipo de documento
+                <select value="{{ en.np.docType }}" onChange="{{ npOn.docType }}" style="height:44px; padding:0 10px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; background:#fff; color:#1A2126"><option value="CPF">CPF</option><option value="RG">RG</option><option value="CNH">CNH</option><option value="Passaporte">Passaporte</option></select>
+              </label>
+              <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Número
+                <input value="{{ en.np.doc }}" onChange="{{ npOn.doc }}" style="height:44px; padding:0 12px; border:1px solid #B9C3CA; border-radius:8px; font-family:'IBM Plex Mono',monospace; font-size:15px; background:#fff; color:#1A2126">
+              </label>
+              <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Telefone
+                <input value="{{ en.np.phone }}" onChange="{{ npOn.phone }}" placeholder="(11) 9____-____" style="height:44px; padding:0 12px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; background:#fff; color:#1A2126">
+              </label>
+              <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Tipo
+                <select value="{{ en.np.type }}" onChange="{{ npOn.type }}" style="height:44px; padding:0 10px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; background:#fff; color:#1A2126"><option value="Visitante">Visitante</option><option value="Prestador">Prestador</option></select>
+              </label>
+              <sc-if value="{{ en.isPrest }}">
+                <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Empresa
+                  <input value="{{ en.np.company }}" onChange="{{ npOn.company }}" style="height:44px; padding:0 12px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; background:#fff; color:#1A2126">
+                </label>
+                <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Serviço
+                  <input value="{{ en.np.service }}" onChange="{{ npOn.service }}" style="height:44px; padding:0 12px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; background:#fff; color:#1A2126">
+                </label>
+              </sc-if>
+              <div style="grid-column:span 2; display:flex; align-items:center; gap:14px; padding:12px; border:1px dashed #C5CDD3; border-radius:8px">
+                <button onClick="{{ togglePhoto }}" style="height:40px; padding:0 14px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-size:14px; cursor:pointer">{{ en.photoLabel }}</button>
+                <span style="font-size:14px; color:#56616B">Opcional — a recusa não impede o cadastro</span>
+              </div>
+              <div style="grid-column:span 2; display:flex; gap:10px">
+                <button onClick="{{ saveNew }}" style="height:44px; padding:0 18px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#08434E">Usar este cadastro</button>
+                <button onClick="{{ cancelNew }}" style="height:44px; padding:0 16px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer">Voltar à busca</button>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ en.hasPerson }}">
+            <div style="display:flex; align-items:center; gap:14px; padding:12px 14px; border:1px solid #A9D2D8; background:#F0F8F9; border-radius:8px">
+              <span style="width:44px; height:44px; border-radius:22px; background:#D5E6E9; color:#0B4450; font-weight:700; display:grid; place-items:center">{{ en.pIni }}</span>
+              <div style="flex:1; display:flex; flex-direction:column"><span style="font-weight:600; font-size:16px">{{ en.pName }}</span><span style="font-size:14px; color:#33424B"><span style="font-family:'IBM Plex Mono',monospace">{{ en.pDoc }}</span> · {{ en.pType }}</span></div>
+              <button onClick="{{ clearPerson }}" style="height:40px; padding:0 14px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-size:14px; cursor:pointer">Trocar</button>
+            </div>
+          </sc-if>
+        </section>
+
+        <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:20px">
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px"><span style="width:26px; height:26px; border-radius:13px; background:#0B5563; color:#fff; font-size:13px; font-weight:700; display:grid; place-items:center">2</span><h2 style="margin:0; font-size:17px; font-weight:600">Unidade de destino</h2></div>
+          <sc-if value="{{ en.noUnit }}">
+            <div style="display:flex; flex-direction:column; gap:14px">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+                <span style="font-size:14px; font-weight:500; width:56px">Torre</span>
+                <sc-for list="{{ en.towers }}" as="t" hint-placeholder-count="9">
+                  <button onClick="{{ t.onClick }}" style="width:48px; height:48px; border:1px solid {{ t.bd }}; border-radius:8px; background:{{ t.bg }}; color:{{ t.fg }}; font-family:'IBM Plex Mono',monospace; font-size:18px; font-weight:600; cursor:pointer">{{ t.n }}</button>
+                </sc-for>
+              </div>
+              <sc-if value="{{ en.hasTower }}">
+                <div style="display:flex; gap:8px">
+                  <span style="font-size:14px; font-weight:500; width:56px; padding-top:6px">Unidade</span>
+                  <div style="flex:1; display:flex; flex-direction:column; gap:4px; max-width:420px">
+                    <sc-for list="{{ en.floors }}" as="f" hint-placeholder-count="10">
+                      <div style="display:grid; grid-template-columns:48px repeat(4,1fr); gap:4px; align-items:center">
+                        <span style="font-size:12px; color:#56616B">{{ f.label }}</span>
+                        <sc-for list="{{ f.units }}" as="u" hint-placeholder-count="4">
+                          <button onClick="{{ u.onClick }}" style="height:34px; border:1px solid #C5CDD3; border-radius:6px; background:#fff; color:#1A2126; font-family:'IBM Plex Mono',monospace; font-size:14px; cursor:pointer" style-hover="background:#E3F0F2; border-color:#0B5563">{{ u.n }}</button>
+                        </sc-for>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+          <sc-if value="{{ en.hasUnit }}">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 18px; border:2px solid #0B5563; border-radius:10px; background:#F0F8F9">
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:34px; font-weight:600; letter-spacing:0.02em; color:#0B3F49">{{ en.unitBig }}</span>
+              <button onClick="{{ clearUnit }}" style="height:40px; padding:0 14px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-size:14px; cursor:pointer">Alterar</button>
+            </div>
+          </sc-if>
+        </section>
+
+        <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:20px">
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px"><span style="width:26px; height:26px; border-radius:13px; background:#0B5563; color:#fff; font-size:13px; font-weight:700; display:grid; place-items:center">3</span><h2 style="margin:0; font-size:17px; font-weight:600">Quem autorizou?</h2></div>
+          <sc-if value="{{ en.waitAuth }}"><p style="margin:0; color:#56616B">Escolha a pessoa e a unidade. O sistema verifica restrições e autorizações prévias antes de liberar esta etapa.</p></sc-if>
+          <sc-if value="{{ en.hasPrior }}">
+            <div style="display:flex; gap:12px; align-items:flex-start; padding:16px; border:1px solid #75E0A7; background:#DCFAE6; color:#05603A; border-radius:10px">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+              <div style="display:flex; flex-direction:column; gap:4px"><span style="font-weight:600; font-size:16px">{{ en.priorText }}</span><span style="font-size:14px">Autorizador preenchido automaticamente. Sem restrições para esta unidade.</span></div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ en.needAuth }}">
+            <div style="display:flex; flex-direction:column; gap:14px">
+              <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px">
+                <sc-for list="{{ en.vias }}" as="v" hint-placeholder-count="4">
+                  <button onClick="{{ v.onClick }}" style="min-height:76px; padding:12px; border:2px solid {{ v.bd }}; border-radius:10px; background:{{ v.bg }}; font:inherit; color:#1A2126; text-align:left; cursor:pointer; display:flex; flex-direction:column; gap:4px">
+                    <span style="font-weight:600">{{ v.label }}</span>
+                    <span style="font-size:13px; color:#56616B">{{ v.desc }}</span>
+                  </button>
+                </sc-for>
+              </div>
+              <sc-if value="{{ en.showRes }}">
+                <div style="display:flex; flex-direction:column; gap:8px">
+                  <span style="font-size:14px; font-weight:500">Morador que autorizou <span style="color:#B42318">*</span> <span style="font-weight:400; color:#56616B">· somente vínculo aprovado na {{ en.unitKey }}</span></span>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap">
+                    <sc-for list="{{ en.residents }}" as="m" hint-placeholder-count="2">
+                      <button onClick="{{ m.onClick }}" style="height:44px; padding:0 16px; border:2px solid {{ m.bd }}; border-radius:8px; background:{{ m.bg }}; font:inherit; color:#1A2126; cursor:pointer; display:flex; align-items:center; gap:8px">
+                        <span style="font-weight:500">{{ m.name }}</span><span style="font-size:13px; color:#56616B">{{ m.link }}</span>
+                      </button>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ en.viaPrevNo }}">
+                <div style="padding:12px 14px; border:1px solid #D5DDE2; background:#EEF2F4; border-radius:8px; color:#33424B">Não há autorização prévia válida para esta pessoa na {{ en.unitKey }}. Escolha outro meio.</div>
+              </sc-if>
+              <sc-if value="{{ en.isExc }}">
+                <div style="display:flex; flex-direction:column; gap:12px; padding:16px; border:1px solid #FEC84B; background:#FEF0C7; border-radius:10px; color:#93370D">
+                  <div style="display:flex; gap:10px; align-items:flex-start">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 3.5 2.5 20h19L12 3.5z"></path><path d="M12 10v4.5"></path><path d="M12 17.5h.01"></path></svg>
+                    <div><div style="font-weight:600; font-size:16px">Liberação por exceção</div><div style="font-size:14px; color:#7A2E0E">Esta entrada ficará marcada como exceção, com {{ opName }} como responsável, e aparecerá no relatório de exceções.</div></div>
+                  </div>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap">
+                    <sc-for list="{{ quickJust }}" as="q" hint-placeholder-count="3">
+                      <button onClick="{{ q.onClick }}" style="height:36px; padding:0 12px; border:1px solid #F5B54A; border-radius:18px; background:#fff; color:#7A2E0E; font:inherit; font-size:14px; cursor:pointer" style-hover="background:#FFF8E6">{{ q.t }}</button>
+                    </sc-for>
+                  </div>
+                  <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500; color:#7A2E0E">Justificativa (obrigatória, mínimo 15 caracteres)
+                    <textarea value="{{ en.just }}" onChange="{{ onJust }}" rows="3" style="padding:10px 12px; border:1px solid #F5B54A; border-radius:8px; font:inherit; background:#fff; color:#1A2126; resize:vertical"></textarea>
+                  </label>
+                  <span style="font-size:13px; color:#7A2E0E">{{ en.justCount }}</span>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+        </section>
+      </div>
+
+      <aside style="position:sticky; top:0; background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:20px; display:flex; flex-direction:column; gap:14px">
+        <h2 style="margin:0; font-size:17px; font-weight:600">Resumo do registro</h2>
+        <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Pessoa</span><span style="font-weight:600">{{ en.sumPerson }}</span></div>
+        <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Unidade</span><span style="font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; color:#0B3F49">{{ en.sumUnit }}</span></div>
+        <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Autorizado por</span><span style="font-weight:600">{{ en.sumAuth }}</span><span style="font-size:14px; color:#33424B">{{ en.sumVia }}</span></div>
+        <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Registrado por</span><span style="font-weight:600">{{ opRole }} {{ opName }} · {{ clock }}</span></div>
+        <div style="height:1px; background:#E6EAED"></div>
+        <sc-if value="{{ en.canConfirm }}">
+          <button onClick="{{ confirmEntry }}" style="height:52px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-size:16px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px" style-hover="background:#08434E">Confirmar entrada <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; padding:2px 7px; border-radius:5px; border:1px solid rgba(255,255,255,0.5)">Enter</span></button>
+        </sc-if>
+        <sc-if value="{{ en.cannotConfirm }}">
+          <button disabled="{{ true }}" style="height:52px; border:1px solid #D5DDE2; border-radius:8px; background:#EEF2F4; color:#6B7780; font:inherit; font-size:16px; font-weight:600; cursor:not-allowed">Confirmar entrada</button>
+          <span style="font-size:13px; color:#56616B">Falta: {{ en.missing }}</span>
+        </sc-if>
+        <button onClick="{{ cancelEntry }}" style="height:44px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px" style-hover="background:#EEF2F4">Cancelar <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; padding:2px 7px; border-radius:5px; border:1px solid #B9C3CA">Esc</span></button>
+      </aside>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ is.pessoas }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex; flex-direction:column; gap:20px">
+    <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px">
+      <div><h1 style="margin:0; font-size:26px; font-weight:600">Pessoas no condomínio</h1><p style="margin:4px 0 0; color:#56616B">{{ insideCount }} pessoas entraram e ainda não tiveram a saída registrada.</p></div>
+      <button onClick="{{ startEntryBtn }}" style="height:44px; padding:0 18px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:10px" style-hover="background:#08434E">Nova entrada <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; padding:2px 7px; border-radius:5px; border:1px solid rgba(255,255,255,0.5)">F2</span></button>
+    </div>
+    <div style="background:#fff; border:1px solid #DCE1E5; border-radius:10px">
+      <div style="display:grid; grid-template-columns:minmax(0,1.4fr) 110px 80px 80px 150px minmax(0,1.3fr) 160px; gap:12px; padding:12px 20px; font-size:13px; font-weight:600; color:#56616B; border-bottom:1px solid #E6EAED">
+        <span>Nome</span><span>Tipo</span><span>Unidade</span><span>Entrada</span><span>Permanência</span><span>Autorizado por</span><span></span>
+      </div>
+      <sc-for list="{{ inside }}" as="r" hint-placeholder-count="6">
+        <div style="display:grid; grid-template-columns:minmax(0,1.4fr) 110px 80px 80px 150px minmax(0,1.3fr) 160px; gap:12px; align-items:center; padding:8px 20px; min-height:56px; border-bottom:1px solid #EEF1F3; background:{{ r.longBg }}">
+          <span style="font-weight:500">{{ r.name }}</span>
+          <span style="font-size:14px">{{ r.type }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace; font-weight:600">{{ r.unit }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace">{{ r.time }}</span>
+          <span style="display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono',monospace; color:{{ r.longFg }}; font-weight:{{ r.longW }}">
+            <sc-if value="{{ r.isLong }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 2.5 20h19L12 3.5z"></path><path d="M12 10v4.5"></path><path d="M12 17.5h.01"></path></svg></sc-if>
+            {{ r.dur }}<sc-if value="{{ r.isLong }}"><span style="font-family:'IBM Plex Sans',sans-serif; font-size:12px">acima de 8h</span></sc-if>
+          </span>
+          <span style="font-size:14px">{{ r.authL }}<span style="color:#56616B"> · {{ r.viaLabel }}</span></span>
+          <button onClick="{{ r.exitFn }}" style="height:40px; padding:0 14px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-size:14px; font-weight:500; cursor:pointer" style-hover="border-color:#0B5563; color:#0B5563">Registrar saída</button>
+        </div>
+      </sc-for>
+      <sc-if value="{{ noInside }}"><div style="padding:32px 20px; color:#56616B; text-align:center">Ninguém no condomínio no momento.</div></sc-if>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ is.encomendas }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex; flex-direction:column; gap:20px">
+    <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px">
+      <div><h1 style="margin:0; font-size:26px; font-weight:600">Encomendas</h1><p style="margin:4px 0 0; color:#56616B">{{ pk.awaitN }} aguardando retirada · {{ pk.oldN }} há mais de 7 dias. Entrega só para pessoa com vínculo na unidade.</p></div>
+      <button onClick="{{ openReceive }}" style="height:44px; padding:0 18px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:10px" style-hover="background:#08434E">Receber encomenda <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; padding:2px 7px; border-radius:5px; border:1px solid rgba(255,255,255,0.5)">F3</span></button>
+    </div>
+    <div style="background:#fff; border:1px solid #DCE1E5; border-radius:10px">
+      <div style="display:flex; gap:4px; padding:0 16px; border-bottom:1px solid #E6EAED">
+        <button onClick="{{ pk.tA.onClick }}" style="height:48px; padding:0 14px; border:none; border-bottom:3px solid {{ pk.tA.bd }}; background:none; color:{{ pk.tA.fg }}; font:inherit; font-weight:600; cursor:pointer">Aguardando retirada ({{ pk.awaitN }})</button>
+        <button onClick="{{ pk.tE.onClick }}" style="height:48px; padding:0 14px; border:none; border-bottom:3px solid {{ pk.tE.bd }}; background:none; color:{{ pk.tE.fg }}; font:inherit; font-weight:600; cursor:pointer">Entregues ({{ pk.delivN }})</button>
+      </div>
+      <sc-if value="{{ pk.tabA }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid; grid-template-columns:90px minmax(0,1.2fr) 120px minmax(0,1.2fr) 190px 120px 110px; gap:12px; padding:12px 20px; font-size:13px; font-weight:600; color:#56616B; border-bottom:1px solid #E6EAED">
+          <span>Unidade</span><span>Destinatário</span><span>Transportadora</span><span>Rastreio</span><span>Recebida em</span><span>Recebida por</span><span></span>
+        </div>
+        <sc-for list="{{ pk.rowsA }}" as="p" hint-placeholder-count="8">
+          <div style="display:grid; grid-template-columns:90px minmax(0,1.2fr) 120px minmax(0,1.2fr) 190px 120px 110px; gap:12px; align-items:center; padding:8px 20px; min-height:56px; border-bottom:1px solid #EEF1F3; background:{{ p.rowBg }}">
+            <span style="font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:17px">{{ p.unit }}</span>
+            <span style="font-weight:500">{{ p.rec }}</span>
+            <span style="font-size:14px">{{ p.car }}</span>
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:13.5px; color:#33424B">{{ p.code }}</span>
+            <span style="display:flex; flex-direction:column; gap:2px"><span style="font-size:14px">{{ p.date }}</span>
+              <span style="align-self:flex-start; display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 7px; border-radius:5px; font-size:12px; font-weight:600; background:{{ p.aBg }}; color:{{ p.aFg }}; border:1px solid {{ p.aBd }}"><sc-if value="{{ p.old }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 2.5 20h19L12 3.5z"></path><path d="M12 10v4.5"></path></svg></sc-if>{{ p.age }}</span>
+            </span>
+            <span style="font-size:14px">{{ p.by }}</span>
+            <button onClick="{{ p.deliver }}" style="height:40px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-size:14px; font-weight:500; cursor:pointer" style-hover="border-color:#0B5563; color:#0B5563">Entregar</button>
+          </div>
+        </sc-for>
+      </sc-if>
+      <sc-if value="{{ pk.tabE }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid; grid-template-columns:90px minmax(0,1fr) 120px minmax(0,1.3fr) 170px 130px; gap:12px; padding:12px 20px; font-size:13px; font-weight:600; color:#56616B; border-bottom:1px solid #E6EAED">
+          <span>Unidade</span><span>Destinatário</span><span>Transportadora</span><span>Entregue a</span><span>Entregue em</span><span>Entregue por</span>
+        </div>
+        <sc-for list="{{ pk.rowsE }}" as="p" hint-placeholder-count="2">
+          <div style="display:grid; grid-template-columns:90px minmax(0,1fr) 120px minmax(0,1.3fr) 170px 130px; gap:12px; align-items:center; padding:8px 20px; min-height:52px; border-bottom:1px solid #EEF1F3">
+            <span style="font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:17px">{{ p.unit }}</span>
+            <span>{{ p.rec }}</span><span style="font-size:14px">{{ p.car }}</span>
+            <span style="display:flex; align-items:center; gap:6px; color:#05603A; font-weight:500"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>{{ p.to }}</span>
+            <span style="font-size:14px">{{ p.at }}</span><span style="font-size:14px">{{ p.dby }}</span>
+          </div>
+        </sc-for>
+      </sc-if>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ is.ocorrencias }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex; flex-direction:column; gap:20px">
+    <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px">
+      <div><h1 style="margin:0; font-size:26px; font-weight:600">Ocorrências</h1><p style="margin:4px 0 0; color:#56616B">Fatos do turno com envolvidos e eventos de acesso vinculados.</p></div>
+      <button onClick="{{ openOcc }}" style="height:44px; padding:0 18px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:10px" style-hover="background:#08434E">Nova ocorrência <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; padding:2px 7px; border-radius:5px; border:1px solid rgba(255,255,255,0.5)">F4</span></button>
+    </div>
+    <div style="background:#fff; border:1px solid #DCE1E5; border-radius:10px">
+      <div style="display:grid; grid-template-columns:120px 140px 190px 100px minmax(0,1fr) 110px 120px; gap:12px; padding:12px 20px; font-size:13px; font-weight:600; color:#56616B; border-bottom:1px solid #E6EAED">
+        <span>Código</span><span>Data</span><span>Tipo</span><span>Unidade</span><span>Descrição</span><span>Status</span><span>Registrado por</span>
+      </div>
+      <sc-for list="{{ occRows }}" as="o" hint-placeholder-count="5">
+        <button onClick="{{ o.open }}" style="width:100%; display:grid; grid-template-columns:120px 140px 190px 100px minmax(0,1fr) 110px 120px; gap:12px; align-items:center; padding:10px 20px; min-height:56px; border:none; border-bottom:1px solid #EEF1F3; background:{{ o.rowBg }}; font:inherit; color:#1A2126; text-align:left; cursor:pointer" style-hover="background:#F5F8F9">
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:13.5px">{{ o.code }}</span>
+          <span style="font-size:14px">{{ o.date }}</span>
+          <span style="font-weight:500">{{ o.type }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace; font-weight:600">{{ o.unit }}</span>
+          <span style="font-size:14px; color:#33424B; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ o.desc }}</span>
+          <span style="justify-self:start; height:26px; padding:0 8px; border-radius:6px; font-size:13px; font-weight:600; display:inline-flex; align-items:center; background:{{ o.sBg }}; color:{{ o.sFg }}; border:1px solid {{ o.sBd }}">{{ o.status }}</span>
+          <span style="font-size:14px">{{ o.by }}</span>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ is.unidades }}" hint-placeholder-val="{{ false }}">
+  <div style="display:grid; grid-template-columns:300px minmax(0,1fr); gap:20px; align-items:start">
+    <div style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:16px; display:flex; flex-direction:column; gap:12px; position:sticky; top:0">
+      <h2 style="margin:0; font-size:16px; font-weight:600">Unidades</h2>
+      <div style="display:grid; grid-template-columns:repeat(9,1fr); gap:4px">
+        <sc-for list="{{ un.towers }}" as="t" hint-placeholder-count="9">
+          <button onClick="{{ t.onClick }}" style="height:36px; border:1px solid {{ t.bd }}; border-radius:6px; background:{{ t.bg }}; color:{{ t.fg }}; font-family:'IBM Plex Mono',monospace; font-weight:600; cursor:pointer">{{ t.n }}</button>
+        </sc-for>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:4px">
+        <sc-for list="{{ un.floors }}" as="f" hint-placeholder-count="10">
+          <div style="display:grid; grid-template-columns:30px repeat(4,1fr); gap:4px; align-items:center">
+            <span style="font-size:12px; color:#56616B">{{ f.label }}</span>
+            <sc-for list="{{ f.units }}" as="u" hint-placeholder-count="4">
+              <button onClick="{{ u.onClick }}" style="height:32px; border:1px solid {{ u.bd }}; border-radius:5px; background:{{ u.bg }}; color:{{ u.fg }}; font-family:'IBM Plex Mono',monospace; font-size:13px; cursor:pointer">{{ u.n }}</button>
+            </sc-for>
+          </div>
+        </sc-for>
+      </div>
+      <div style="font-size:12px; color:#56616B">Destaque azul claro: unidades com cadastro detalhado nesta demonstração.</div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:16px">
+      <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap">
+        <h1 style="margin:0; font-size:30px; font-weight:600">{{ un.title }}</h1>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+          <button onClick="{{ openUF.previa }}" style="height:44px; padding:0 16px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#08434E">Nova autorização prévia</button>
+          <button onClick="{{ openUF.restricao }}" style="height:44px; padding:0 16px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-weight:500; cursor:pointer">Nova restrição</button>
+          <button onClick="{{ openUF.vinculo }}" style="height:44px; padding:0 16px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-weight:500; cursor:pointer">Solicitar vínculo</button>
+        </div>
+      </div>
+      <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px">
+        <h2 style="margin:0; padding:14px 20px; font-size:16px; font-weight:600; border-bottom:1px solid #E6EAED">Moradores</h2>
+        <sc-for list="{{ un.res }}" as="r" hint-placeholder-count="3">
+          <div style="display:grid; grid-template-columns:minmax(0,1fr) 180px 120px; gap:12px; align-items:center; padding:10px 20px; min-height:52px; border-bottom:1px solid #EEF1F3">
+            <span style="font-weight:500">{{ r.name }}</span><span style="font-size:14px">{{ r.link }}</span>
+            <span style="justify-self:start; height:26px; padding:0 8px; border-radius:6px; font-size:13px; font-weight:600; display:inline-flex; align-items:center; background:{{ r.bg }}; color:{{ r.fg }}; border:1px solid {{ r.bd }}">{{ r.status }}</span>
+          </div>
+        </sc-for>
+      </section>
+      <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px">
+        <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:14px 18px; display:flex; flex-direction:column; gap:10px">
+          <h2 style="margin:0; font-size:16px; font-weight:600">Veículos</h2>
+          <sc-for list="{{ un.veh }}" as="v" hint-placeholder-count="1">
+            <div style="display:flex; flex-direction:column"><span style="font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:17px">{{ v.plate }}</span><span style="font-size:14px; color:#56616B">{{ v.model }}</span></div>
+          </sc-for>
+          <sc-if value="{{ un.noVeh }}"><span style="color:#56616B; font-size:14px">Nenhum veículo cadastrado.</span></sc-if>
+        </section>
+        <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:14px 18px; display:flex; flex-direction:column; gap:10px">
+          <h2 style="margin:0; font-size:16px; font-weight:600">Autorizações prévias ativas</h2>
+          <sc-for list="{{ un.pri }}" as="p" hint-placeholder-count="1">
+            <div style="display:flex; gap:8px; align-items:flex-start"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#05603A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:3px"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+              <div style="display:flex; flex-direction:column"><span style="font-weight:500">{{ p.person }}</span><span style="font-size:13px; color:#56616B">Até {{ p.until }} · {{ p.win }} · por {{ p.by }}</span></div></div>
+          </sc-for>
+          <sc-if value="{{ un.noPri }}"><span style="color:#56616B; font-size:14px">Nenhuma autorização ativa.</span></sc-if>
+        </section>
+        <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:14px 18px; display:flex; flex-direction:column; gap:10px">
+          <h2 style="margin:0; font-size:16px; font-weight:600">Restrições</h2>
+          <sc-for list="{{ un.rst }}" as="r" hint-placeholder-count="1">
+            <div style="display:flex; gap:8px; align-items:flex-start; color:#B42318"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="flex-shrink:0; margin-top:3px"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg>
+              <div style="display:flex; flex-direction:column"><span style="font-weight:600">{{ r.person }}</span><span style="font-size:13px; color:#912018">“{{ r.reason }}”</span><span style="font-size:13px; color:#56616B">Solicitada por {{ r.by }} · {{ r.date }}</span></div></div>
+          </sc-for>
+          <sc-if value="{{ un.noRst }}"><span style="color:#56616B; font-size:14px">Nenhuma restrição.</span></sc-if>
+        </section>
+      </div>
+      <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px">
+        <h2 style="margin:0; padding:14px 20px; font-size:16px; font-weight:600; border-bottom:1px solid #E6EAED">Histórico recente de acessos</h2>
+        <sc-for list="{{ un.hist }}" as="r" hint-placeholder-count="4">
+          <button onClick="{{ r.open }}" style="width:100%; display:grid; grid-template-columns:110px minmax(0,1fr) 170px minmax(0,1fr) 130px; gap:12px; align-items:center; padding:9px 20px; min-height:48px; border:none; border-bottom:1px solid #EEF1F3; background:#fff; font:inherit; color:#1A2126; text-align:left; cursor:pointer" style-hover="background:#F5F8F9">
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:14px">{{ r.when }}</span><span style="font-weight:500">{{ r.name }}</span>
+            <span style="justify-self:start; height:26px; padding:0 8px; border-radius:6px; font-size:13px; font-weight:600; display:inline-flex; align-items:center; background:{{ r.vBg }}; color:{{ r.vFg }}; border:1px solid {{ r.vBd }}">{{ r.viaLabel }}</span>
+            <span style="font-size:14px">{{ r.authL }}</span><span style="font-size:14px; color:#33424B">{{ r.op }}</span>
+          </button>
+        </sc-for>
+        <sc-if value="{{ un.noHist }}"><div style="padding:16px 20px; color:#56616B">Sem acessos recentes.</div></sc-if>
+      </section>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ is.vinculos }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex; flex-direction:column; gap:16px">
+    <div><h1 style="margin:0; font-size:26px; font-weight:600">Vínculos pendentes</h1><p style="margin:4px 0 0; color:#56616B">{{ pendN }} solicitações aguardando decisão da administração.</p></div>
+    <div style="display:flex; gap:10px; align-items:center; padding:12px 16px; background:#E3F0F2; color:#0B4450; border:1px solid #A9D2D8; border-radius:8px; font-weight:500">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex-shrink:0"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path></svg>
+      Vínculo pendente não dá acesso de morador. Documento apresentado na portaria não substitui esta aprovação.
+    </div>
+    <div style="display:grid; grid-template-columns:340px minmax(0,1fr); gap:16px; align-items:start">
+      <div style="display:flex; flex-direction:column; gap:8px">
+        <sc-for list="{{ vList }}" as="v" hint-placeholder-count="4">
+          <button onClick="{{ v.onClick }}" style="display:flex; flex-direction:column; gap:6px; padding:14px 16px; border:2px solid {{ v.bd }}; border-radius:10px; background:{{ v.bg }}; font:inherit; color:#1A2126; text-align:left; cursor:pointer">
+            <span style="display:flex; justify-content:space-between; gap:8px; align-items:center"><span style="font-weight:600">{{ v.person }}</span><span style="height:24px; padding:0 8px; border-radius:6px; font-size:12px; font-weight:600; display:inline-flex; align-items:center; background:{{ v.sBg }}; color:{{ v.sFg }}; border:1px solid {{ v.sBd }}">{{ v.status }}</span></span>
+            <span style="font-size:14px"><span style="font-family:'IBM Plex Mono',monospace; font-weight:600">{{ v.unit }}</span> · {{ v.type }}</span>
+            <span style="font-size:13px; color:#56616B">Solicitado em {{ v.req }}</span>
+          </button>
+        </sc-for>
+      </div>
+      <div style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:20px 24px; display:flex; flex-direction:column; gap:18px">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px">
+          <div><h2 style="margin:0; font-size:22px; font-weight:600">{{ vd.person }} — {{ vd.type }}</h2><div style="font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600; color:#0B3F49; margin-top:4px">{{ vd.unitBig }}</div></div>
+          <sc-if value="{{ vd.hasFails }}"><span style="display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 10px; border-radius:6px; background:#FEE4E2; color:#B42318; border:1px solid #FDA29B; font-size:13px; font-weight:600"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 2.5 20h19L12 3.5z"></path><path d="M12 10v4.5"></path><path d="M12 17.5h.01"></path></svg>{{ vd.failText }}</span></sc-if>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px">
+          <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Documento</span><span style="font-family:'IBM Plex Mono',monospace">{{ vd.doc }}</span></div>
+          <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Vigência</span><span>{{ vd.start }} a {{ vd.end }}</span></div>
+          <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Solicitado em</span><span>{{ vd.req }}</span></div>
+          <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Solicitado por</span><span>{{ vd.by }}</span></div>
+        </div>
+        <div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px">
+          <div style="background:#E9ECEE; border-radius:8px; padding:18px">
+            <div style="background:#FFFEFA; box-shadow:0 1px 3px rgba(0,0,0,0.18); padding:24px 26px; min-height:380px; display:flex; flex-direction:column; gap:12px; font-family:Georgia,'Times New Roman',serif; color:#2A2A2A">
+              <div style="text-align:center; font-weight:700; font-size:14px; letter-spacing:0.06em">{{ vd.docTitle }}</div>
+              <div style="height:6px; background:#ECE9E0; border-radius:2px"></div>
+              <sc-for list="{{ vd.lines }}" as="l" hint-placeholder-count="5">
+                <div style="display:flex; flex-direction:column; gap:1px; font-size:13px"><span style="font-weight:700">{{ l.l }}</span><span>{{ l.v }}</span></div>
+              </sc-for>
+              <div style="display:flex; flex-direction:column; gap:6px; margin-top:6px"><div style="height:6px; background:#ECE9E0; border-radius:2px"></div><div style="height:6px; width:85%; background:#ECE9E0; border-radius:2px"></div><div style="height:6px; width:70%; background:#ECE9E0; border-radius:2px"></div></div>
+              <div style="margin-top:auto; display:grid; grid-template-columns:1fr 1fr; gap:20px; font-size:11px; text-align:center"><div style="border-top:1px solid #555; padding-top:4px">Assinatura 1</div><div style="border-top:1px solid #555; padding-top:4px">Assinatura 2</div></div>
+            </div>
+            <div style="font-size:12px; color:#56616B; margin-top:8px; text-align:center">Documento anexado à solicitação · visualização</div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:14px">
+            <h3 style="margin:0; font-size:15px; font-weight:600">Conferência com o cadastro</h3>
+            <sc-for list="{{ vd.checks }}" as="c" hint-placeholder-count="3">
+              <div style="display:flex; gap:10px; align-items:flex-start; color:{{ c.fg }}">
+                <sc-if value="{{ c.isOk }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:2px"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></sc-if>
+                <sc-if value="{{ c.isBad }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" style="flex-shrink:0; margin-top:2px"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg></sc-if>
+                <div style="display:flex; flex-direction:column"><span style="font-weight:600">{{ c.label }}</span><span style="font-size:14px; color:#33424B">{{ c.detail }}</span></div>
+              </div>
+            </sc-for>
+            <sc-if value="{{ vd.hasNote }}"><div style="padding:10px 12px; border:1px solid #FEC84B; background:#FEF0C7; color:#7A2E0E; border-radius:8px; font-size:14px">{{ vd.note }}</div></sc-if>
+            <div style="height:1px; background:#E6EAED"></div>
+            <sc-if value="{{ vd.isPend }}">
+              <sc-if value="{{ vd.notRejecting }}">
+                <div style="display:flex; gap:10px">
+                  <button onClick="{{ approveV }}" style="flex:1; height:48px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#08434E">Aprovar</button>
+                  <button onClick="{{ startReject }}" style="flex:1; height:48px; border:2px solid #B42318; border-radius:8px; background:#fff; color:#B42318; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#FEF3F2">Rejeitar</button>
+                </div>
+              </sc-if>
+              <sc-if value="{{ vd.rejecting }}">
+                <div style="display:flex; flex-direction:column; gap:10px">
+                  <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Justificativa da rejeição (obrigatória)
+                    <textarea autoFocus="{{ true }}" rows="3" value="{{ vd.rejText }}" onChange="{{ onRej }}" placeholder="Ex.: Locador não é o proprietário registrado; proprietária não confirmou a locação." style="padding:10px 12px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; resize:vertical"></textarea>
+                  </label>
+                  <span style="font-size:13px; color:#56616B">{{ vd.rejCount }}</span>
+                  <div style="display:flex; gap:10px">
+                    <sc-if value="{{ vd.rejOk }}"><button onClick="{{ confirmReject }}" style="flex:1; height:48px; border:none; border-radius:8px; background:#B42318; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#912018">Confirmar rejeição</button></sc-if>
+                    <sc-if value="{{ vd.rejNo }}"><button disabled="{{ true }}" style="flex:1; height:48px; border:1px solid #D5DDE2; border-radius:8px; background:#EEF2F4; color:#6B7780; font:inherit; font-weight:600; cursor:not-allowed">Confirmar rejeição</button></sc-if>
+                    <button onClick="{{ cancelReject }}" style="height:48px; padding:0 16px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer">Cancelar</button>
+                  </div>
+                </div>
+              </sc-if>
+            </sc-if>
+            <sc-if value="{{ vd.isDone }}"><div style="padding:12px 14px; border-radius:8px; background:{{ vd.dBg }}; color:{{ vd.dFg }}; border:1px solid {{ vd.dBd }}; font-weight:500">{{ vd.doneText }}</div></sc-if>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ is.cadastro }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex; flex-direction:column; gap:20px">
+    <div><h1 style="margin:0; font-size:26px; font-weight:600">Pessoas</h1><p style="margin:4px 0 0; color:#56616B">Moradores com vínculo e pessoas cadastradas na portaria. Clique para abrir a unidade ou o histórico.</p></div>
+    <div style="background:#fff; border:1px solid #DCE1E5; border-radius:10px">
+      <div style="display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 100px 170px; gap:12px; padding:12px 20px; font-size:13px; font-weight:600; color:#56616B; border-bottom:1px solid #E6EAED"><span>Nome</span><span>Vínculo ou tipo</span><span>Unidade</span><span>Status</span></div>
+      <sc-for list="{{ cad }}" as="c" hint-placeholder-count="8">
+        <button onClick="{{ c.onClick }}" style="width:100%; display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 100px 170px; gap:12px; align-items:center; padding:8px 20px; min-height:48px; border:none; border-bottom:1px solid #EEF1F3; background:#fff; font:inherit; color:#1A2126; text-align:left; cursor:pointer" style-hover="background:#F5F8F9">
+          <span style="font-weight:500">{{ c.name }}</span><span style="font-size:14px">{{ c.kind }}</span><span style="font-family:'IBM Plex Mono',monospace; font-weight:600">{{ c.unit }}</span>
+          <span style="justify-self:start; height:26px; padding:0 8px; border-radius:6px; font-size:13px; font-weight:600; display:inline-flex; align-items:center; background:{{ c.sBg }}; color:{{ c.sFg }}; border:1px solid {{ c.sBd }}">{{ c.status }}</span>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ is.importar }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex; flex-direction:column; gap:20px; max-width:1080px">
+    <div><h1 style="margin:0; font-size:26px; font-weight:600">Importar planilha</h1><p style="margin:4px 0 0; color:#56616B">Carga inicial a partir da planilha atual. Moradores entram com status Legado até a regularização do vínculo.</p></div>
+    <sc-if value="{{ imp0 }}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{ impPick }}" style="height:240px; border:2px dashed #9AA7B0; border-radius:12px; background:#fff; font:inherit; color:#1A2126; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px" style-hover="border-color:#0B5563; background:#F5FAFB">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#0B5563" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"></path><path d="M7 9l5-5 5 5"></path><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"></path></svg>
+        <span style="font-size:18px; font-weight:600">Selecionar arquivo .xlsx ou .csv</span>
+        <span style="font-size:14px; color:#56616B">Colunas esperadas: nome, documento, torre, unidade, tipo de vínculo, telefone</span>
+      </button>
+    </sc-if>
+    <sc-if value="{{ imp1 }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 18px; background:#fff; border:1px solid #DCE1E5; border-radius:10px">
+        <div style="display:flex; flex-direction:column"><span style="font-family:'IBM Plex Mono',monospace; font-weight:600">moradores_parque_2026.xlsx</span><span style="font-size:14px; color:#56616B">512 linhas lidas · 482 válidas · 30 com inconsistência</span></div>
+        <button onClick="{{ impReset }}" style="height:40px; padding:0 14px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-size:14px; cursor:pointer">Trocar arquivo</button>
+      </div>
+      <div style="display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); gap:16px; align-items:start">
+        <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px">
+          <h2 style="margin:0; padding:14px 20px; font-size:16px; font-weight:600; border-bottom:1px solid #E6EAED">Pré-visualização</h2>
+          <div style="display:grid; grid-template-columns:minmax(0,1.2fr) 130px 50px 50px 100px 150px; gap:10px; padding:10px 20px; font-size:13px; font-weight:600; color:#56616B; border-bottom:1px solid #E6EAED"><span>Nome</span><span>Documento</span><span>Torre</span><span>Un.</span><span>Vínculo</span><span>Situação</span></div>
+          <sc-for list="{{ impRows }}" as="r" hint-placeholder-count="8">
+            <div style="display:grid; grid-template-columns:minmax(0,1.2fr) 130px 50px 50px 100px 150px; gap:10px; align-items:center; padding:8px 20px; border-bottom:1px solid #EEF1F3; font-size:14px">
+              <span>{{ r.n }}</span><span style="font-family:'IBM Plex Mono',monospace; font-size:13px">{{ r.d }}</span><span style="font-family:'IBM Plex Mono',monospace">{{ r.t }}</span><span style="font-family:'IBM Plex Mono',monospace">{{ r.u }}</span><span>{{ r.l }}</span>
+              <sc-if value="{{ r.good }}"><span style="color:#05603A; font-weight:500">Válida</span></sc-if>
+              <sc-if value="{{ r.bad }}"><span style="display:inline-flex; align-items:center; gap:5px; color:#93370D; font-weight:600"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 2.5 20h19L12 3.5z"></path><path d="M12 10v4.5"></path></svg>{{ r.st }}</span></sc-if>
+            </div>
+          </sc-for>
+        </section>
+        <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:16px 20px; display:flex; flex-direction:column; gap:14px">
+          <h2 style="margin:0; font-size:16px; font-weight:600">Inconsistências</h2>
+          <sc-for list="{{ impIssues }}" as="i" hint-placeholder-count="3">
+            <div style="display:flex; flex-direction:column; gap:2px; padding:10px 12px; border:1px solid #FEC84B; background:#FEF0C7; border-radius:8px; color:#7A2E0E">
+              <span style="display:flex; justify-content:space-between; font-weight:600"><span>{{ i.a }}</span><span>{{ i.b }}</span></span><span style="font-size:13px">{{ i.c }}</span>
+            </div>
+          </sc-for>
+          <span style="font-size:14px; color:#56616B">Linhas com inconsistência não são importadas. O relatório fica disponível para correção.</span>
+          <button onClick="{{ impRun }}" style="height:48px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#08434E">Importar 482 moradores válidos</button>
+        </section>
+      </div>
+    </sc-if>
+    <sc-if value="{{ imp2 }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; gap:14px; align-items:flex-start; padding:20px 22px; border:1px solid #75E0A7; background:#DCFAE6; color:#05603A; border-radius:10px">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+        <div style="display:flex; flex-direction:column; gap:4px"><span style="font-size:19px; font-weight:600">482 moradores importados com status Legado — prazo de regularização até 31/03/2027</span><span style="font-size:14px; color:#065F46">30 linhas não importadas. Relatório de inconsistências salvo em importacao_2026-10-09.csv.</span></div>
+      </div>
+      <button onClick="{{ impReset }}" style="align-self:flex-start; height:44px; padding:0 16px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer">Nova importação</button>
+    </sc-if>
+  </div>
+</sc-if>
+
+<sc-if value="{{ is.historico }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex; flex-direction:column; gap:16px">
+    <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px">
+      <div><h1 style="margin:0; font-size:26px; font-weight:600">Histórico e auditoria</h1><p style="margin:4px 0 0; color:#56616B">Trilha somente leitura. Cada registro é encadeado ao anterior por hash.</p></div>
+      <div style="display:flex; gap:8px">
+        <button onClick="{{ verifyTrail }}" style="height:44px; padding:0 16px; border:1px solid #0B5563; border-radius:8px; background:#fff; color:#0B5563; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#E3F0F2">Verificar integridade da trilha</button>
+        <button onClick="{{ exportTrail }}" style="height:44px; padding:0 16px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#08434E">Exportar trilha (arquivo verificável)</button>
+      </div>
+    </div>
+    <sc-if value="{{ vRun }}"><div style="padding:12px 16px; border:1px solid #D5DDE2; background:#EEF2F4; color:#33424B; border-radius:8px">{{ vRunText }}</div></sc-if>
+    <sc-if value="{{ vOk }}"><div style="display:flex; gap:10px; align-items:center; padding:12px 16px; border:1px solid #75E0A7; background:#DCFAE6; color:#05603A; border-radius:8px; font-weight:500"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6l8-3z"></path><path d="M8.5 12l2.5 2.5 4.5-5"></path></svg>{{ vOkText }}</div></sc-if>
+    <div style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:16px 20px; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px 16px; align-items:end">
+      <label style="display:flex; flex-direction:column; gap:4px; font-size:13px; font-weight:500">Período
+        <span style="display:flex; gap:6px"><input type="date" value="{{ hf.from }}" onChange="{{ hfOn.from }}" style="flex:1; min-width:0; height:40px; padding:0 8px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; font-size:14px"><input type="date" value="{{ hf.to }}" onChange="{{ hfOn.to }}" style="flex:1; min-width:0; height:40px; padding:0 8px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; font-size:14px"></span>
+      </label>
+      <label style="display:flex; flex-direction:column; gap:4px; font-size:13px; font-weight:500">Unidade<input value="{{ hf.unit }}" onChange="{{ hfOn.unit }}" placeholder="Ex.: T4-32" style="height:40px; padding:0 10px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; font-size:14px"></label>
+      <label style="display:flex; flex-direction:column; gap:4px; font-size:13px; font-weight:500">Pessoa<input value="{{ hf.person }}" onChange="{{ hfOn.person }}" placeholder="Nome" style="height:40px; padding:0 10px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; font-size:14px"></label>
+      <label style="display:flex; flex-direction:column; gap:4px; font-size:13px; font-weight:500">Porteiro
+        <select value="{{ hf.porteiro }}" onChange="{{ hfOn.porteiro }}" style="height:40px; padding:0 8px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; font-size:14px; background:#fff"><option value="">Todos</option><option value="João Lima">João Lima</option><option value="Sérgio Matos">Sérgio Matos</option><option value="Marina Couto">Marina Couto</option><option value="Roberto Faria">Roberto Faria</option></select>
+      </label>
+      <label style="display:flex; flex-direction:column; gap:4px; font-size:13px; font-weight:500">Tipo
+        <select value="{{ hf.tipo }}" onChange="{{ hfOn.tipo }}" style="height:40px; padding:0 8px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; font-size:14px; background:#fff"><option value="">Todos</option><option value="Visitante">Visitante</option><option value="Prestador">Prestador</option><option value="Funcionário">Funcionário</option></select>
+      </label>
+      <label style="display:flex; flex-direction:column; gap:4px; font-size:13px; font-weight:500">Meio de autorização
+        <select value="{{ hf.meio }}" onChange="{{ hfOn.meio }}" style="height:40px; padding:0 8px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; font-size:14px; background:#fff"><option value="">Todos</option><option value="interfone">Interfone</option><option value="presente">Morador presente</option><option value="previa">Autorização prévia</option><option value="excecao">Exceção do porteiro</option><option value="negado">Entrada negada</option></select>
+      </label>
+      <div style="display:flex; gap:16px; align-items:center; height:40px; grid-column:span 2">
+        <label style="display:flex; gap:8px; align-items:center; font-size:14px; font-weight:500; cursor:pointer"><input type="checkbox" checked="{{ hf.exc }}" onChange="{{ hfOn.exc }}" style="width:18px; height:18px; accent-color:#0B5563">Somente exceções</label>
+        <label style="display:flex; gap:8px; align-items:center; font-size:14px; font-weight:500; cursor:pointer"><input type="checkbox" checked="{{ hf.retro }}" onChange="{{ hfOn.retro }}" style="width:18px; height:18px; accent-color:#0B5563">Somente retroativos</label>
+        <button onClick="{{ clearHf }}" style="margin-left:auto; height:40px; padding:0 12px; border:none; background:none; color:#0B5563; font:inherit; font-size:14px; font-weight:600; cursor:pointer">Limpar filtros</button>
+      </div>
+    </div>
+    <div style="background:#fff; border:1px solid #DCE1E5; border-radius:10px">
+      <div style="padding:12px 20px; font-size:14px; color:#56616B; border-bottom:1px solid #E6EAED">{{ hCount }}</div>
+      <div style="display:grid; grid-template-columns:110px minmax(0,1.2fr) 80px 100px minmax(0,1.9fr) 120px 140px; gap:12px; padding:10px 20px; font-size:13px; font-weight:600; color:#56616B; border-bottom:1px solid #E6EAED">
+        <span>Data e hora</span><span>Pessoa</span><span>Unidade</span><span>Tipo</span><span>Autorização</span><span>Registrado por</span><span>Código</span>
+      </div>
+      <sc-for list="{{ hRows }}" as="r" hint-placeholder-count="10">
+        <button onClick="{{ r.open }}" style="width:100%; display:grid; grid-template-columns:110px minmax(0,1.2fr) 80px 100px minmax(0,1.9fr) 120px 140px; gap:12px; align-items:center; padding:9px 20px; min-height:50px; border:none; border-bottom:1px solid #EEF1F3; background:{{ r.rowBg }}; font:inherit; color:#1A2126; text-align:left; cursor:pointer" style-hover="background:#F5F8F9">
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:14px">{{ r.dateS }}</span>
+          <span style="font-weight:500">{{ r.name }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace; font-weight:600">{{ r.unit }}</span>
+          <span style="font-size:14px">{{ r.type }}</span>
+          <span style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0">
+            <span style="display:inline-flex; align-items:center; gap:5px; height:26px; padding:0 8px; border-radius:6px; font-size:13px; font-weight:600; background:{{ r.vBg }}; color:{{ r.vFg }}; border:1px solid {{ r.vBd }}; white-space:nowrap">
+              <sc-if value="{{ r.isExc }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 2.5 20h19L12 3.5z"></path><path d="M12 10v4.5"></path><path d="M12 17.5h.01"></path></svg></sc-if>
+              <sc-if value="{{ r.isDenied }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg></sc-if>
+              <span>{{ r.viaLabel }}</span>
+            </span>
+            <span style="font-size:14px">{{ r.authL }}</span>
+            <sc-if value="{{ r.isRetro }}"><span style="height:24px; padding:0 7px; border-radius:6px; background:#E3F0F2; color:#0B4450; border:1px solid #A9D2D8; font-size:12px; font-weight:600; display:inline-flex; align-items:center">Retroativo · {{ r.retroText }}</span></sc-if>
+          </span>
+          <span style="font-size:14px">{{ r.op }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#56616B">{{ r.code }}</span>
+        </button>
+      </sc-for>
+      <sc-if value="{{ noH }}"><div style="padding:32px 20px; text-align:center; color:#56616B">Nenhum evento com estes filtros.</div></sc-if>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ is.relatorios }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex; flex-direction:column; gap:20px">
+    <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px">
+      <div><h1 style="margin:0; font-size:26px; font-weight:600">Relatórios</h1><p style="margin:4px 0 0; color:#56616B">Últimos 30 dias · 10/09 a 09/10/2026</p></div>
+      <button onClick="{{ exportPdf }}" style="height:44px; padding:0 18px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#08434E">Exportar PDF</button>
+    </div>
+    <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:18px 22px">
+      <div style="display:flex; justify-content:space-between; align-items:baseline"><h2 style="margin:0; font-size:16px; font-weight:600">Acessos por dia</h2><span style="font-size:14px; color:#56616B">{{ rep.total30 }} acessos no período · fins de semana em tom claro</span></div>
+      <div style="display:flex; align-items:flex-end; gap:4px; height:180px; margin-top:16px; border-bottom:1px solid #C5CDD3">
+        <sc-for list="{{ rep.bars }}" as="b" hint-placeholder-count="30">
+          <div title="{{ b.vs }}" style="flex:1; height:{{ b.h }}; background:{{ b.col }}; border-radius:3px 3px 0 0"></div>
+        </sc-for>
+      </div>
+      <div style="display:flex; gap:4px; margin-top:6px">
+        <sc-for list="{{ rep.bars }}" as="b" hint-placeholder-count="30"><span style="flex:1; font-size:11px; color:#56616B; white-space:nowrap; overflow:visible">{{ b.lab }}</span></sc-for>
+      </div>
+    </section>
+    <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px">
+      <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:18px 22px; display:flex; flex-direction:column; gap:12px">
+        <h2 style="margin:0; font-size:16px; font-weight:600">Acessos por meio de autorização</h2>
+        <sc-for list="{{ rep.meios }}" as="x" hint-placeholder-count="4">
+          <div style="display:grid; grid-template-columns:170px minmax(0,1fr) 48px; gap:10px; align-items:center"><span style="font-size:14px">{{ x.l }}</span><div style="height:14px; background:#EEF2F4; border-radius:3px"><div style="height:100%; width:{{ x.w }}; background:{{ x.c }}; border-radius:3px"></div></div><span style="font-family:'IBM Plex Mono',monospace; font-size:14px; text-align:right">{{ x.v }}</span></div>
+        </sc-for>
+      </section>
+      <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:18px 22px; display:flex; flex-direction:column; gap:12px">
+        <h2 style="margin:0; font-size:16px; font-weight:600">Liberações por exceção, por porteiro</h2>
+        <sc-for list="{{ rep.exc }}" as="x" hint-placeholder-count="3">
+          <div style="display:grid; grid-template-columns:170px minmax(0,1fr) 48px; gap:10px; align-items:center"><span style="font-size:14px">{{ x.l }}</span><div style="height:14px; background:#EEF2F4; border-radius:3px"><div style="height:100%; width:{{ x.w }}; background:#DC6803; border-radius:3px"></div></div><span style="font-family:'IBM Plex Mono',monospace; font-size:14px; text-align:right">{{ x.v }}</span></div>
+        </sc-for>
+      </section>
+      <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:18px 22px; display:flex; flex-direction:column; gap:12px">
+        <h2 style="margin:0; font-size:16px; font-weight:600">Encomendas pendentes por idade</h2>
+        <sc-for list="{{ rep.ages }}" as="x" hint-placeholder-count="3">
+          <div style="display:grid; grid-template-columns:170px minmax(0,1fr) 48px; gap:10px; align-items:center"><span style="font-size:14px">{{ x.l }}</span><div style="height:14px; background:#EEF2F4; border-radius:3px"><div style="height:100%; width:{{ x.w }}; background:{{ x.c }}; border-radius:3px"></div></div><span style="font-family:'IBM Plex Mono',monospace; font-size:14px; text-align:right">{{ x.v }}</span></div>
+        </sc-for>
+      </section>
+      <section style="background:#fff; border:1px solid #DCE1E5; border-radius:10px; padding:18px 22px; display:flex; flex-direction:column; gap:12px">
+        <h2 style="margin:0; font-size:16px; font-weight:600">Unidades com cadastro completo</h2>
+        <div style="display:flex; align-items:baseline; gap:12px"><span style="font-family:'IBM Plex Mono',monospace; font-size:40px; font-weight:600">71%</span><span style="color:#56616B">117 de 165 unidades</span></div>
+        <div style="height:14px; background:#EEF2F4; border-radius:3px"><div style="height:100%; width:71%; background:#0B5563; border-radius:3px"></div></div>
+        <span style="font-size:14px; color:#56616B">48 unidades ainda com moradores em status Legado. Prazo de regularização: 31/03/2027.</span>
+      </section>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ is.usuarios }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex; flex-direction:column; gap:20px">
+    <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px">
+      <div><h1 style="margin:0; font-size:26px; font-weight:600">Usuários do sistema</h1><p style="margin:4px 0 0; color:#56616B">Cada operador tem login próprio. Usuários desativados mantêm o histórico.</p></div>
+      <button onClick="{{ openNewUser }}" style="height:44px; padding:0 18px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#08434E">Novo usuário</button>
+    </div>
+    <div style="background:#fff; border:1px solid #DCE1E5; border-radius:10px">
+      <div style="display:grid; grid-template-columns:minmax(0,1.3fr) 140px 100px 190px 120px 280px; gap:12px; padding:12px 20px; font-size:13px; font-weight:600; color:#56616B; border-bottom:1px solid #E6EAED"><span>Nome</span><span>Perfil</span><span>Status</span><span>Último acesso</span><span>Segundo fator</span><span>Ações</span></div>
+      <sc-for list="{{ users }}" as="u" hint-placeholder-count="7">
+        <div style="display:grid; grid-template-columns:minmax(0,1.3fr) 140px 100px 190px 120px 280px; gap:12px; align-items:center; padding:8px 20px; min-height:56px; border-bottom:1px solid #EEF1F3">
+          <span style="display:flex; flex-direction:column"><span style="font-weight:500">{{ u.name }}</span><span style="font-family:'IBM Plex Mono',monospace; font-size:13px; color:#56616B">{{ u.login }}</span></span>
+          <span style="font-size:14px">{{ u.role }}</span>
+          <span style="justify-self:start; height:26px; padding:0 8px; border-radius:6px; font-size:13px; font-weight:600; display:inline-flex; align-items:center; background:{{ u.sBg }}; color:{{ u.sFg }}; border:1px solid {{ u.sBd }}">{{ u.status }}</span>
+          <span style="font-size:14px">{{ u.last }}</span>
+          <span style="font-size:14px; font-weight:600; color:{{ u.mfaFg }}">{{ u.mfaL }}</span>
+          <span style="display:flex; gap:8px">
+            <button onClick="{{ u.onReset }}" style="height:40px; padding:0 12px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-size:14px; cursor:pointer">Redefinir acesso</button>
+            <sc-if value="{{ u.isActive }}"><button onClick="{{ u.onDisable }}" style="height:40px; padding:0 12px; border:1px solid #FDA29B; border-radius:8px; background:#fff; color:#B42318; font:inherit; font-size:14px; cursor:pointer" style-hover="background:#FEF3F2">Desativar</button></sc-if>
+          </span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</sc-if>
+
+    </main>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{ m.any }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed; inset:0; background:rgba(12,22,28,0.58); display:flex; align-items:center; justify-content:center; padding:24px; z-index:60">
+
+    <sc-if value="{{ m.restricao }}">
+      <div role="alertdialog" style="width:600px; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 24px 64px rgba(0,0,0,0.3); border:3px solid #B42318">
+        <div style="background:#B42318; color:#fff; padding:24px 28px; display:flex; gap:16px; align-items:center">
+          <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="flex-shrink:0"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg>
+          <div style="font-size:24px; font-weight:700; line-height:1.2; letter-spacing:0.01em">ENTRADA NÃO PERMITIDA PARA {{ m.rUnit }}</div>
+        </div>
+        <div style="padding:24px 28px; display:flex; flex-direction:column; gap:14px">
+          <div style="font-size:18px; font-weight:600">{{ m.rPerson }}</div>
+          <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Motivo registrado pelo morador</span><span style="font-size:17px; font-weight:600; color:#912018">“{{ m.rReason }}”</span></div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px">
+            <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Restrição solicitada por</span><span style="font-weight:500">{{ m.rBy }}</span></div>
+            <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Cadastrada no sistema por</span><span style="font-weight:500">{{ m.rReg }} · {{ m.rDate }}</span></div>
+          </div>
+          <div style="font-size:14px; color:#33424B; padding:10px 12px; background:#F3F5F6; border-radius:8px">A tentativa será gravada na trilha de auditoria com seu nome e horário.</div>
+          <div style="display:flex; gap:10px; margin-top:4px">
+            <button onClick="{{ restrOcc }}" style="flex:1; height:48px; border:none; border-radius:8px; background:#B42318; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#912018">Registrar ocorrência</button>
+            <button onClick="{{ restrCancel }}" style="height:48px; padding:0 18px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer; display:flex; align-items:center; gap:10px">Cancelar <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; padding:2px 7px; border-radius:5px; border:1px solid #B9C3CA">Esc</span></button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ m.turno }}">
+      <div style="width:560px; background:#fff; border-radius:12px; padding:24px 28px; display:flex; flex-direction:column; gap:16px">
+        <h2 style="margin:0; font-size:20px; font-weight:600">Passar turno</h2>
+        <p style="margin:0; color:#56616B">Resumo do turno de {{ opName }} até {{ clock }}. Confira antes de entregar.</p>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+          <sc-for list="{{ turno }}" as="t" hint-placeholder-count="6">
+            <div style="padding:12px 14px; border:1px solid #DCE1E5; border-radius:8px; display:flex; justify-content:space-between; align-items:center"><span style="font-size:14px">{{ t.label }}</span><span style="font-family:'IBM Plex Mono',monospace; font-size:20px; font-weight:600">{{ t.n }}</span></div>
+          </sc-for>
+        </div>
+        <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Próximo operador
+          <select style="height:44px; padding:0 10px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; background:#fff; color:#1A2126"><option>Sérgio Matos</option><option>Marina Couto</option></select>
+        </label>
+        <div style="display:flex; gap:10px">
+          <button onClick="{{ confirmTurno }}" style="flex:1; height:48px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#08434E">Confirmar passagem de turno</button>
+          <button onClick="{{ closeModal }}" style="height:48px; padding:0 18px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer">Cancelar</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ m.priors }}">
+      <div style="width:640px; background:#fff; border-radius:12px; padding:24px 28px; display:flex; flex-direction:column; gap:14px">
+        <h2 style="margin:0; font-size:20px; font-weight:600">Autorizações prévias de hoje</h2>
+        <sc-for list="{{ priorsToday }}" as="p" hint-placeholder-count="6">
+          <div style="display:grid; grid-template-columns:minmax(0,1fr) 80px 150px 100px; gap:12px; align-items:center; padding:10px 0; border-bottom:1px solid #EEF1F3">
+            <span style="display:flex; flex-direction:column"><span style="font-weight:500">{{ p.who }}</span><span style="font-size:13px; color:#56616B">Autorizado por {{ p.by }}</span></span>
+            <span style="font-family:'IBM Plex Mono',monospace; font-weight:600">{{ p.unit }}</span>
+            <span style="font-size:14px">{{ p.win }}</span>
+            <span style="font-size:13px; font-weight:600; color:{{ p.fg }}">{{ p.st }}</span>
+          </div>
+        </sc-for>
+        <button onClick="{{ closeModal }}" style="align-self:flex-end; height:44px; padding:0 18px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer">Fechar</button>
+      </div>
+    </sc-if>
+
+<sc-if value="{{ m.pkgReceive }}">
+      <div style="width:680px; max-height:calc(100vh - 48px); overflow:auto; background:#fff; border-radius:12px; padding:24px 28px; display:flex; flex-direction:column; gap:16px">
+        <h2 style="margin:0; font-size:20px; font-weight:600">Receber encomenda</h2>
+        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap">
+          <span style="font-size:14px; font-weight:500; width:70px">Torre</span>
+          <sc-for list="{{ pf.towers }}" as="t" hint-placeholder-count="9">
+            <button onClick="{{ t.onClick }}" style="width:44px; height:44px; border:1px solid {{ t.bd }}; border-radius:8px; background:{{ t.bg }}; color:{{ t.fg }}; font-family:'IBM Plex Mono',monospace; font-size:17px; font-weight:600; cursor:pointer">{{ t.n }}</button>
+          </sc-for>
+        </div>
+        <sc-if value="{{ pf.hasTower }}">
+          <sc-if value="{{ pf.noUnit }}">
+            <div style="display:flex; gap:6px">
+              <span style="font-size:14px; font-weight:500; width:70px; padding-top:4px">Unidade</span>
+              <div style="flex:1; display:grid; grid-template-columns:repeat(2,1fr); gap:4px 16px">
+                <sc-for list="{{ pf.floors }}" as="f" hint-placeholder-count="10">
+                  <div style="display:grid; grid-template-columns:30px repeat(4,1fr); gap:4px; align-items:center">
+                    <span style="font-size:12px; color:#56616B">{{ f.label }}</span>
+                    <sc-for list="{{ f.units }}" as="u" hint-placeholder-count="4">
+                      <button onClick="{{ u.onClick }}" style="height:32px; border:1px solid #C5CDD3; border-radius:5px; background:#fff; color:#1A2126; font-family:'IBM Plex Mono',monospace; font-size:13px; cursor:pointer" style-hover="background:#E3F0F2; border-color:#0B5563">{{ u.n }}</button>
+                    </sc-for>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+        </sc-if>
+        <sc-if value="{{ pf.hasUnit }}">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border:2px solid #0B5563; border-radius:10px; background:#F0F8F9">
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:28px; font-weight:600; color:#0B3F49">{{ pf.unitBig }}</span>
+            <button onClick="{{ pfClearUnit }}" style="height:40px; padding:0 14px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-size:14px; cursor:pointer">Alterar</button>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:6px">
+            <span style="font-size:14px; font-weight:500">Destinatário</span>
+            <div style="display:flex; gap:8px; flex-wrap:wrap">
+              <sc-for list="{{ pf.recs }}" as="r" hint-placeholder-count="2">
+                <button onClick="{{ r.onClick }}" style="height:44px; padding:0 14px; border:2px solid {{ r.bd }}; border-radius:8px; background:{{ r.bg }}; font:inherit; color:#1A2126; cursor:pointer; display:flex; gap:8px; align-items:center"><span style="font-weight:500">{{ r.name }}</span><span style="font-size:13px; color:#56616B">{{ r.link }}</span></button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+        <div style="display:flex; flex-direction:column; gap:6px">
+          <span style="font-size:14px; font-weight:500">Transportadora</span>
+          <div style="display:flex; gap:6px; flex-wrap:wrap">
+            <sc-for list="{{ pf.cars }}" as="c" hint-placeholder-count="7">
+              <button onClick="{{ c.onClick }}" style="height:40px; padding:0 14px; border:1px solid {{ c.bd }}; border-radius:20px; background:{{ c.bg }}; color:{{ c.fg }}; font:inherit; font-size:14px; cursor:pointer">{{ c.t }}</button>
+            </sc-for>
+          </div>
+        </div>
+        <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Código de rastreio
+          <input value="{{ pf.code }}" onChange="{{ pfCode }}" style="height:44px; padding:0 12px; border:1px solid #B9C3CA; border-radius:8px; font-family:'IBM Plex Mono',monospace; font-size:15px; background:#fff; color:#1A2126">
+        </label>
+        <div style="display:flex; gap:10px">
+          <sc-if value="{{ pf.valid }}"><button onClick="{{ pkgContinue }}" style="flex:1; height:48px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px" style-hover="background:#08434E">Continuar <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; padding:2px 7px; border-radius:5px; border:1px solid rgba(255,255,255,0.5)">Enter</span></button></sc-if>
+          <sc-if value="{{ pf.invalid }}"><button disabled="{{ true }}" style="flex:1; height:48px; border:1px solid #D5DDE2; border-radius:8px; background:#EEF2F4; color:#6B7780; font:inherit; font-weight:600; cursor:not-allowed">Continuar</button></sc-if>
+          <button onClick="{{ closeModal }}" style="height:48px; padding:0 18px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer; display:flex; align-items:center; gap:10px">Cancelar <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; padding:2px 7px; border-radius:5px; border:1px solid #B9C3CA">Esc</span></button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ m.pkgConfirm }}">
+      <div style="width:620px; background:#fff; border-radius:12px; padding:32px; display:flex; flex-direction:column; gap:18px; text-align:center; border:3px solid #0B5563">
+        <div style="font-size:18px; color:#33424B">Confirma que a encomenda é para</div>
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:48px; font-weight:700; color:#0B3F49; letter-spacing:0.02em">{{ pf.unitBig }}?</div>
+        <div style="font-size:16px">Destinatário: <strong>{{ pf.rec }}</strong> · {{ pf.car }}</div>
+        <div style="display:flex; gap:10px; margin-top:8px">
+          <button onClick="{{ pkgSave }}" style="flex:1; height:52px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-size:16px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px" style-hover="background:#08434E">Sim, registrar <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; padding:2px 7px; border-radius:5px; border:1px solid rgba(255,255,255,0.5)">Enter</span></button>
+          <button onClick="{{ pkgBack }}" style="flex:1; height:52px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px">Voltar e corrigir <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; padding:2px 7px; border-radius:5px; border:1px solid #B9C3CA">Esc</span></button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ m.pkgDeliver }}">
+      <div style="width:620px; background:#fff; border-radius:12px; padding:24px 28px; display:flex; flex-direction:column; gap:16px">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start"><h2 style="margin:0; font-size:20px; font-weight:600">Entregar encomenda {{ dv.id }}</h2><span style="font-size:14px; color:#56616B">{{ dv.car }} · <span style="font-family:'IBM Plex Mono',monospace">{{ dv.code }}</span></span></div>
+        <div style="display:flex; flex-direction:column"><span style="font-family:'IBM Plex Mono',monospace; font-size:30px; font-weight:600; color:#0B3F49">{{ dv.unitBig }}</span><span style="color:#33424B">Destinatário: {{ dv.rec }}</span></div>
+        <sc-if value="{{ dv.showSearch }}">
+          <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Quem está retirando?
+            <input autoFocus="{{ true }}" value="{{ dv.pq }}" onChange="{{ onPq }}" placeholder="Nome da pessoa" style="height:48px; padding:0 14px; border:1px solid #9AA7B0; border-radius:8px; font:inherit; font-size:16px; background:#fff; color:#1A2126">
+          </label>
+          <div style="display:flex; flex-direction:column; gap:4px">
+            <sc-for list="{{ dv.cands }}" as="c" hint-placeholder-count="0">
+              <button onClick="{{ c.onClick }}" style="min-height:48px; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:6px 12px; border:1px solid #E1E6EA; border-radius:8px; background:#fff; font:inherit; color:#1A2126; text-align:left; cursor:pointer" style-hover="background:#EEF5F6"><span style="font-weight:500">{{ c.name }}</span><span style="font-size:13px; color:#56616B">{{ c.meta }}</span></button>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{ dv.ok }}">
+          <div style="display:flex; gap:12px; align-items:flex-start; padding:14px 16px; border:1px solid #75E0A7; background:#DCFAE6; color:#05603A; border-radius:10px">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+            <div style="display:flex; flex-direction:column"><span style="font-weight:600; font-size:16px">{{ dv.pName }}</span><span style="font-size:14px">{{ dv.pMeta }}</span></div>
+          </div>
+          <div style="display:flex; gap:10px">
+            <button onClick="{{ deliverConfirm }}" style="flex:1; height:48px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#08434E">Confirmar entrega</button>
+            <button onClick="{{ clearPick }}" style="height:48px; padding:0 16px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer">Trocar pessoa</button>
+          </div>
+        </sc-if>
+        <sc-if value="{{ dv.bad }}">
+          <div role="alert" style="display:flex; gap:12px; align-items:flex-start; padding:16px; border:2px solid #B42318; background:#FEE4E2; color:#912018; border-radius:10px">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="flex-shrink:0"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg>
+            <div style="display:flex; flex-direction:column; gap:4px"><span style="font-weight:700; font-size:17px">Esta pessoa não tem vínculo com a {{ dv.unit }}. Contate a unidade.</span><span style="font-size:14px">{{ dv.pName }} · {{ dv.pMeta }}</span><sc-if value="{{ dv.pending }}"><span style="font-size:14px">Vínculo pendente de aprovação não autoriza a retirada.</span></sc-if></div>
+          </div>
+          <div style="display:flex; gap:10px">
+            <button onClick="{{ clearPick }}" style="flex:1; height:48px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-weight:500; cursor:pointer">Buscar outra pessoa</button>
+            <button onClick="{{ closeModal }}" style="height:48px; padding:0 16px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer">Fechar</button>
+          </div>
+        </sc-if>
+        <sc-if value="{{ dv.showSearch }}"><button onClick="{{ closeModal }}" style="align-self:flex-end; height:44px; padding:0 16px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer">Cancelar</button></sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ m.occForm }}">
+      <div style="width:760px; max-height:calc(100vh - 48px); overflow:auto; background:#fff; border-radius:12px; padding:24px 28px; display:flex; flex-direction:column; gap:16px">
+        <h2 style="margin:0; font-size:20px; font-weight:600">Nova ocorrência</h2>
+        <div style="display:flex; flex-direction:column; gap:6px">
+          <span style="font-size:14px; font-weight:500">Tipo</span>
+          <div style="display:flex; gap:6px; flex-wrap:wrap">
+            <sc-for list="{{ of.types }}" as="t" hint-placeholder-count="5">
+              <button onClick="{{ t.onClick }}" style="height:40px; padding:0 14px; border:1px solid {{ t.bd }}; border-radius:20px; background:{{ t.bg }}; color:{{ t.fg }}; font:inherit; font-size:14px; cursor:pointer">{{ t.t }}</button>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:160px minmax(0,1fr); gap:12px">
+          <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Unidade<input value="{{ of.unit }}" onChange="{{ ofOn.unit }}" placeholder="T4-32" style="height:44px; padding:0 12px; border:1px solid #B9C3CA; border-radius:8px; font-family:'IBM Plex Mono',monospace; font-size:15px"></label>
+          <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Envolvidos<input value="{{ of.people }}" onChange="{{ ofOn.people }}" placeholder="Nomes das pessoas envolvidas" style="height:44px; padding:0 12px; border:1px solid #B9C3CA; border-radius:8px; font:inherit"></label>
+        </div>
+        <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Descrição
+          <textarea rows="4" value="{{ of.desc }}" onChange="{{ ofOn.desc }}" style="padding:10px 12px; border:1px solid #B9C3CA; border-radius:8px; font:inherit; resize:vertical"></textarea>
+        </label>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+          <button onClick="{{ addFile }}" style="height:40px; padding:0 14px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-size:14px; cursor:pointer">Adicionar anexo</button>
+          <sc-for list="{{ of.fileChips }}" as="f" hint-placeholder-count="0"><span style="height:30px; padding:0 10px; border-radius:6px; background:#EEF2F4; font-family:'IBM Plex Mono',monospace; font-size:13px; display:inline-flex; align-items:center">{{ f.name }}</span></sc-for>
+        </div>
+        <div style="border:1px solid #DCE1E5; border-radius:10px">
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px">
+            <span style="font-size:14px; font-weight:500">{{ of.linksLabel }}</span>
+            <button onClick="{{ toggleLinks }}" style="height:40px; padding:0 14px; border:1px solid #0B5563; border-radius:8px; background:#fff; color:#0B5563; font:inherit; font-size:14px; font-weight:600; cursor:pointer">{{ of.toggleLabel }}</button>
+          </div>
+          <sc-if value="{{ of.showLinks }}">
+            <div style="display:flex; flex-direction:column; gap:4px; padding:0 10px 10px">
+              <sc-for list="{{ of.recent }}" as="r" hint-placeholder-count="5">
+                <button onClick="{{ r.toggle }}" style="display:grid; grid-template-columns:22px 70px minmax(0,1fr) 70px minmax(0,1fr); gap:10px; align-items:center; min-height:44px; padding:4px 10px; border:1px solid {{ r.rowBd }}; border-radius:8px; background:#fff; font:inherit; font-size:14px; color:#1A2126; text-align:left; cursor:pointer">
+                  <span style="width:20px; height:20px; border-radius:4px; border:2px solid {{ r.cbBd }}; background:{{ r.cbBg }}; display:grid; place-items:center; color:#fff"><sc-if value="{{ r.on }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></sc-if></span>
+                  <span style="font-family:'IBM Plex Mono',monospace">{{ r.when }}</span><span style="font-weight:500">{{ r.name }}</span><span style="font-family:'IBM Plex Mono',monospace; font-weight:600">{{ r.unit }}</span><span style="color:#33424B">{{ r.viaLabel }} · {{ r.op }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+        <div style="display:flex; gap:10px">
+          <button onClick="{{ occSave }}" style="flex:1; height:48px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#08434E">Registrar ocorrência</button>
+          <button onClick="{{ closeModal }}" style="height:48px; padding:0 18px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer; display:flex; align-items:center; gap:10px">Cancelar <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; padding:2px 7px; border-radius:5px; border:1px solid #B9C3CA">Esc</span></button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ m.occDetail }}">
+      <div style="width:640px; background:#fff; border-radius:12px; padding:24px 28px; display:flex; flex-direction:column; gap:14px">
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:13px; color:#56616B">{{ occD.code }} · {{ occD.date }}</div>
+        <h2 style="margin:0; font-size:20px; font-weight:600">{{ occD.type }} · {{ occD.unit }}</h2>
+        <p style="margin:0">{{ occD.desc }}</p>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px">
+          <div style="display:flex; flex-direction:column"><span style="font-size:13px; color:#56616B">Envolvidos</span><span>{{ occD.people }}</span></div>
+          <div style="display:flex; flex-direction:column"><span style="font-size:13px; color:#56616B">Registrado por</span><span>{{ occD.by }}</span></div>
+          <div style="display:flex; flex-direction:column"><span style="font-size:13px; color:#56616B">Status</span><span>{{ occD.status }}</span></div>
+        </div>
+        <div style="display:flex; flex-direction:column"><span style="font-size:13px; color:#56616B">Anexos</span><span>{{ occD.files }}</span></div>
+        <sc-if value="{{ occD.hasLinked }}">
+          <div style="display:flex; flex-direction:column; gap:6px"><span style="font-size:13px; color:#56616B">Eventos de acesso vinculados</span>
+            <sc-for list="{{ occD.linked }}" as="r" hint-placeholder-count="1">
+              <button onClick="{{ r.open }}" style="min-height:44px; display:flex; gap:10px; align-items:center; padding:6px 12px; border:1px solid #E1E6EA; border-radius:8px; background:#fff; font:inherit; font-size:14px; color:#1A2126; cursor:pointer; text-align:left"><span style="font-family:'IBM Plex Mono',monospace">{{ r.code }}</span><span>{{ r.when }} · {{ r.name }} · {{ r.unit }} · {{ r.viaLabel }}</span></button>
+            </sc-for>
+          </div>
+        </sc-if>
+        <button onClick="{{ closeModal }}" style="align-self:flex-end; height:44px; padding:0 18px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer">Fechar</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ m.unitForm }}">
+      <div style="width:560px; background:#fff; border-radius:12px; padding:24px 28px; display:flex; flex-direction:column; gap:14px">
+        <h2 style="margin:0; font-size:20px; font-weight:600">{{ uf.title }}</h2>
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600; color:#0B3F49">{{ uf.unit }}</div>
+        <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">{{ uf.la }}<input value="{{ uf.a }}" onChange="{{ ufOn.a }}" style="height:44px; padding:0 12px; border:1px solid #B9C3CA; border-radius:8px; font:inherit"></label>
+        <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">{{ uf.lb }}<input value="{{ uf.b }}" onChange="{{ ufOn.b }}" style="height:44px; padding:0 12px; border:1px solid #B9C3CA; border-radius:8px; font:inherit"></label>
+        <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">{{ uf.lc }}<input value="{{ uf.c }}" onChange="{{ ufOn.c }}" style="height:44px; padding:0 12px; border:1px solid #B9C3CA; border-radius:8px; font:inherit"></label>
+        <sc-if value="{{ uf.isVinc }}"><div style="font-size:14px; color:#0B4450; padding:10px 12px; background:#E3F0F2; border-radius:8px">A solicitação entra em Vínculos pendentes. A pessoa não tem acesso de morador até a aprovação.</div></sc-if>
+        <div style="display:flex; gap:10px">
+          <button onClick="{{ ufSave }}" style="flex:1; height:48px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#08434E">Salvar</button>
+          <button onClick="{{ closeModal }}" style="height:48px; padding:0 18px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer">Cancelar</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ m.userNew }}">
+      <div style="width:560px; background:#fff; border-radius:12px; padding:24px 28px; display:flex; flex-direction:column; gap:14px">
+        <h2 style="margin:0; font-size:20px; font-weight:600">Novo usuário</h2>
+        <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Nome completo<input value="{{ nu.name }}" onChange="{{ nuOn.name }}" style="height:44px; padding:0 12px; border:1px solid #B9C3CA; border-radius:8px; font:inherit"></label>
+        <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500">Login<input value="{{ nu.login }}" onChange="{{ nuOn.login }}" placeholder="nome.sobrenome" style="height:44px; padding:0 12px; border:1px solid #B9C3CA; border-radius:8px; font-family:'IBM Plex Mono',monospace; font-size:15px"></label>
+        <div style="display:flex; flex-direction:column; gap:6px"><span style="font-size:14px; font-weight:500">Perfil</span>
+          <div style="display:flex; gap:6px; flex-wrap:wrap"><sc-for list="{{ nu.roles }}" as="r" hint-placeholder-count="4"><button onClick="{{ r.onClick }}" style="height:40px; padding:0 14px; border:1px solid {{ r.bd }}; border-radius:20px; background:{{ r.bg }}; color:{{ r.fg }}; font:inherit; font-size:14px; cursor:pointer">{{ r.t }}</button></sc-for></div>
+        </div>
+        <div style="font-size:14px; color:#0B4450; padding:10px 12px; background:#E3F0F2; border-radius:8px">{{ nu.mfaNote }}</div>
+        <div style="display:flex; gap:10px">
+          <button onClick="{{ saveUser }}" style="flex:1; height:48px; border:none; border-radius:8px; background:#0B5563; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#08434E">Criar usuário</button>
+          <button onClick="{{ closeModal }}" style="height:48px; padding:0 18px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer">Cancelar</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ m.userDisable }}">
+      <div style="width:520px; background:#fff; border-radius:12px; padding:24px 28px; display:flex; flex-direction:column; gap:14px">
+        <h2 style="margin:0; font-size:20px; font-weight:600">Desativar {{ du.name }}?</h2>
+        <div style="display:flex; gap:10px; padding:12px 14px; border:1px solid #FEC84B; background:#FEF0C7; color:#7A2E0E; border-radius:8px">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 3.5 2.5 20h19L12 3.5z"></path><path d="M12 10v4.5"></path><path d="M12 17.5h.01"></path></svg>
+          <span>O usuário perde o acesso imediatamente. O histórico do usuário é mantido e continua visível na auditoria.</span>
+        </div>
+        <div style="display:flex; gap:10px">
+          <button onClick="{{ confirmDisable }}" style="flex:1; height:48px; border:none; border-radius:8px; background:#B42318; color:#fff; font:inherit; font-weight:600; cursor:pointer" style-hover="background:#912018">Desativar</button>
+          <button onClick="{{ closeModal }}" style="height:48px; padding:0 18px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; cursor:pointer">Cancelar</button>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+</sc-if>
+
+<sc-if value="{{ h.open }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed; inset:0; background:rgba(12,22,28,0.45); z-index:70; display:flex; justify-content:flex-end">
+    <div style="width:560px; height:100%; background:#fff; overflow:auto; padding:24px 28px; display:flex; flex-direction:column; gap:18px; box-shadow:-12px 0 40px rgba(0,0,0,0.18)">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px">
+        <div><div style="font-family:'IBM Plex Mono',monospace; font-size:13px; color:#56616B">{{ h.code }}</div><h2 style="margin:2px 0 0; font-size:22px; font-weight:600">{{ h.name }}</h2><div style="color:#33424B">{{ h.type }} · {{ h.date }} · {{ h.time }}</div></div>
+        <button onClick="{{ closeH }}" style="height:40px; padding:0 14px; border:1px solid #B9C3CA; border-radius:8px; background:#fff; color:#1A2126; font:inherit; font-size:14px; cursor:pointer">Fechar</button>
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace; font-size:28px; font-weight:600; color:#0B3F49">{{ h.unitBig }}</div>
+      <div style="display:flex; gap:12px; align-items:center; padding:12px 14px; border:1px solid #75E0A7; background:#DCFAE6; color:#05603A; border-radius:10px">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6l8-3z"></path><path d="M8.5 12l2.5 2.5 4.5-5"></path></svg>
+        <div><div style="font-weight:600">Integridade verificada</div><div style="font-family:'IBM Plex Mono',monospace; font-size:12.5px; word-break:break-all">{{ h.code }} · sha256 {{ h.hash }}</div></div>
+      </div>
+      <sc-if value="{{ h.isRetro }}"><div style="padding:10px 12px; border:1px solid #A9D2D8; background:#E3F0F2; color:#0B4450; border-radius:8px; font-size:14px"><strong>Retroativo.</strong> {{ h.retroText }}. Lançado por contingência.</div></sc-if>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px">
+        <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Registrado por</span><span style="font-weight:600">{{ h.op }}</span></div>
+        <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Autorizado por</span><span style="font-weight:600">{{ h.authL }}</span></div>
+        <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Meio de autorização</span><span style="font-weight:500">{{ h.viaFull }}</span></div>
+        <div style="display:flex; flex-direction:column; gap:2px"><span style="font-size:13px; color:#56616B">Saída</span><span style="font-weight:500">{{ h.exitL }}</span></div>
+      </div>
+      <sc-if value="{{ h.hasJust }}"><div style="padding:12px 14px; border:1px solid #FEC84B; background:#FEF0C7; color:#7A2E0E; border-radius:8px"><div style="font-size:13px; font-weight:600">Justificativa</div><div>{{ h.just }}</div></div></sc-if>
+      <div>
+        <h3 style="margin:0 0 10px; font-size:15px; font-weight:600">Linha do tempo</h3>
+        <div style="display:flex; flex-direction:column">
+          <sc-for list="{{ h.tl }}" as="t" hint-placeholder-count="4">
+            <div style="display:grid; grid-template-columns:56px 14px minmax(0,1fr); gap:10px; padding-bottom:12px">
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; color:#56616B">{{ t.t }}</span>
+              <span style="width:10px; height:10px; border-radius:5px; background:#0B5563; margin-top:5px"></span>
+              <span style="font-size:14px">{{ t.txt }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="font-size:13px; color:#56616B; padding-top:8px; border-top:1px solid #E6EAED">Registros de acesso não podem ser editados ou excluídos. Correções são feitas por novo registro com justificativa.</div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ toast.show }}" hint-placeholder-val="{{ false }}">
+  <div role="status" style="position:fixed; bottom:24px; right:24px; max-width:620px; z-index:80; display:flex; gap:12px; align-items:flex-start; padding:14px 18px; border-radius:10px; background:#10262C; color:#fff; box-shadow:0 12px 32px rgba(0,0,0,0.25); border-left:5px solid {{ toast.bar }}">
+    <span style="font-size:15px; line-height:1.45">{{ toast.text }}</span>
+    <button onClick="{{ closeToast }}" aria-label="Fechar" style="background:none; border:none; color:#C8D3D7; font:inherit; font-size:18px; cursor:pointer; padding:0 2px">×</button>
+  </div>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;startProfile&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;login&quot;,&quot;porteiro&quot;,&quot;admin&quot;,&quot;sindico&quot;,&quot;auditor&quot;],&quot;default&quot;:&quot;login&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Demonstração&quot;}}">
+class Component extends DCLogic {
+  static PROF = {
+    porteiro:{name:'João Lima',role:'Porteiro',user:'joao.lima',home:'painel',twofa:false,c:'p'},
+    admin:{name:'Paula Nogueira',role:'Administração',user:'paula.nogueira',home:'vinculos',twofa:true,c:'a'},
+    sindico:{name:'Roberto Faria',role:'Síndico',user:'roberto.faria',home:'painel',twofa:true,c:'s'},
+    auditor:{name:'Luíza Campos',role:'Auditor',user:'luiza.campos',home:'historico',twofa:false,c:'u'}
+  };
+  static NAV = [
+    ['Portaria',[['painel','Painel','ps'],['entrada','Registrar entrada','ps'],['pessoas','Pessoas no condomínio','ps'],['encomendas','Encomendas','ps'],['ocorrencias','Ocorrências','psa']]],
+    ['Administração',[['unidades','Unidades','as'],['vinculos','Vínculos pendentes','as'],['cadastro','Pessoas','as'],['importar','Importar planilha','as']]],
+    ['Auditoria',[['historico','Histórico de acessos','asu'],['relatorios','Relatórios','asu']]],
+    ['Sistema',[['usuarios','Usuários','s']]]
+  ];
+  static VIA = {interfone:'Interfone',presente:'Morador presente na portaria',previa:'Autorização prévia',excecao:'Exceção do porteiro',negado:'Entrada negada (restrição)'};
+  static VIA_S = {interfone:'Interfone',presente:'Morador presente',previa:'Autorização prévia',excecao:'Exceção',negado:'Negado'};
+  static VIA_L = {interfone:'interfone',presente:'morador presente na portaria',previa:'autorização prévia'};
+  static TONE = {red:{bg:'#FEE4E2',fg:'#B42318',bd:'#FDA29B'},amber:{bg:'#FEF0C7',fg:'#93370D',bd:'#FEC84B'},green:{bg:'#DCFAE6',fg:'#05603A',bd:'#75E0A7'},neutral:{bg:'#EEF2F4',fg:'#33424B',bd:'#D5DDE2'},petrol:{bg:'#E3F0F2',fg:'#0B4450',bd:'#A9D2D8'}};
+  static ST = {Aprovado:'green',Ativo:'green',Entregue:'green',Encerrada:'green',Pendente:'amber',Aberta:'amber','Em análise':'amber',Legado:'petrol',Rejeitado:'red',Inativo:'neutral'};
+  static TODAY = '09/10/2026';
+  static QUICK = ['Morador não atende o interfone','Emergência médica','Serviço público (luz, água, gás)'];
+  static PRIORS_TODAY = [
+    {who:'Juliana Costa (diarista)',by:'Ana Ribeiro',unit:'T4-32',win:'08:00–18:00',st:'Utilizada 14:18',ok:1},
+    {who:'Cláudia Rocha (diarista)',by:'Mônica Vieira',unit:'T3-91',win:'08:00–17:00',st:'Utilizada 11:02',ok:1},
+    {who:'Gilberto Nascimento (obra)',by:'Renato Farias',unit:'T1-12',win:'05:30–19:00',st:'Utilizada 05:40',ok:1},
+    {who:'Dedetizadora Lumen — Ivo Paes',by:'Sílvia Prado',unit:'T6-52',win:'15:00–17:00',st:'Aguardando',ok:0},
+    {who:'Ana Paula Reis (visitante)',by:'Teresa Almeida',unit:'T8-42',win:'19:00–23:00',st:'Aguardando',ok:0},
+    {who:'Transportes Ágil (mudança)',by:'Beatriz Okada',unit:'T5-81',win:'08:00–16:00',st:'Aguardando',ok:0}
+  ];
+  static emptyEntry(){return {query:'',person:null,newMode:false,np:{name:'',docType:'CPF',doc:'',phone:'',type:'Visitante',company:'',service:'',photo:false},tower:null,unit:'',via:null,resident:'',just:''};}
+  static seedPeople(){return [
+    {id:'p1',name:'Marcos Pereira',doc:'***.456.789-**',type:'Visitante',last:'07/10 · T4-32'},
+    {id:'p2',name:'Bruno Teixeira',doc:'***.218.334-**',type:'Visitante',last:'08/10 · T4-32 (negado)'},
+    {id:'p3',name:'Técnico Enel — Diego Santos',doc:'***.902.115-**',type:'Prestador',company:'Enel',last:'Sem acessos'},
+    {id:'p4',name:'Juliana Costa',doc:'***.771.003-**',type:'Funcionário',last:'Hoje 14:18 · T4-32'},
+    {id:'p5',name:'Marcelo Antunes',doc:'***.330.562-**',type:'Prestador',company:'Clima Frio',last:'Hoje 13:55 · T6-52'},
+    {id:'p6',name:'Márcia Pereira',doc:'***.104.887-**',type:'Visitante',last:'19/09 · T2-31'},
+    {id:'p7',name:'Vitor Sampaio',doc:'***.640.219-**',type:'Visitante',last:'Hoje 09:30 · T5-63'},
+    {id:'p8',name:'Técnico Comgás — Leandro Prado',doc:'***.417.330-**',type:'Prestador',company:'Comgás',last:'12/08 · T3-14'}
+  ];}
+  static seedEvents(){
+    const E=(n,d,t,name,type,unit,via,auth,op,x={})=>({id:'e'+n,code:'EV-2026-00'+n,date:d,time:t,name,type,unit,via,auth,op,inside:!!x.inside,exit:x.exit||'',exitBy:x.exit?op:'',just:x.just||'',retro:x.retro||'',denied:via==='negado',fresh:false});
+    const T='09/10/2026',Y='08/10/2026',Z='07/10/2026';
+    return [
+      E(4818,T,'14:18','Juliana Costa','Funcionário','T4-32','previa','Ana Ribeiro','João Lima',{inside:1}),
+      E(4817,T,'13:55','Marcelo Antunes','Prestador','T6-52','interfone','Sílvia Prado','João Lima',{inside:1}),
+      E(4816,T,'13:40','Larissa Gomes','Visitante','T1-73','presente','Ricardo Gomes','João Lima',{exit:'13:52'}),
+      E(4815,T,'12:10','Pedro Almeida','Visitante','T8-42','interfone','Teresa Almeida','João Lima',{inside:1}),
+      E(4814,T,'11:02','Cláudia Rocha','Funcionário','T3-91','previa','Mônica Vieira','João Lima',{inside:1}),
+      E(4813,T,'09:30','Vitor Sampaio','Visitante','T5-63','excecao','João Lima (exceção)','João Lima',{inside:1,just:'Morador não atende o interfone'}),
+      E(4812,T,'07:45','Rogério Batista','Prestador','T2-61','interfone','Cecília Batista','João Lima',{exit:'09:10'}),
+      E(4811,T,'05:40','Gilberto Nascimento','Prestador','T1-12','previa','Renato Farias','Sérgio Matos',{inside:1}),
+      E(4810,T,'03:10','Fernanda Lins','Visitante','T6-22','presente','Gustavo Lins','Sérgio Matos',{exit:'04:02',retro:'06:05'}),
+      E(4809,T,'01:20','Diego Ramos','Visitante','T3-14','interfone','Patrícia Ramos','Sérgio Matos',{exit:'02:15'}),
+      E(4808,Y,'22:47','Thiago Moura','Visitante','T9-33','excecao','Sérgio Matos (exceção)','Sérgio Matos',{exit:'23:30',just:'Emergência médica: moradora passou mal e chamou o filho'}),
+      E(4807,Y,'19:12','Adriano Melo','Prestador','T7-11','interfone','Carla Mendes','Sérgio Matos',{exit:'19:18'}),
+      E(4806,Y,'16:05','Juliana Costa','Funcionário','T4-32','previa','Ana Ribeiro','João Lima',{exit:'17:58'}),
+      E(4805,Y,'10:40','Bruno Teixeira','Visitante','T4-32','negado','—','João Lima',{just:'Restrição: Morador não autoriza a entrada'}),
+      E(4804,Z,'15:20','Técnico Sabesp — Caio Lemos','Prestador','T8-13','excecao','Marina Couto (exceção)','Marina Couto',{exit:'16:05',just:'Serviço público (luz, água, gás): vazamento no hidrômetro'}),
+      E(4803,Z,'09:05','Marcos Pereira','Visitante','T4-32','interfone','Ana Ribeiro','João Lima',{exit:'11:40'})
+    ];
+  }
+  static seedPkgs(){
+    const K=(id,unit,rec,car,code,date,days,by,x={})=>({id,unit,rec,car,code,date,days,by,status:x.to?'entregue':'aguardando',to:x.to||'',at:x.at||'',dby:x.dby||''});
+    return [
+      K('K108','T4-32','Ana Ribeiro','Mercado Livre','MLB-88231904','09/10/2026 10:22',0,'João Lima'),
+      K('K107','T8-42','Teresa Almeida','Loggi','LG-55210983','09/10/2026 08:47',0,'João Lima'),
+      K('K106','T7-11','Carla Mendes','Correios','QB 482 913 775 BR','08/10/2026 15:31',1,'João Lima'),
+      K('K105','T2-104','Helena Duarte','Amazon','TBA309281882100','07/10/2026 11:02',2,'Marina Couto'),
+      K('K104','T6-22','Gustavo Lins','Jadlog','10822339410','06/10/2026 17:44',3,'Sérgio Matos'),
+      K('K103','T5-63','Rita Sampaio','Shopee','BR254988332197','04/10/2026 13:15',5,'João Lima'),
+      K('K102','T9-21','Marta Siqueira','Shopee','BR254988330041','30/09/2026 16:20',9,'Marina Couto'),
+      K('K101','T1-12','Renato Farias','Correios','QA 119 554 120 BR','28/09/2026 09:58',11,'João Lima'),
+      K('K100','T3-14','Patrícia Ramos','Correios','QB 401 223 908 BR','08/10/2026 12:40',1,'João Lima',{to:'Patrícia Ramos (moradora)',at:'09/10/2026 10:15',dby:'João Lima'}),
+      K('K099','T4-32','Paulo Ribeiro','Amazon','TBA309112450200','07/10/2026 14:05',2,'Marina Couto',{to:'Paulo Ribeiro (dependente)',at:'08/10/2026 19:02',dby:'Sérgio Matos'})
+    ];
+  }
+  static seedOcc(){return [
+    {code:'OC-2026-047',date:'09/10/2026 08:12',type:'Dano',unit:'Área comum',people:'—',desc:'Portão da garagem B travando ao fechar. Zeladoria avisada.',status:'Aberta',by:'João Lima',links:[]},
+    {code:'OC-2026-046',date:'08/10/2026 22:50',type:'Conflito',unit:'T9-33',people:'Thiago Moura',desc:'Discussão entre visitante e vizinho no hall da Torre 9 durante atendimento de emergência.',status:'Aberta',by:'Sérgio Matos',links:['e4808']},
+    {code:'OC-2026-045',date:'05/10/2026 17:30',type:'Encomenda',unit:'T7-11',people:'Carla Mendes',desc:'Moradora relatou encomenda de agosto entregue na T7-12. Registro feito para histórico.',status:'Encerrada',by:'Marina Couto',links:[]},
+    {code:'OC-2026-044',date:'01/10/2026 18:55',type:'Tentativa de acesso indevido',unit:'T9-21',people:'Rodrigo Alves',desc:'Homem apresentou contrato de locação da T9-21 e pediu cópia das chaves. Orientado a aguardar aprovação da administração.',status:'Em análise',by:'Sérgio Matos',links:[]},
+    {code:'OC-2026-043',date:'14/09/2026 10:02',type:'Tentativa de acesso indevido',unit:'T4-32',people:'Bruno Teixeira',desc:'Tentativa de entrada sem autorização. Moradora solicitou restrição.',status:'Encerrada',by:'João Lima',links:[]}
+  ];}
+  static seedVinc(){return [
+    {id:'V1',person:'Rodrigo Alves',doc:'***.874.551-**',unit:'T9-21',type:'Inquilino',start:'01/10/2026',end:'30/09/2027',req:'01/10/2026 18:40',by:'Sérgio Matos (portaria), documento apresentado no balcão',status:'Pendente',docTitle:'CONTRATO DE LOCAÇÃO RESIDENCIAL',
+     lines:[['Locador','José Carlos Prado · CPF ***.611.208-**'],['Locatário','Rodrigo Alves · CPF ***.874.551-**'],['Imóvel','Rua das Paineiras, 480 · Torre 9 · Apto 21'],['Prazo','12 meses · 01/10/2026 a 30/09/2027'],['Aluguel','R$ 3.200,00 mensais'],['Assinatura','01/10/2026 · sem reconhecimento de firma']],
+     checks:[{ok:0,label:'Locador é o proprietário registrado',detail:'Contrato assinado por José Carlos Prado. Proprietária da T9-21 no cadastro: Marta Siqueira.'},{ok:0,label:'Confirmação da proprietária',detail:'Não há confirmação de Marta Siqueira para esta locação.'},{ok:0,label:'Reconhecimento de firma',detail:'Ausente.'},{ok:1,label:'Documento do solicitante',detail:'RG conferido na portaria por Sérgio Matos.'}],
+     note:'Relacionado à ocorrência OC-2026-044: o solicitante pediu cópia das chaves na portaria em 01/10.'},
+    {id:'V2',person:'Rafael Mendes',doc:'***.390.112-**',unit:'T7-11',type:'Dependente',start:'06/10/2026',end:'Indeterminada',req:'06/10/2026 10:05',by:'Carla Mendes (inquilina, T7-11)',status:'Pendente',docTitle:'CERTIDÃO DE NASCIMENTO',
+     lines:[['Registrado','Rafael Mendes'],['Nascimento','14/03/2011'],['Filiação','Carla Mendes · Eduardo Mendes'],['Cartório','2º Ofício de Registro Civil, São Paulo/SP']],
+     checks:[{ok:1,label:'Responsável tem vínculo aprovado',detail:'Carla Mendes, inquilina, vínculo aprovado até 31/07/2027.'},{ok:1,label:'Filiação confere',detail:'Mãe registrada é a moradora responsável.'}],note:''},
+    {id:'V3',person:'Beatriz Okada',doc:'***.552.019-**',unit:'T5-81',type:'Proprietário',start:'15/09/2026',end:'Indeterminada',req:'03/10/2026 14:20',by:'Paula Nogueira (administração)',status:'Pendente',docTitle:'MATRÍCULA DO IMÓVEL',
+     lines:[['Matrícula','nº 148.302 · 14º Registro de Imóveis'],['Proprietária','Beatriz Okada · CPF ***.552.019-**'],['Imóvel','Torre 5 · Apto 81'],['Registro','R.7 · 15/09/2026 · compra e venda']],
+     checks:[{ok:1,label:'Nome confere com a matrícula',detail:'Registro R.7 em nome de Beatriz Okada.'},{ok:1,label:'Proprietário anterior desvinculado',detail:'Vínculo de Hélio Prates encerrado em 15/09/2026.'}],note:''},
+    {id:'V4',person:'Lucas Ferraz',doc:'***.208.774-**',unit:'T3-42',type:'Inquilino',start:'01/11/2026',end:'31/10/2028',req:'08/10/2026 09:30',by:'Imobiliária Vértice (e-mail)',status:'Pendente',docTitle:'CONTRATO DE LOCAÇÃO RESIDENCIAL',
+     lines:[['Locador','Sandra Ferraz Teles · representada por Imobiliária Vértice'],['Locatário','Lucas Ferraz · CPF ***.208.774-**'],['Imóvel','Torre 3 · Apto 42'],['Prazo','24 meses · 01/11/2026 a 31/10/2028'],['Assinatura','07/10/2026 · firma reconhecida']],
+     checks:[{ok:1,label:'Locador é o proprietário registrado',detail:'Sandra Ferraz Teles é a proprietária no cadastro.'},{ok:1,label:'Procuração da imobiliária',detail:'Procuração válida até 12/2027.'},{ok:1,label:'Início da vigência',detail:'Acesso de morador só a partir de 01/11/2026.'}],note:''}
+  ];}
+  static seedUsers(){return [
+    ['u1','João Lima','joao.lima','Porteiro','Ativo','09/10/2026 06:01',false],['u2','Sérgio Matos','sergio.matos','Porteiro','Ativo','09/10/2026 06:02',false],['u3','Marina Couto','marina.couto','Porteiro','Ativo','07/10/2026 18:01',false],
+    ['u4','Paula Nogueira','paula.nogueira','Administração','Ativo','09/10/2026 09:14',true],['u5','Roberto Faria','roberto.faria','Síndico','Ativo','08/10/2026 20:37',true],['u6','Luíza Campos','luiza.campos','Auditor','Ativo','02/10/2026 16:50',true],['u7','Edson Ramos','edson.ramos','Porteiro','Inativo','14/06/2026 05:58',false]
+  ].map(([id,name,login,role,status,last,mfa])=>({id,name,login,role,status,last,mfa}));}
+  static seedUnits(){
+    const R=a=>a.map(([name,link,status])=>({name,link,status}));
+    return {
+      'T4-32':{res:R([['Ana Ribeiro','Proprietária','Aprovado'],['Paulo Ribeiro','Dependente','Aprovado'],['Lúcia Ribeiro','Dependente','Legado']]),veh:[['FKR-2C41','Honda Fit · prata'],['GHT-8J20','VW T-Cross · branco']],
+        pri:[{person:'Juliana Costa',by:'Ana Ribeiro',until:'30/11',win:'seg a sex, 8h–18h',kind:'Funcionário (diarista)'}],
+        rst:[{person:'Bruno Teixeira',reason:'Morador não autoriza a entrada',by:'Ana Ribeiro (moradora, T4-32)',reg:'Paula Nogueira (Administração)',date:'12/08/2026 10:14'}]},
+      'T7-11':{res:R([['Carla Mendes','Inquilina','Aprovado'],['Rafael Mendes','Dependente','Pendente']]),veh:[['EQP-4B77','Fiat Argo · cinza']],pri:[],rst:[]},
+      'T2-104':{res:R([['Helena Duarte','Proprietária','Aprovado'],['Otávio Duarte','Dependente','Legado']]),veh:[['DXA-1F03','Jeep Renegade · verde']],pri:[],rst:[]},
+      'T9-21':{res:R([['Marta Siqueira','Proprietária','Aprovado'],['Rodrigo Alves','Inquilino','Pendente']]),veh:[['BRA-2E19','Toyota Corolla · preto']],pri:[],rst:[]},
+      'T6-52':{res:R([['Sílvia Prado','Proprietária','Aprovado'],['Hugo Prado','Dependente','Aprovado']]),veh:[],pri:[{person:'Dedetizadora Lumen — Ivo Paes',by:'Sílvia Prado',until:'09/10',win:'hoje, 15h–17h',kind:'Prestador'}],rst:[]},
+      'T3-14':{res:R([['Patrícia Ramos','Proprietária','Aprovado']]),veh:[['FJT-6H22','Hyundai HB20 · branco']],pri:[],rst:[]},
+      'T5-81':{res:R([['Beatriz Okada','Proprietária','Pendente']]),veh:[],pri:[],rst:[]},
+      'T3-42':{res:R([['Sandra Ferraz Teles','Proprietária','Legado'],['Lucas Ferraz','Inquilino','Pendente']]),veh:[],pri:[],rst:[]}
+    };
+  }
+
+  qRef = React.createRef();
+  state = {
+    screen:'login', profile:'porteiro', loginStep:1, loginUser:'joao.lima', loginPass:'senhademo', code:'', loginErr:'',
+    sec:14*3600+32*60, toast:null, modal:null, hSel:null, gq:'',
+    people:Component.seedPeople(), events:Component.seedEvents(), packages:Component.seedPkgs(), occ:Component.seedOcc(), vinc:Component.seedVinc(), users:Component.seedUsers(), units:Component.seedUnits(),
+    entry:Component.emptyEntry(), sugIdx:0,
+    pkgTab:'aguardando', pf:null, pkgId:null, pq:'', pPick:null,
+    of:null, occId:null, unitSel:'T4-32', unitTower:4, uf:null,
+    vSel:'V1', rejecting:false, rejText:'', imp:0,
+    hf:{unit:'',person:'',porteiro:'',tipo:'',meio:'',exc:false,retro:false,from:'2026-10-01',to:'2026-10-09'}, verify:null,
+    nu:null, userId:null
+  };
+
+  componentDidMount(){
+    this._t = setInterval(()=>this.setState(s=>({sec:s.sec+1})),1000);
+    this._k = e=>this.onKey(e); window.addEventListener('keydown',this._k);
+    const sp=this.props.startProfile;
+    if(sp && sp!=='login' && Component.PROF[sp]) this.setState({profile:sp, screen:Component.PROF[sp].home});
+  }
+  componentWillUnmount(){ clearInterval(this._t); clearTimeout(this._tt); window.removeEventListener('keydown',this._k); }
+
+  norm(s){return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+  hash(s){let h=2166136261,g=5381;for(const ch of s){const c=ch.charCodeAt(0);h=Math.imul(h^c,16777619)>>>0;g=(Math.imul(g,33)^c)>>>0;}const a=h.toString(16).padStart(8,'0'),b=g.toString(16).padStart(8,'0');return a+b+(Math.imul(h,2654435761)>>>0).toString(16).padStart(8,'0')+(Math.imul(g,40503)>>>0).toString(16).padStart(8,'0');}
+  hhmm(){const m=Math.floor(this.state.sec/60);return String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(m%60).padStart(2,'0');}
+  mins(t){const [h,m]=t.split(':').map(Number);return h*60+m;}
+  big(k){if(!k||k[0]!=='T')return k||'—';const [t,u]=k.slice(1).split('-');return `TORRE ${t} · AP ${u}`;}
+  op(){return Component.PROF[this.state.profile];}
+  tone(st){return Component.TONE[Component.ST[st]||'neutral'];}
+  unitKey(e){return e.tower&&e.unit?`T${e.tower}-${e.unit}`:null;}
+  getUnit(k){
+    const u=this.state.units[k]; if(u) return u;
+    const F=['Adriana','Bruno','Celso','Denise','Eduardo','Flávia','Gustavo','Heloísa','Ivan','Joana','Kátia','Leonardo','Mariana','Nelson','Olívia','Ricardo','Simone','Tiago'];
+    const S=['Almeida','Barros','Cardoso','Dias','Esteves','Fonseca','Gouveia','Lacerda','Macedo','Nunes','Quintana','Rezende','Sales','Toledo','Vasconcelos'];
+    let h=0;for(const c of k)h=(h*31+c.charCodeAt(0))>>>0;
+    const sn=S[h%S.length];
+    return {res:[{name:`${F[h%F.length]} ${sn}`,link:'Proprietário(a)',status:'Aprovado'},{name:`${F[(h>>3)%F.length]} ${sn}`,link:'Dependente',status:(h%3)?'Aprovado':'Legado'}],veh:[],pri:[],rst:[]};
+  }
+  restrictionFor(name,k){return (this.getUnit(k).rst||[]).find(r=>this.norm(r.person)===this.norm(name));}
+  priorFor(name,k){return (this.getUnit(k).pri||[]).find(r=>this.norm(r.person)===this.norm(name));}
+  nextN(){return Math.max(...this.state.events.map(x=>+x.code.slice(-4)))+1;}
+  toastMsg(text,kind='ok'){clearTimeout(this._tt);this.setState({toast:{text,kind}});this._tt=setTimeout(()=>this.setState({toast:null}),7000);}
+  canPort(){return 'ps'.includes(this.op().c);}
+
+  onKey(e){
+    const s=this.state; if(s.screen==='login'||e.defaultPrevented) return;
+    const tag=(e.target&&e.target.tagName)||'';
+    if(e.key==='Escape'){
+      if(s.modal){ if(s.modal.kind==='restricao') this.restrCancel(); else if(s.modal.kind==='pkgConfirm') this.setState({modal:{kind:'pkgReceive'}}); else this.setState({modal:null}); return; }
+      if(s.hSel){this.setState({hSel:null});return;}
+      if(s.gq){this.setState({gq:''});return;}
+      if(s.screen==='entrada') this.cancelEntry();
+      return;
+    }
+    if(this.canPort() && !s.modal){
+      if(e.key==='F2'){e.preventDefault();this.startEntry();return;}
+      if(e.key==='F3'){e.preventDefault();this.openReceive();return;}
+      if(e.key==='F4'){e.preventDefault();this.openOcc();return;}
+    }
+    if(e.key==='Enter' && tag!=='TEXTAREA' && tag!=='BUTTON'){
+      if(s.modal){
+        if(s.modal.kind==='pkgReceive' && this.pfValid()){e.preventDefault();this.pkgContinue();}
+        else if(s.modal.kind==='pkgConfirm'){e.preventDefault();this.pkgSave();}
+        return;
+      }
+      if(s.screen==='entrada' && this.canConfirm()){e.preventDefault();this.confirmEntry();}
+    }
+  }
+
+  pickProfile=p=>this.setState({profile:p,loginUser:Component.PROF[p].user,loginStep:1,code:'',loginErr:''});
+  onLoginSubmit=ev=>{ev.preventDefault();const P=this.op();
+    if(P.twofa&&this.state.loginStep===1) return this.setState({loginStep:2,code:'',loginErr:''});
+    if(P.twofa&&this.state.code.replace(/\D/g,'').length!==6) return this.setState({loginErr:'Digite os 6 dígitos do aplicativo autenticador.'});
+    this.setState({screen:P.home,loginStep:1,code:'',loginErr:''});
+    this.toastMsg(`Sessão iniciada: ${P.role} ${P.name}. Acesso registrado na trilha.`);
+  };
+  logout=()=>this.setState({screen:'login',modal:null,hSel:null,gq:'',entry:Component.emptyEntry(),loginStep:1});
+  go=id=>{ if(id==='entrada') return this.startEntry(); this.setState({screen:id,modal:null,hSel:null,gq:'',verify:null}); };
+  closeModal=()=>this.setState({modal:null});
+
+  startEntry=(patch={})=>{this.setState({screen:'entrada',modal:null,hSel:null,gq:'',entry:{...Component.emptyEntry(),...patch},sugIdx:0},()=>{this.focusQ();this.checkRestriction();});};
+  focusQ(){setTimeout(()=>{if(this.qRef.current)this.qRef.current.focus();},40);}
+  setEntry(patch,check){this.setState(s=>({entry:{...s.entry,...patch}}),()=>{if(check)this.checkRestriction();});}
+  checkRestriction(){
+    const e=this.state.entry,k=this.unitKey(e); if(!e.person||!k) return;
+    const r=this.restrictionFor(e.person.name,k);
+    if(r){this.setState({modal:{kind:'restricao',r,unit:k,person:e.person}});return;}
+    const p=this.priorFor(e.person.name,k);
+    if(p) this.setEntry({via:'previa',resident:p.by});
+  }
+  suggestions(){const q=this.norm(this.state.entry.query.trim());if(q.length<2)return[];const qd=q.replace(/\D/g,'');return this.state.people.filter(p=>this.norm(p.name).includes(q)||(qd.length>=3&&p.doc.replace(/\D/g,'').includes(qd))).slice(0,6);}
+  onQuery=ev=>{const v=ev.target.value;this.setState(s=>({entry:{...s.entry,query:v},sugIdx:0}));};
+  onQueryKey=ev=>{const sug=this.suggestions();
+    if(ev.key==='ArrowDown'){ev.preventDefault();this.setState(s=>({sugIdx:Math.min(s.sugIdx+1,Math.max(sug.length-1,0))}));}
+    else if(ev.key==='ArrowUp'){ev.preventDefault();this.setState(s=>({sugIdx:Math.max(s.sugIdx-1,0)}));}
+    else if(ev.key==='Enter'){ev.preventDefault();ev.stopPropagation();if(sug.length)this.choosePerson(sug[this.state.sugIdx]||sug[0]);else if(this.state.entry.query.trim().length>=2)this.openNew();}
+  };
+  choosePerson=p=>this.setEntry({person:p,query:'',newMode:false,via:null,resident:'',just:''},true);
+  openNew=()=>this.setEntry({newMode:true,np:{...Component.emptyEntry().np,name:this.state.entry.query.trim()}});
+  cancelNew=()=>{this.setEntry({newMode:false});this.focusQ();};
+  togglePhoto=()=>this.setState(s=>({entry:{...s.entry,np:{...s.entry.np,photo:!s.entry.np.photo}}}));
+  saveNew=()=>{const np=this.state.entry.np,d=np.doc.replace(/\D/g,'');
+    if(!np.name.trim()||d.length<5) return this.toastMsg('Preencha o nome e o número do documento.','warn');
+    const doc=np.docType==='CPF'&&d.length>=9?`***.${d.slice(3,6)}.${d.slice(6,9)}-**`:`${np.docType} ••••${d.slice(-3)}`;
+    const p={id:'p'+Date.now(),name:np.name.trim(),doc,type:np.type,company:np.company,last:'Cadastrado agora'};
+    this.setState(s=>({people:[...s.people,p]}),()=>this.choosePerson(p));
+  };
+  clearPerson=()=>{this.setEntry({person:null,via:null,resident:'',just:''});this.focusQ();};
+  setTower=t=>this.setEntry({tower:t,unit:'',via:null,resident:''});
+  setUnit=u=>this.setEntry({unit:u,via:null,resident:''},true);
+  clearUnit=()=>this.setEntry({unit:'',via:null,resident:''});
+  setVia=v=>{const e=this.state.entry,k=this.unitKey(e);const p=v==='previa'&&e.person&&k?this.priorFor(e.person.name,k):null;this.setEntry({via:v,resident:p?p.by:'',just:v==='excecao'?e.just:''});};
+  canConfirm(){const e=this.state.entry,k=this.unitKey(e);if(!e.person||!k||!e.via)return false;
+    if(e.via==='interfone'||e.via==='presente')return !!e.resident;
+    if(e.via==='previa')return !!this.priorFor(e.person.name,k);
+    if(e.via==='excecao')return e.just.trim().length>=15;return false;}
+  missing(){const e=this.state.entry,k=this.unitKey(e),m=[];if(!e.person)m.push('pessoa');if(!k)m.push('unidade');
+    if(e.person&&k){if(!e.via)m.push('quem autorizou');else if((e.via==='interfone'||e.via==='presente')&&!e.resident)m.push('nome do morador');else if(e.via==='excecao'&&e.just.trim().length<15)m.push('justificativa (mín. 15 caracteres)');else if(e.via==='previa')m.push('outro meio de autorização');}
+    return m.join(', ');}
+  confirmEntry=()=>{if(!this.canConfirm())return;const e=this.state.entry,k=this.unitKey(e),t=this.hhmm(),P=this.op(),n=this.nextN();
+    const exc=e.via==='excecao';const auth=exc?`${P.name} (exceção)`:e.resident;
+    const ev={id:'e'+n,code:'EV-2026-00'+n,date:Component.TODAY,time:t,name:e.person.name,type:e.person.type,unit:k,via:e.via,auth,op:P.name,inside:true,exit:'',exitBy:'',just:exc?e.just.trim():'',retro:'',denied:false,fresh:true};
+    this.setState(s=>({events:[ev,...s.events],screen:'painel',entry:Component.emptyEntry(),people:s.people.map(p=>p.id===e.person.id?{...p,last:`Hoje ${t} · ${k}`}:p)}));
+    this.toastMsg(exc?`Entrada registrada às ${t} por ${P.role} ${P.name} — liberada por exceção do porteiro, justificativa registrada`:`Entrada registrada às ${t} por ${P.role} ${P.name} — autorizada por ${e.resident} via ${Component.VIA_L[e.via]}`,exc?'warn':'ok');
+  };
+  cancelEntry=()=>this.setState({screen:'painel',entry:Component.emptyEntry(),modal:null});
+  deniedEvent(){const m=this.state.modal,n=this.nextN(),P=this.op();
+    return {id:'e'+n,code:'EV-2026-00'+n,date:Component.TODAY,time:this.hhmm(),name:m.person.name,type:m.person.type,unit:m.unit,via:'negado',auth:'—',op:P.name,inside:false,exit:'',exitBy:'',just:'Restrição: '+m.r.reason,retro:'',denied:true,fresh:true};}
+  restrOcc=()=>{const m=this.state.modal,ev=this.deniedEvent();
+    this.setState(s=>({events:[ev,...s.events],entry:Component.emptyEntry(),screen:'ocorrencias',modal:{kind:'occForm'},
+      of:{type:'Tentativa de acesso indevido',unit:ev.unit,people:ev.name,desc:`${ev.name} tentou entrar na ${ev.unit} às ${ev.time}. Consta restrição: "${m.r.reason}". Entrada não permitida.`,files:[],links:[ev.id],showLinks:true}}));
+    this.toastMsg(`Tentativa de ${ev.name} gravada na trilha (${ev.code}).`,'err');
+  };
+  restrCancel=()=>{const ev=this.deniedEvent();
+    this.setState(s=>({events:[ev,...s.events],modal:null,entry:{...s.entry,unit:'',via:null,resident:''}}));
+    this.toastMsg(`Entrada não realizada. Tentativa gravada na trilha (${ev.code}).`,'err');
+  };
+
+  openTurno=()=>this.setState({modal:{kind:'turno'}});
+  confirmTurno=()=>{this.setState({modal:null});this.toastMsg(`Turno passado às ${this.hhmm()}. Resumo gravado na trilha e assinado por ${this.op().name}.`);};
+  registerExit=id=>{const t=this.hhmm(),P=this.op();const ev=this.state.events.find(x=>x.id===id);
+    this.setState(s=>({events:s.events.map(x=>x.id===id?{...x,inside:false,exit:t,exitBy:P.name}:x)}));
+    this.toastMsg(`Saída de ${ev.name} registrada às ${t} por ${P.role} ${P.name}.`);};
+
+  openReceive=()=>this.setState({screen:'encomendas',pkgTab:'aguardando',hSel:null,gq:'',modal:{kind:'pkgReceive'},pf:{tower:null,unit:'',rec:'',car:'',code:''}});
+  pfSet(patch){this.setState(s=>({pf:{...s.pf,...patch}}));}
+  pfValid(){const f=this.state.pf;return !!(f&&f.tower&&f.unit&&f.rec&&f.car);}
+  pkgContinue=()=>{if(this.pfValid())this.setState({modal:{kind:'pkgConfirm'}});};
+  pkgBack=()=>this.setState({modal:{kind:'pkgReceive'}});
+  pkgSave=()=>{const f=this.state.pf,k=`T${f.tower}-${f.unit}`,t=this.hhmm(),P=this.op();const id='K'+(109+this.state.packages.filter(p=>p.fresh).length);
+    const p={id,unit:k,rec:f.rec,car:f.car,code:f.code||'—',date:`${Component.TODAY} ${t}`,days:0,by:P.name,status:'aguardando',to:'',at:'',dby:'',fresh:true};
+    this.setState(s=>({packages:[p,...s.packages],modal:null,pkgTab:'aguardando'}));
+    this.toastMsg(`Encomenda registrada às ${t} para ${k} — ${f.rec}. Recebida por ${P.name}.`);};
+  openDeliver=id=>this.setState({modal:{kind:'pkgDeliver'},pkgId:id,pq:'',pPick:null});
+  candidates(){const out=[];Object.entries(this.state.units).forEach(([k,u])=>u.res.forEach(r=>out.push({name:r.name,unit:k,link:r.link,status:r.status})));
+    this.state.people.forEach(p=>out.push({name:p.name,unit:null,link:p.type,status:''}));return out;}
+  pickDeliver=c=>{const pk=this.state.packages.find(p=>p.id===this.state.pkgId);const linked=c.unit===pk.unit&&(c.status==='Aprovado'||c.status==='Legado');
+    this.setState({pPick:{...c,linked,pending:c.unit===pk.unit&&c.status==='Pendente'},pq:''});};
+  deliverConfirm=()=>{const s=this.state,pk=s.packages.find(p=>p.id===s.pkgId),c=s.pPick,t=this.hhmm(),P=this.op();
+    this.setState(st=>({packages:st.packages.map(p=>p.id===pk.id?{...p,status:'entregue',to:`${c.name} (${c.link.toLowerCase()})`,at:`${Component.TODAY} ${t}`,dby:P.name}:p),modal:null,pPick:null}));
+    this.toastMsg(`Encomenda ${pk.id} entregue a ${c.name} (${pk.unit}) às ${t}. Registrado por ${P.name}.`);};
+
+  openOcc=()=>this.setState({screen:'ocorrencias',hSel:null,gq:'',modal:{kind:'occForm'},of:{type:'',unit:'',people:'',desc:'',files:[],links:[],showLinks:false}});
+  ofSet(patch){this.setState(s=>({of:{...s.of,...patch}}));}
+  occSave=()=>{const f=this.state.of,P=this.op();if(!f.type||f.desc.trim().length<10)return this.toastMsg('Escolha o tipo e descreva o fato (mín. 10 caracteres).','warn');
+    const n=48+this.state.occ.filter(o=>o.fresh).length;const o={code:'OC-2026-0'+n,date:`${Component.TODAY} ${this.hhmm()}`,type:f.type,unit:f.unit||'—',people:f.people||'—',desc:f.desc.trim(),status:'Aberta',by:P.name,links:f.links,files:f.files,fresh:true};
+    this.setState(s=>({occ:[o,...s.occ],modal:null}));this.toastMsg(`Ocorrência ${o.code} registrada por ${P.name}${o.links.length?` com ${o.links.length} evento(s) vinculado(s)`:''}.`);};
+
+  selUnit=k=>this.setState({unitSel:k,screen:'unidades',unitTower:+k.slice(1).split('-')[0],gq:''});
+  openUF=kind=>this.setState({modal:{kind:'unitForm',f:kind},uf:{a:'',b:'',c:''}});
+  ufSave=()=>{const s=this.state,f=s.modal.f,u=s.uf,k=s.unitSel,P=this.op();if(!u.a.trim()||!u.b.trim())return this.toastMsg('Preencha os campos obrigatórios.','warn');
+    const cur=JSON.parse(JSON.stringify(this.getUnit(k)));
+    if(f==='previa'){cur.pri.push({person:u.a.trim(),by:u.b.trim(),until:u.c.trim()||'31/12',win:'conforme cadastro',kind:'Autorização prévia'});}
+    if(f==='restricao'){cur.rst.push({person:u.a.trim(),reason:u.c.trim()||'Morador não autoriza a entrada',by:`${u.b.trim()} (morador, ${k})`,reg:`${P.name} (${P.role})`,date:`${Component.TODAY} ${this.hhmm()}`});}
+    if(f==='vinculo'){cur.res.push({name:u.a.trim(),link:u.b.trim(),status:'Pendente'});}
+    const nv=f==='vinculo'?[{id:'V'+Date.now(),person:u.a.trim(),doc:'—',unit:k,type:u.b.trim(),start:Component.TODAY,end:'—',req:`${Component.TODAY} ${this.hhmm()}`,by:`${P.name} (${P.role})`,status:'Pendente',docTitle:'DOCUMENTO ANEXADO',lines:[['Documento',u.c.trim()||'Não informado']],checks:[{ok:0,label:'Conferência pendente',detail:'Documento ainda não conferido.'}],note:''}]:[];
+    this.setState(st=>({units:{...st.units,[k]:cur},vinc:[...st.vinc,...nv],modal:null}));
+    this.toastMsg({previa:'Autorização prévia cadastrada',restricao:'Restrição cadastrada',vinculo:'Solicitação de vínculo enviada para aprovação'}[f]+` na ${k} por ${P.name}.`);};
+
+  selV=id=>this.setState({vSel:id,rejecting:false,rejText:''});
+  decideV(id,status,reason){const P=this.op(),v=this.state.vinc.find(x=>x.id===id);
+    const cur=JSON.parse(JSON.stringify(this.getUnit(v.unit)));cur.res=cur.res.map(r=>r.name===v.person?{...r,status:status==='Aprovado'?'Aprovado':'Rejeitado'}:r);if(status!=='Aprovado')cur.res=cur.res.filter(r=>r.name!==v.person);
+    this.setState(s=>{const vinc=s.vinc.map(x=>x.id===id?{...x,status,reason:reason||'',decided:`${P.name} · ${Component.TODAY} ${this.hhmm()}`}:x);const nx=vinc.find(x=>x.status==='Pendente');return {vinc,units:{...s.units,[v.unit]:cur},rejecting:false,rejText:'',vSel:nx?nx.id:id};});
+    this.toastMsg(status==='Aprovado'?`Vínculo de ${v.person} (${v.type.toLowerCase()}, ${v.unit}) aprovado por ${P.name}.`:`Vínculo de ${v.person} rejeitado por ${P.name}. Justificativa gravada na trilha.`,status==='Aprovado'?'ok':'warn');}
+
+  verifyTrail=()=>{this.setState({verify:'run'});setTimeout(()=>this.setState({verify:'ok'}),1300);};
+  exportTrail=()=>this.toastMsg(`Trilha exportada: trilha_acessos_${this.state.hf.from}_a_${this.state.hf.to}.jsonl + assinatura .sig. A exportação foi registrada.`);
+
+  decor(x){const C=Component;const t=x.denied?C.TONE.red:x.via==='excecao'?C.TONE.amber:C.TONE.neutral;const today=x.date===C.TODAY;
+    return {...x,when:today?x.time:`${x.date.slice(0,5)} ${x.time}`,viaLabel:C.VIA_S[x.via],viaFull:C.VIA[x.via],vBg:t.bg,vFg:t.fg,vBd:t.bd,isExc:x.via==='excecao',isDenied:x.denied,isRetro:!!x.retro,
+      retroText:x.retro?`Hora real ${x.time} · lançado às ${x.retro}`:'',authL:x.denied?'Entrada não permitida':x.auth,rowBg:x.fresh?'#F0F8F9':'#FFFFFF',open:()=>this.setState({hSel:x.id})};}
+  timeline(x){const L=[];
+    if(x.retro)L.push({t:x.retro,txt:`Lançamento retroativo por ${x.op} (contingência). Hora real informada: ${x.time}.`});
+    L.push({t:x.time,txt:`Pessoa identificada: ${x.name} (${x.type}).`});
+    L.push({t:x.time,txt:`Destino ${x.unit}. Verificação de restrições: ${x.denied?'restrição ativa encontrada':'nenhuma restrição'}.`});
+    if(x.denied)L.push({t:x.time,txt:'Entrada não permitida. Tentativa gravada.'});
+    else if(x.via==='excecao')L.push({t:x.time,txt:`Liberação por exceção do porteiro. Justificativa: "${x.just}".`});
+    else L.push({t:x.time,txt:`Autorizado por ${x.auth} via ${Component.VIA_L[x.via]}.`});
+    L.push({t:x.time,txt:`Registro gravado por ${x.op} e encadeado ao anterior.`});
+    if(x.exit)L.push({t:x.exit,txt:`Saída registrada por ${x.exitBy}.`});return L;}
+
+  vals2(evD,awaiting){
+    const s=this.state,C=Component,TN=C.TONE,P=this.op();
+    const sel=(a,ex)=>({bg:a?'#0B5563':'#FFFFFF',fg:a?'#FFFFFF':'#1A2126',bd:a?'#0B5563':'#B9C3CA'});
+    const T9=[1,2,3,4,5,6,7,8,9],FL=[10,9,8,7,6,5,4,3,2,1],U4=[1,2,3,4];
+    // encomendas
+    const tab=s.pkgTab;
+    const pkRows=s.packages.map(p=>{const old=p.days>7,t=old?TN.amber:TN.neutral;return {...p,age:p.days===0?'hoje':p.days===1?'há 1 dia':`há ${p.days} dias`,old,aBg:t.bg,aFg:t.fg,aBd:t.bd,rowBg:old?'#FFFAEB':(p.fresh?'#F0F8F9':'#FFFFFF'),deliver:()=>this.openDeliver(p.id)};});
+    const tabS=id=>({bd:tab===id?'#0B5563':'transparent',fg:tab===id?'#0B5563':'#56616B',onClick:()=>this.setState({pkgTab:id})});
+    const rowsE=pkRows.filter(p=>p.status==='entregue');
+    const pk={tabA:tab==='aguardando',tabE:tab==='entregue',awaitN:String(awaiting.length),oldN:String(awaiting.filter(p=>p.days>7).length),delivN:String(rowsE.length),rowsA:pkRows.filter(p=>p.status==='aguardando'),rowsE,tA:tabS('aguardando'),tE:tabS('entregue')};
+    const f=s.pf||{},fk=f.tower&&f.unit?`T${f.tower}-${f.unit}`:null;
+    const pf={code:f.code||'',hasTower:!!f.tower,noUnit:!fk,hasUnit:!!fk,unitBig:this.big(fk),key:fk||'',rec:f.rec||'—',car:f.car||'—',
+      towers:T9.map(n=>({n:String(n),...sel(f.tower===n),onClick:()=>this.pfSet({tower:n,unit:'',rec:''})})),
+      floors:FL.map(fl=>({label:`${fl}º`,units:U4.map(n=>({n:`${fl}${n}`,onClick:()=>this.pfSet({unit:`${fl}${n}`,rec:''})}))})),
+      recs:fk?this.getUnit(fk).res.map(r=>{const a=f.rec===r.name;return {name:r.name,link:`${r.link} · ${r.status}`,bg:a?'#E3F0F2':'#FFFFFF',bd:a?'#0B5563':'#D5DDE2',onClick:()=>this.pfSet({rec:r.name})};}):[],
+      cars:['Correios','Mercado Livre','Amazon','Shopee','Loggi','Jadlog','Outra'].map(c=>({t:c,...sel(f.car===c),onClick:()=>this.pfSet({car:c})})),
+      valid:this.pfValid(),invalid:!this.pfValid()};
+    const dp=s.packages.find(p=>p.id===s.pkgId),pq=this.norm(s.pq.trim()),pp=s.pPick;
+    const dv={id:dp?dp.id:'',unit:dp?dp.unit:'',unitBig:dp?this.big(dp.unit):'',rec:dp?dp.rec:'',car:dp?dp.car:'',code:dp?dp.code:'',pq:s.pq,showSearch:!pp,
+      cands:pq.length>=2?this.candidates().filter(c=>this.norm(c.name).includes(pq)).slice(0,6).map(c=>({...c,meta:c.unit?`${c.link} · ${c.unit} · ${c.status}`:c.link,onClick:()=>this.pickDeliver(c)})):[],
+      picked:!!pp,ok:!!(pp&&pp.linked),bad:!!(pp&&!pp.linked),pending:!!(pp&&pp.pending),pName:pp?pp.name:'',pMeta:pp?(pp.unit?`${pp.link} · ${pp.unit} · vínculo ${pp.status.toLowerCase()}`:pp.link):''};
+    // ocorrencias
+    const occRows=s.occ.map(o=>{const t=this.tone(o.status);return {...o,sBg:t.bg,sFg:t.fg,sBd:t.bd,rowBg:o.fresh?'#F0F8F9':'#FFFFFF',open:()=>this.setState({modal:{kind:'occDetail'},occId:o.code})};});
+    const of=s.of||{type:'',unit:'',people:'',desc:'',files:[],links:[],showLinks:false};
+    const ofv={...of,types:['Conflito','Tentativa de acesso indevido','Dano','Encomenda','Outro'].map(t=>({t,...sel(of.type===t),onClick:()=>this.ofSet({type:t})})),
+      fileChips:of.files.map(x=>({name:x})),hasFiles:of.files.length>0,linksLabel:of.links.length?`${of.links.length} evento(s) vinculado(s)`:'Nenhum evento vinculado',toggleLabel:of.showLinks?'Ocultar movimentações':'Vincular eventos de acesso',
+      recent:evD.slice(0,10).map(x=>{const on=of.links.includes(x.id);return {...x,on,cbBg:on?'#0B5563':'#FFFFFF',cbBd:on?'#0B5563':'#9AA7B0',rowBd:on?'#0B5563':'#E1E6EA',toggle:()=>this.ofSet({links:on?of.links.filter(i=>i!==x.id):[...of.links,x.id]})};})};
+    const od=s.occ.find(o=>o.code===s.occId);const occD=od?{...od,linked:od.links.map(id=>evD.find(x=>x.id===id)).filter(Boolean),files:(od.files||[]).join(', ')||'Nenhum'}:{linked:[]};
+    occD.hasLinked=occD.linked.length>0;
+    // unidade
+    const uk=s.unitSel,U=this.getUnit(uk),[ut,uu]=uk.slice(1).split('-');
+    const un={title:`Torre ${ut} · Apartamento ${uu}`,key:uk,
+      towers:T9.map(n=>({n:String(n),...sel(s.unitTower===n),onClick:()=>this.setState({unitTower:n})})),
+      floors:FL.map(fl=>({label:`${fl}º`,units:U4.map(n=>{const key=`T${s.unitTower}-${fl}${n}`,a=key===uk;return {n:`${fl}${n}`,bg:a?'#0B5563':(s.units[key]?'#E3F0F2':'#FFFFFF'),fg:a?'#FFFFFF':'#1A2126',bd:a?'#0B5563':'#C5CDD3',onClick:()=>this.selUnit(key)};})})),
+      res:U.res.map(r=>{const t=this.tone(r.status);return {...r,bg:t.bg,fg:t.fg,bd:t.bd};}),
+      veh:U.veh.map(v=>({plate:v[0],model:v[1]})),noVeh:!U.veh.length,pri:U.pri,noPri:!U.pri.length,rst:U.rst,noRst:!U.rst.length,
+      hist:evD.filter(x=>x.unit===uk).slice(0,8),noHist:!evD.some(x=>x.unit===uk)};
+    const UF={previa:['Nova autorização prévia','Pessoa autorizada','Morador que autoriza','Válida até (dd/mm)'],restricao:['Nova restrição','Pessoa','Morador que solicita','Motivo'],vinculo:['Solicitar vínculo','Pessoa','Tipo de vínculo (Proprietário, Inquilino ou Dependente)','Documento apresentado']};
+    const ufk=(s.modal&&s.modal.f)||'previa',uf=s.uf||{a:'',b:'',c:''};
+    const ufv={title:UF[ufk][0],la:UF[ufk][1],lb:UF[ufk][2],lc:UF[ufk][3],a:uf.a,b:uf.b,c:uf.c,isVinc:ufk==='vinculo',unit:this.big(uk)};
+    const ufSet=x=>ev=>{const v=ev.target.value;this.setState(st=>({uf:{...st.uf,[x]:v}}));};
+    // vinculos
+    const vs=s.vinc.find(v=>v.id===s.vSel)||s.vinc[0];
+    const vList=[...s.vinc].sort((a,b)=>(a.status==='Pendente'?0:1)-(b.status==='Pendente'?0:1)).map(v=>{const a=v.id===vs.id,t=this.tone(v.status);return {...v,bg:a?'#F0F8F9':'#FFFFFF',bd:a?'#0B5563':'#DCE1E5',sBg:t.bg,sFg:t.fg,sBd:t.bd,onClick:()=>this.selV(v.id)};});
+    const rl=s.rejText.trim().length,fails=vs.checks.filter(c=>!c.ok).length,dt=this.tone(vs.status);
+    const vd={...vs,isPend:vs.status==='Pendente',isDone:vs.status!=='Pendente',lines:vs.lines.map(([l,v])=>({l,v})),checks:vs.checks.map(c=>({...c,isOk:!!c.ok,isBad:!c.ok,fg:c.ok?'#05603A':'#B42318'})),
+      hasNote:!!vs.note,hasFails:fails>0,failText:`${fails} ${fails===1?'item não confere':'itens não conferem'} com o cadastro`,rejecting:s.rejecting,notRejecting:!s.rejecting,rejText:s.rejText,rejOk:rl>=15,rejNo:rl<15,rejCount:`${rl} de 15 caracteres mínimos`,
+      doneText:vs.status==='Aprovado'?`Aprovado por ${vs.decided}.`:`Rejeitado por ${vs.decided}. Justificativa: ${vs.reason}`,dBg:dt.bg,dFg:dt.fg,dBd:dt.bd,unitBig:this.big(vs.unit)};
+    // cadastro
+    const cad=[];Object.entries(s.units).forEach(([key,u])=>u.res.forEach(r=>{const t=this.tone(r.status);cad.push({name:r.name,kind:r.link,unit:key,status:r.status,sBg:t.bg,sFg:t.fg,sBd:t.bd,onClick:()=>this.selUnit(key)});}));
+    s.people.forEach(p=>cad.push({name:p.name,kind:p.type,unit:'—',status:'Visitante/Prestador',sBg:'#EEF2F4',sFg:'#33424B',sBd:'#D5DDE2',onClick:()=>this.setState({screen:'historico',hf:{...s.hf,person:p.name}})}));
+    // historico
+    const hf=s.hf,iso=d=>d.split('/').reverse().join('-');
+    const hRows=evD.filter(x=>(!hf.unit||this.norm(x.unit).includes(this.norm(hf.unit.replace(/\s/g,''))))&&(!hf.person||this.norm(x.name).includes(this.norm(hf.person)))&&(!hf.porteiro||x.op===hf.porteiro)&&(!hf.tipo||x.type===hf.tipo)&&(!hf.meio||x.via===hf.meio)&&(!hf.exc||x.via==='excecao')&&(!hf.retro||x.retro)&&(!hf.from||iso(x.date)>=hf.from)&&(!hf.to||iso(x.date)<=hf.to))
+      .map(x=>({...x,dateS:`${x.date.slice(0,5)} ${x.time}`}));
+    const hfSet=x=>ev=>{const v=ev.target.type==='checkbox'?ev.target.checked:ev.target.value;this.setState(st=>({hf:{...st.hf,[x]:v}}));};
+    const hfOn={};['unit','person','porteiro','tipo','meio','from','to','exc','retro'].forEach(x=>hfOn[x]=hfSet(x));
+    const total=1268+s.events.length;
+    // relatorios
+    const days=[];let mx=0;for(let i=0;i<30;i++){const dt=new Date(2026,8,10+i),dow=(4+i)%7,we=dow===0||dow===6;let v=i===29?s.events.filter(x=>x.date===C.TODAY&&!x.denied).length+58:62+((i*37+11)%29)-(we?20:0);mx=Math.max(mx,v);days.push({v,lab:i%5===0||i===29?`${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}`:'',we});}
+    const bars=days.map(d=>({...d,h:`${Math.round(d.v/mx*100)}%`,col:d.we?'#7FB2BC':'#0B5563',vs:String(d.v)}));
+    const freshExc=n=>s.events.filter(x=>x.fresh&&x.via==='excecao'&&x.op===n).length;
+    const exc=[['Sérgio Matos',7],['João Lima',4],['Marina Couto',2]].map(([n,v])=>[n,v+freshExc(n)]);const emx=Math.max(...exc.map(x=>x[1]));
+    const ages=[['0 a 2 dias',awaiting.filter(p=>p.days<=2).length,'#0B5563'],['3 a 7 dias',awaiting.filter(p=>p.days>2&&p.days<=7).length,'#0B5563'],['Mais de 7 dias',awaiting.filter(p=>p.days>7).length,'#DC6803']];const amx=Math.max(1,...ages.map(a=>a[1]));
+    const rep={bars,total30:String(days.reduce((a,d)=>a+d.v,0)),
+      meios:[['Interfone',46,'#0B5563'],['Autorização prévia',31,'#0B5563'],['Morador presente',17,'#0B5563'],['Exceção do porteiro',6,'#DC6803']].map(([l,v,c])=>({l,v:`${v}%`,w:`${v*2}%`,c})),
+      exc:exc.map(([l,v])=>({l,v:String(v),w:`${Math.round(v/emx*100)}%`})),ages:ages.map(([l,v,c])=>({l,v:String(v),w:`${Math.max(4,Math.round(v/amx*100))}%`,c}))};
+    // usuarios
+    const users=s.users.map(u=>{const t=this.tone(u.status);return {...u,last:u.name===P.name?'Agora (sessão atual)':u.last,sBg:t.bg,sFg:t.fg,sBd:t.bd,mfaL:u.mfa?'Ativo':'Não',mfaFg:u.mfa?'#05603A':'#56616B',isActive:u.status==='Ativo',isInactive:u.status!=='Ativo',
+      onDisable:()=>this.setState({modal:{kind:'userDisable'},userId:u.id}),onReset:()=>this.toastMsg(`Link de redefinição enviado para ${u.name}. A senha atual deixa de valer no próximo acesso.`)};});
+    const du=s.users.find(u=>u.id===s.userId)||{};
+    const nu=s.nu||{name:'',login:'',role:'Porteiro'};
+    const nuv={...nu,roles:['Porteiro','Administração','Síndico','Auditor'].map(r=>({t:r,...sel(nu.role===r),onClick:()=>this.setState(st=>({nu:{...st.nu,role:r}}))})),mfaNote:nu.role==='Porteiro'?'Porteiro entra com usuário e senha próprios.':'Este perfil exige segundo fator (código de 6 dígitos) no login.'};
+    const nuSet=x=>ev=>{const v=ev.target.value;this.setState(st=>({nu:{...st.nu,[x]:v}}));};
+    return {pk,pf,dv,occRows,of:ofv,occD,un,uf:ufv,vList,vd,pendN:String(s.vinc.filter(v=>v.status==='Pendente').length),cad,
+      imp0:s.imp===0,imp1:s.imp===1,imp2:s.imp===2,
+      impRows:[['Ana Ribeiro','***.512.338-**','4','32','Proprietária','ok'],['Paulo Ribeiro','***.881.204-**','4','32','Dependente','ok'],['Carla Mendes','***.093.776-**','7','11','Inquilina','ok'],['Rogério Lima','—','3','52','Proprietário','Documento ausente'],['Sônia Aguiar','***.230.115-**','10','21','Proprietária','Unidade inexistente'],['Helena Duarte','***.402.981-**','2','104','Proprietária','ok'],['Helena Duarte','***.402.981-**','2','104','Proprietária','Nome duplicado'],['Marta Siqueira','***.177.650-**','9','21','Proprietária','ok']].map(([n,d,t,u,l,st])=>({n,d,t,u,l,st,bad:st!=='ok',good:st==='ok'})),
+      impIssues:[['Documento ausente','17 linhas','Ex.: linha 44, Rogério Lima (T3-52)'],['Unidade inexistente','6 linhas','Ex.: linha 102, Torre 10 não existe'],['Nome duplicado','7 linhas','Ex.: linhas 213 e 214, Helena Duarte (T2-104)']].map(([a,b,c])=>({a,b,c})),
+      impPick:()=>this.setState({imp:1}),impRun:()=>{this.setState({imp:2});this.toastMsg(`Importação concluída por ${P.name}. Registro gravado na trilha.`);},impReset:()=>this.setState({imp:0}),
+      hRows,hCount:`${hRows.length} ${hRows.length===1?'evento':'eventos'}`,noH:!hRows.length,hf,hfOn,clearHf:()=>this.setState({hf:{unit:'',person:'',porteiro:'',tipo:'',meio:'',exc:false,retro:false,from:'2026-10-01',to:'2026-10-09'}}),
+      vRun:s.verify==='run',vOk:s.verify==='ok',vRunText:`Verificando o encadeamento de ${total.toLocaleString('pt-BR')} registros…`,
+      vOkText:`Trilha íntegra: ${total.toLocaleString('pt-BR')} registros verificados desde 01/03/2026. Nenhuma quebra no encadeamento. Último hash ${this.hash(s.events[0].code+s.events[0].time).slice(0,24)}…`,
+      verifyTrail:this.verifyTrail,exportTrail:this.exportTrail,rep,exportPdf:()=>this.toastMsg('Relatório exportado: relatorio_portaria_set-out_2026.pdf'),
+      users,du,nu:nuv,nuOn:{name:nuSet('name'),login:nuSet('login')},openNewUser:()=>this.setState({modal:{kind:'userNew'},nu:{name:'',login:'',role:'Porteiro'}}),
+      saveUser:()=>{const n=s.nu;if(!n||!n.name.trim()||!n.login.trim())return this.toastMsg('Preencha nome e login.','warn');const u={id:'u'+Date.now(),name:n.name.trim(),login:n.login.trim(),role:n.role,status:'Ativo',last:'Nunca acessou',mfa:n.role!=='Porteiro'};this.setState(st=>({users:[...st.users,u],modal:null}));this.toastMsg(`Usuário ${u.name} (${u.role}) criado por ${P.name}.`);},
+      confirmDisable:()=>{this.setState(st=>({users:st.users.map(u=>u.id===st.userId?{...u,status:'Inativo'}:u),modal:null}));this.toastMsg(`${du.name} desativado. O histórico do usuário é mantido.`,'warn');},
+      pfCode:ev=>this.pfSet({code:ev.target.value}),pfClearUnit:()=>this.pfSet({unit:'',rec:''}),pkgContinue:this.pkgContinue,pkgBack:this.pkgBack,pkgSave:this.pkgSave,
+      onPq:ev=>this.setState({pq:ev.target.value}),clearPick:()=>this.setState({pPick:null}),deliverConfirm:this.deliverConfirm,
+      ofOn:{unit:ev=>this.ofSet({unit:ev.target.value}),people:ev=>this.ofSet({people:ev.target.value}),desc:ev=>this.ofSet({desc:ev.target.value})},
+      addFile:()=>this.ofSet({files:[...of.files,`foto_${String(of.files.length+1).padStart(2,'0')}.jpg`]}),toggleLinks:()=>this.ofSet({showLinks:!of.showLinks}),occSave:this.occSave,
+      openUF:{previa:()=>this.openUF('previa'),restricao:()=>this.openUF('restricao'),vinculo:()=>this.openUF('vinculo')},ufOn:{a:ufSet('a'),b:ufSet('b'),c:ufSet('c')},ufSave:this.ufSave,
+      approveV:()=>this.decideV(vs.id,'Aprovado'),startReject:()=>this.setState({rejecting:true}),cancelReject:()=>this.setState({rejecting:false,rejText:''}),onRej:ev=>this.setState({rejText:ev.target.value}),
+      confirmReject:()=>{if(s.rejText.trim().length>=15)this.decideV(vs.id,'Rejeitado',s.rejText.trim());}};
+  }
+
+  renderVals(){
+    const s=this.state,C=Component,P=this.op(),e=s.entry,k=this.unitKey(e),scr=s.screen,TN=C.TONE;
+    const is={login:scr==='login',app:scr!=='login'};
+    ['painel','entrada','pessoas','encomendas','ocorrencias','unidades','vinculos','cadastro','importar','historico','relatorios','usuarios'].forEach(x=>is[x]=scr===x);
+    const pend=s.vinc.filter(v=>v.status==='Pendente').length;
+    const nav=C.NAV.map(([title,items])=>({title,items:items.filter(i=>i[2].includes(P.c)).map(([id,label])=>{const a=scr===id;return {label,hasBadge:id==='vinculos'&&pend>0,badge:String(pend),bg:a?'#1E4952':'transparent',fg:a?'#FFFFFF':'#C8D3D7',bar:a?'#6CCBD8':'transparent',onClick:()=>this.go(id)};})})).filter(x=>x.items.length);
+    const profiles=[['porteiro','Porteiro'],['admin','Administração'],['sindico','Síndico'],['auditor','Auditor']].map(([id,label])=>{const a=s.profile===id;return {label,bg:a?'#0B5563':'#FFFFFF',fg:a?'#FFFFFF':'#1A2126',bd:a?'#0B5563':'#B9C3CA',onClick:()=>this.pickProfile(id)};});
+    const clock=this.hhmm();const nowM=this.mins(clock);
+
+    // global search
+    const gq=s.gq.trim(),gn=this.norm(gq);let gRes=[];
+    if(gq.length>=2){
+      const um=gq.match(/^t?\s*([1-9])\s*[-·\s/]?\s*(\d{2,3})$/i);
+      if(um){const key=`T${um[1]}-${um[2]}`;gRes.push({label:this.big(key),meta:this.getUnit(key).res.map(r=>r.name).join(', '),kind:'Unidade',key,person:null});}
+      Object.entries(s.units).forEach(([key,u])=>{u.res.forEach(r=>{if(this.norm(r.name).includes(gn))gRes.push({label:r.name,meta:`${r.link} · ${key} · ${r.status}`,kind:'Morador',key,person:null});});
+        u.veh.forEach(v=>{if(v[0].replace('-','').toLowerCase().includes(gn.replace(/[-\s]/g,'')))gRes.push({label:v[0],meta:`${v[1]} · ${key}`,kind:'Placa',key,person:null});});});
+      s.people.forEach(p=>{if(this.norm(p.name).includes(gn)||(gn.replace(/\D/g,'').length>=3&&p.doc.replace(/\D/g,'').includes(gn.replace(/\D/g,''))))gRes.push({label:p.name,meta:`${p.type} · ${p.doc}`,kind:p.type,key:null,person:p});});
+      gRes=gRes.slice(0,7).map(g=>({...g,onClick:()=>{
+        if(P.c==='u'){this.setState({screen:'historico',gq:'',hf:{...s.hf,unit:g.key||'',person:g.key&&g.kind!=='Morador'?'':g.label}});return;}
+        if(P.c==='p'||(P.c==='s'&&g.person)){if(g.person)this.startEntry({person:g.person});else{const [t,u]=g.key.slice(1).split('-');this.startEntry({tower:+t,unit:u});}return;}
+        if(g.key)this.selUnit(g.key);else this.setState({screen:'historico',gq:'',hf:{...s.hf,person:g.label}});
+      }}));
+    }
+
+    const evD=s.events.map(x=>this.decor(x));
+    const moves=evD.slice(0,10);
+    const insideL=evD.filter(x=>x.inside).map(x=>{const today=x.date===C.TODAY;const d=today?nowM-this.mins(x.time):24*60;const long=d>480;
+      return {...x,dur:`${Math.floor(d/60)}h${String(d%60).padStart(2,'0')}`,isLong:long,longBg:long?'#FFFAEB':'#FFFFFF',longFg:long?'#93370D':'#1A2126',longW:long?'600':'400',exitFn:()=>this.registerExit(x.id)};});
+    const awaiting=s.packages.filter(p=>p.status==='aguardando');
+    const occOpen=s.occ.filter(o=>o.status!=='Encerrada').length;
+    const cards=[
+      {label:'Pessoas no condomínio agora',n:String(insideL.length),sub:'Ver lista →',onClick:()=>this.go('pessoas')},
+      {label:'Encomendas aguardando retirada',n:String(awaiting.length),sub:`${awaiting.filter(p=>p.days>7).length} há mais de 7 dias →`,onClick:()=>this.go('encomendas')},
+      {label:'Ocorrências abertas',n:String(occOpen),sub:'Ver ocorrências →',onClick:()=>this.go('ocorrencias')},
+      {label:'Autorizações prévias de hoje',n:String(C.PRIORS_TODAY.length),sub:`${C.PRIORS_TODAY.filter(p=>!p.ok).length} ainda não utilizadas →`,onClick:()=>this.setState({modal:{kind:'priors'}})}
+    ];
+    const todayEv=s.events.filter(x=>x.date===C.TODAY&&x.op===P.name);
+    const turno=[{label:'Entradas registradas',n:todayEv.filter(x=>!x.denied).length},{label:'Liberações por exceção',n:todayEv.filter(x=>x.via==='excecao').length},{label:'Entradas negadas',n:todayEv.filter(x=>x.denied).length},
+      {label:'Pessoas ainda no condomínio',n:insideL.length},{label:'Encomendas aguardando',n:awaiting.length},{label:'Ocorrências abertas',n:occOpen}].map(t=>({...t,n:String(t.n)}));
+    const priorsToday=C.PRIORS_TODAY.map(p=>({...p,fg:p.ok?'#05603A':'#56616B'}));
+
+    // entry
+    const sug=this.suggestions();
+    const prior=e.person&&k?this.priorFor(e.person.name,k):null;
+    const vias=[['interfone','Interfone','Morador atendeu e autorizou'],['presente','Morador presente na portaria','Morador está no balcão'],['previa','Autorização prévia','Cadastrada pelo morador'],['excecao','Exceção do porteiro','Fica marcada no relatório']]
+      .map(([id,label,desc])=>{const a=e.via===id,ex=id==='excecao';return {label,desc,bg:a?(ex?'#FEF0C7':'#E3F0F2'):'#FFFFFF',bd:a?(ex?'#DC6803':'#0B5563'):'#D5DDE2',onClick:()=>this.setVia(id)};});
+    const resApproved=k?this.getUnit(k).res.filter(r=>r.status==='Aprovado'):[];
+    const en={
+      query:e.query,np:e.np,showSearch:!e.person&&!e.newMode,newMode:e.newMode,hasPerson:!!e.person,
+      sug:sug.map((p,i)=>({...p,ini:p.name.split(/\s+/).filter(w=>/^[A-ZÀ-Ú]/.test(w)).slice(0,2).map(w=>w[0]).join(''),bg:i===s.sugIdx?'#E3F0F2':'#FFFFFF',bd:i===s.sugIdx?'#0B5563':'#E1E6EA',onClick:()=>this.choosePerson(p)})),
+      showNewOpt:e.query.trim().length>=2,hintType:e.query.trim().length<2,isPrest:e.np.type==='Prestador',photoLabel:e.np.photo?'Foto capturada · refazer':'Capturar foto',
+      pIni:e.person?e.person.name.split(/\s+/).filter(w=>/^[A-ZÀ-Ú]/.test(w)).slice(0,2).map(w=>w[0]).join(''):'',pName:e.person?e.person.name:'',pDoc:e.person?e.person.doc:'',pType:e.person?e.person.type:'',
+      noUnit:!k,hasUnit:!!k,hasTower:!!e.tower,unitBig:this.big(k),unitKey:k||'',
+      towers:[1,2,3,4,5,6,7,8,9].map(n=>{const a=e.tower===n;return {n:String(n),bg:a?'#0B5563':'#FFFFFF',fg:a?'#FFFFFF':'#1A2126',bd:a?'#0B5563':'#B9C3CA',onClick:()=>this.setTower(n)};}),
+      floors:[10,9,8,7,6,5,4,3,2,1].map(f=>({label:`${f}º and.`,units:[1,2,3,4].map(n=>({n:`${f}${n}`,onClick:()=>this.setUnit(`${f}${n}`)}))})),
+      waitAuth:!(e.person&&k),hasPrior:!!prior,needAuth:!!(e.person&&k&&!prior),
+      priorText:prior?`Autorização prévia de ${prior.by} (morador, ${k}) válida até ${prior.until}, ${prior.win}`:'',
+      vias,showRes:e.via==='interfone'||e.via==='presente',viaPrevNo:e.via==='previa'&&!prior,isExc:e.via==='excecao',just:e.just,
+      justCount:`${e.just.trim().length} de 15 caracteres mínimos${e.just.trim().length>=15?' · ok':''}`,
+      residents:resApproved.map(r=>{const a=e.resident===r.name;return {name:r.name,link:r.link,bg:a?'#E3F0F2':'#FFFFFF',bd:a?'#0B5563':'#D5DDE2',onClick:()=>this.setEntry({resident:r.name})};}),
+      sumPerson:e.person?`${e.person.name} · ${e.person.type}`:'—',sumUnit:k?this.big(k):'—',
+      sumAuth:e.via==='excecao'?`${P.name} (exceção do porteiro)`:(e.resident||'—'),sumVia:e.via?C.VIA[e.via]:'',
+      canConfirm:this.canConfirm(),cannotConfirm:!this.canConfirm(),missing:this.missing()
+    };
+    const npSet=f=>ev=>{const v=ev.target.value;this.setState(st=>({entry:{...st.entry,np:{...st.entry.np,[f]:v}}}));};
+    const npOn={};['name','docType','doc','phone','type','company','service'].forEach(f=>npOn[f]=npSet(f));
+
+    // modal
+    const md=s.modal||{};const m={any:!!s.modal};['restricao','turno','priors','pkgReceive','pkgConfirm','pkgDeliver','occForm','occDetail','unitForm','userNew','userDisable'].forEach(x=>m[x]=md.kind===x);
+    if(m.restricao){m.rUnit=this.big(md.unit);m.rPerson=md.person.name;m.rReason=md.r.reason;m.rBy=md.r.by;m.rReg=md.r.reg;m.rDate=md.r.date;}
+
+    // history drawer
+    const hx=s.hSel?s.events.find(x=>x.id===s.hSel):null;let h={open:!!hx};
+    if(hx){const d=this.decor(hx);h={...d,open:true,unitBig:this.big(hx.unit),hash:this.hash(hx.code+hx.time+hx.name+hx.unit+hx.op),tl:this.timeline(hx),hasJust:!!hx.just,exitL:hx.exit?`${hx.exit} · ${hx.exitBy}`:(hx.inside?'Ainda no condomínio':'—')};}
+
+    const T=s.toast;const toast=T?{show:true,text:T.text,bar:{ok:'#32D583',warn:'#FDB022',err:'#F97066'}[T.kind]||'#32D583'}:{show:false};
+
+    const base={is,nav,profiles,clock,dateL:'Sexta-feira, 09/10/2026',opName:P.name,opRole:P.role,
+      loginStep1:s.loginStep===1,loginStep2:s.loginStep===2,loginUser:s.loginUser,loginPass:s.loginPass,code:s.code,hasLoginErr:!!s.loginErr,loginErr:s.loginErr,
+      onLoginSubmit:this.onLoginSubmit,onLoginUser:ev=>this.setState({loginUser:ev.target.value}),onLoginPass:ev=>this.setState({loginPass:ev.target.value}),onCode:ev=>this.setState({code:ev.target.value.replace(/\D/g,'').slice(0,6),loginErr:''}),loginBack:()=>this.setState({loginStep:1}),
+      logout:this.logout,gq:s.gq,onGq:ev=>this.setState({gq:ev.target.value}),gOpen:gq.length>=2,gRes,gNone:gq.length>=2&&!gRes.length,
+      moves,cards,turno,priorsToday,openTurno:this.openTurno,confirmTurno:this.confirmTurno,closeModal:this.closeModal,startEntryBtn:()=>this.startEntry(),openReceive:this.openReceive,openOcc:this.openOcc,
+      en,npOn,qRef:this.qRef,onQuery:this.onQuery,onQueryKey:this.onQueryKey,openNew:this.openNew,cancelNew:this.cancelNew,saveNew:this.saveNew,togglePhoto:this.togglePhoto,clearPerson:this.clearPerson,clearUnit:this.clearUnit,
+      quickJust:C.QUICK.map(t=>({t,onClick:()=>this.setEntry({just:t})})),onJust:ev=>this.setEntry({just:ev.target.value}),confirmEntry:this.confirmEntry,cancelEntry:this.cancelEntry,
+      inside:insideL,insideCount:String(insideL.length),noInside:!insideL.length,
+      m,restrOcc:this.restrOcc,restrCancel:this.restrCancel,h,closeH:()=>this.setState({hSel:null}),toast,closeToast:()=>this.setState({toast:null})};
+    return Object.assign(base,this.vals2?this.vals2(evD,awaiting):{});
+  }
+}
+</script>
+</body>
+</html>
