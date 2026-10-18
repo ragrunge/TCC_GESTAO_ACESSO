@@ -15,7 +15,7 @@ describe('auth: login, cookie, sessão e logout', () => {
   it('/saude continua público com os guards globais', async () => {
     const r = await api.http().get('/api/v1/saude');
     expect(r.status).toBe(200);
-    expect(r.body.status).toBe('ok');
+    expect(r.body.data.status).toBe('ok');
   });
 
   it('login ok: cookie HttpOnly; Secure; SameSite=Strict; Path=/ com prefixo __Host-, sem hash na resposta', async () => {
@@ -29,7 +29,7 @@ describe('auth: login, cookie, sessão e logout', () => {
     expect(sc).toMatch(/; Path=\//i);
     expect(sc).not.toMatch(/Domain=/i);
     expect(r.headers['cache-control']).toBe('no-store');
-    expect(r.body.usuario).toMatchObject({ login: 'joao.lima', papel: 'porteiro', deveTrocarSenha: false });
+    expect(r.body.data.usuario).toMatchObject({ login: 'joao.lima', papel: 'porteiro', deveTrocarSenha: false });
     expect(JSON.stringify(r.body)).not.toMatch(/argon2|senha_hash|senhaHash/);
     // O token só existe no cookie: o banco guarda o SHA-256
     const token = sc.split(';')[0]!.split('=')[1]!;
@@ -44,8 +44,9 @@ describe('auth: login, cookie, sessão e logout', () => {
     const b = await api.http().post(LOGIN).set('X-Forwarded-For', ip()).send({ login: LOGINS.auditor, senha: 'senha errada mesmo' });
     expect(a.status).toBe(401);
     expect(b.status).toBe(401);
-    expect(a.body).toEqual(b.body);
-    expect(a.body).toEqual({ codigo: 'CREDENCIAIS_INVALIDAS', mensagem: 'Usuário ou senha inválidos.' });
+    expect({ ...a.body, timestamp: 0 }).toEqual({ ...b.body, timestamp: 0 });
+    expect(a.body).toMatchObject({ statusCode: 401, error: 'Unauthorized', code: 'CREDENCIAIS_INVALIDAS', message: 'Usuário ou senha inválidos.', path: '/api/v1/auth/login' });
+    expect(a.body).not.toHaveProperty('details');
     expect(a.headers['set-cookie']).toBeUndefined();
     const falhas = await trilha(api, 'auth.login_falha');
     expect(falhas.find((f) => f.usuarioId === null)?.usuarioNome).toBe('ninguem.aqui');
@@ -71,7 +72,7 @@ describe('auth: login, cookie, sessão e logout', () => {
     const forjado = `__Host-portaria_sessao=${'A'.repeat(43)}`;
     const r = await api.http().get(ME).set('Cookie', forjado);
     expect(r.status).toBe(401);
-    expect(r.body.codigo).toBe('SESSAO_INVALIDA');
+    expect(r.body.code).toBe('SESSAO_INVALIDA');
     // 401 não é negação de acesso: não grava acesso.negado
     expect((await trilha(api, 'acesso.negado')).length).toBe(0);
   });
@@ -80,8 +81,8 @@ describe('auth: login, cookie, sessão e logout', () => {
     const { cookie } = await api.como('administracao');
     const me = await api.http().get(ME).set('Cookie', cookie);
     expect(me.status).toBe(200);
-    expect(me.body.usuario.login).toBe(LOGINS.administracao);
-    expect(me.body.sessao.inatividadeMin).toBe(30);
+    expect(me.body.data.usuario.login).toBe(LOGINS.administracao);
+    expect(me.body.data.sessao.inatividadeMin).toBe(30);
 
     const sai = await api.http().post('/api/v1/auth/logout').set('Cookie', cookie);
     expect(sai.status).toBe(204);
@@ -117,10 +118,10 @@ describe('auth: login, cookie, sessão e logout', () => {
   it('corpo inválido: 400 sem eco do valor e campo desconhecido recusado', async () => {
     const r = await api.http().post(LOGIN).send({ login: 'x', senha: 'y', papel: 'sindico' });
     expect(r.status).toBe(400);
-    expect(r.body.codigo).toBe('DADOS_INVALIDOS');
+    expect(r.body.code).toBe('DADOS_INVALIDOS');
     const vazio = await api.http().post(LOGIN).set('Content-Type', 'application/json').send('{"login":');
     expect(vazio.status).toBe(400);
-    expect(vazio.body.codigo).toBeTruthy();
+    expect(vazio.body.code).toBeTruthy();
     expect(JSON.stringify(vazio.body)).not.toMatch(/Unexpected|JSON\.parse|at /);
   });
 });
@@ -137,7 +138,7 @@ describe('auth: limite de tentativas (5 em 15 min, por login e por IP)', () => {
     }
     const bloqueado = await api.http().post(LOGIN).set('X-Forwarded-For', novoIp()).send({ login: LOGINS.porteiro, senha: SENHA });
     expect(bloqueado.status).toBe(429);
-    expect(bloqueado.body.codigo).toBe('LOGIN_BLOQUEADO');
+    expect(bloqueado.body.code).toBe('LOGIN_BLOQUEADO');
     expect(Number(bloqueado.headers['retry-after'])).toBeGreaterThan(0);
     const bloqueios = await trilha(api, 'auth.bloqueio');
     expect(bloqueios.length).toBe(1);

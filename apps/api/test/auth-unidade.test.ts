@@ -100,7 +100,7 @@ describe('filtro de exceção: erro do driver não vaza', () => {
     await filtro.catch(erro, host);
     spy.mockRestore();
     expect(status).toBe(500);
-    expect(corpo).toEqual({ codigo: 'ERRO_INTERNO', mensagem: 'Erro interno. Tente novamente.' });
+    expect(corpo).toMatchObject({ statusCode: 500, error: 'Internal Server Error', code: 'ERRO_INTERNO', message: 'Erro interno. Tente novamente.', path: null });
     expect(saida.join('\n')).toContain('22P02');
     expect(saida.join('\n')).not.toMatch(/Maria|52998224725|Failed query/);
   });

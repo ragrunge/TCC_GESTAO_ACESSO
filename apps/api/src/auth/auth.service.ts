@@ -127,7 +127,7 @@ export class AuthService {
 
   async trocarSenha(ctx: Contexto, senhaAtual: string, novaSenha: string): Promise<UsuarioPublico> {
     const problemas = problemasDaSenha(novaSenha, { login: ctx.ator.login });
-    if (problemas.length) throw erroApi(422, 'SENHA_FRACA', problemas[0]!, problemas);
+    if (problemas.length) throw erroApi(422, 'SENHA_FRACA', problemas[0]!, problemas.map((m) => ({ field: 'novaSenha', message: m })));
     const agora = this.relogio.agora();
     // A senha atual é um segredo sendo adivinhado (sessão roubada): conta no mesmo limite do login.
     const chLogin = this.limite.chave('login', ctx.ator.login);

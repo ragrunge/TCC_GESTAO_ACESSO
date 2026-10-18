@@ -9,7 +9,7 @@ src/main.ts              bootstrap: lê a config e chama configurarApp; 0.0.0.0:
 src/plataforma.ts        configurarApp (usado também pelos testes): prefixo api/v1, trust proxy, CORS, log, no-store
 src/app.module.ts        AppModule: guards globais (SessaoGuard -> PapelGuard) e filtro global de exceção
 src/config/              config validada no boot (falha em vez de default silencioso) + relógio injetável
-src/comum/               erros { codigo, mensagem }, filtro global (acesso.negado em todo 403), ZodPipe, log JSON em allowlist
+src/comum/               envelope { data } (interceptor), paginação por cursor, erro { statusCode, error, code, message, details?, timestamp, path } (filtro global, acesso.negado em todo 403), ZodPipe, log JSON em allowlist
 src/auditoria/           AuditoriaService.registrar(tx, ...) e o snapshot (snake_case, sem segredo, CPF/telefone mascarados)
 src/auth/                login/logout/me/trocar-senha, sessão, limite de login, senha (argon2id), guards e decorators
 src/usuarios/            gestão de usuários (usuario.gerenciar / usuario.gerenciar_sindico)
@@ -48,7 +48,7 @@ docker compose watch            # liga o reload numa stack já de pé
 API_TARGET=runtime docker compose up -d --build   # imagem de produção (sem tsc-watch, usuário node)
 docker compose run --rm migrate # depois de criar migração nova (o migrate só roda sozinho na subida)
 docker compose ps
-curl http://127.0.0.1:3000/api/v1/saude    # {"status":"ok","banco":"ok","ultimoSeq":0,"em":"..."}
+curl http://127.0.0.1:3000/api/v1/saude    # {"data":{"status":"ok","banco":"ok","ultimoSeq":0,"em":"..."}}
 docker compose exec api node dist/cli/seed-dev.js   # 4 usuários de dev; senha = SEED_SENHA_DEV do .env
 docker compose logs -f api
 docker compose down             # derruba (mantém os dados)
@@ -107,6 +107,15 @@ Validação: Zod, um pipe por parâmetro, `@Body(new ZodPipe(Schema))` com `z.st
 `@Param('id', uuidParam)`. Não há `ValidationPipe` global (o `whitelist` do class-validator esvaziaria o corpo do Zod).
 Escolha: Zod já é TypeScript (schema = tipo), não depende de `emitDecoratorMetadata` (o vitest/esbuild não emite) e é o
 mesmo idioma que o front pode usar; class-validator exigiria classes decoradas e o pipe global com metadata.
+
+### Formato das respostas (skill rest-api)
+
+- 2xx com corpo: `{ "data": ... }`, aplicado pelo `EnvelopeInterceptor` global: o controller devolve o objeto puro.
+- Listagem: o serviço devolve `new Pagina(itens, proximoCursor)` e sai `{ "data": [...], "pagination": { "cursor", "hasNextPage" } }`.
+  Query `?limite=1..100` (padrão 50) e `?cursor=` (opaco: base64url da chave de ordenação do último item, nunca offset). Ver `GET /usuarios`.
+- 204: handler sem retorno, sem corpo.
+- Erro: `{ statusCode, error, code, message, details?, timestamp, path }` pelo `FiltroExcecao`. No código continua
+  `erroApi(status, codigo, mensagem, detalhes)`; `details` de validação é `[{ field, message }]`; `path` sai sem query.
 
 ### Auditoria: padrão para os próximos módulos
 

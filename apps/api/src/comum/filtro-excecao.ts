@@ -1,4 +1,5 @@
-// Filtro global: toda resposta de erro sai no formato { codigo, mensagem, detalhes? } e nenhum erro de driver,
+// Filtro global: toda resposta de erro sai no envelope { statusCode, error, code, message, details?, timestamp, path }
+// (skill rest-api, req-error-format) e nenhum erro de driver,
 // SQL ou parâmetro chega ao cliente ou ao log. (DrizzleQueryError.message traz o SQL E OS PARÂMETROS: hash de senha,
 // nome, telefone. Do erro de banco só vão ao log o SQLSTATE e o nome da constraint.)
 //
@@ -9,7 +10,7 @@ import type { Request, Response } from 'express';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { ipDe } from '../auth/decorators';
 import { DB, type Db } from '../database/database.module';
-import { AcessoNegado, codigoPg, constraintPg, type CorpoErro } from './erros';
+import { AcessoNegado, codigoPg, constraintPg, type CorpoErro, respostaErro } from './erros';
 import { log } from './log';
 
 const CODIGO_POR_STATUS: Record<number, string> = {
@@ -59,7 +60,7 @@ export class FiltroExcecao implements ExceptionFilter {
     }
 
     if (status === 403) await this.registrarNegacao(req, erro);
-    if (!res.headersSent) res.status(status).json(corpo);
+    if (!res.headersSent) res.status(status).json(respostaErro(status, corpo, req.originalUrl ?? req.url));
   }
 
   private async registrarNegacao(req: Request, erro: unknown) {

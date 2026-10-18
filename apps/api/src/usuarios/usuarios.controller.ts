@@ -1,9 +1,10 @@
 // Rotas de usuários (spec §6.1: GET/POST/PATCH /usuarios). Respostas com senha temporária saem uma única vez
 // (Cache-Control: no-store vale para toda a API, ver main.ts).
-import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { Acao, Ctx } from '../auth/decorators';
 import type { Contexto } from '../auth/tipos';
+import { PaginacaoDto, type Paginacao } from '../comum/pagina';
 import { uuidParam, ZodPipe } from '../comum/zod.pipe';
 import { UsuariosService } from './usuarios.service';
 
@@ -24,8 +25,8 @@ export class UsuariosController {
 
   @Get()
   @Acao('usuario.gerenciar')
-  listar() {
-    return this.usuarios.listar();
+  listar(@Query(new ZodPipe(PaginacaoDto)) p: Paginacao) {
+    return this.usuarios.listar(p); // { data: [...], pagination: { cursor, hasNextPage } }
   }
 
   @Post()

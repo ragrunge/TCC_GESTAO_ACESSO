@@ -78,7 +78,7 @@ export async function novaApi(extra: Partial<Config> = {}) {
   async function entrar(login: string, senha = SENHA, ip = novoIp()) {
     const r = await http().post('/api/v1/auth/login').set('X-Forwarded-For', ip).send({ login, senha });
     if (r.status !== 200) throw new Error(`login de ${login} falhou: ${r.status} ${JSON.stringify(r.body)}`);
-    return { cookie: cookieDe(r.headers['set-cookie']), corpo: r.body, ip };
+    return { cookie: cookieDe(r.headers['set-cookie']), corpo: r.body.data, ip };
   }
   const como = (papel: PapelTeste) => entrar(LOGINS[papel]);
 

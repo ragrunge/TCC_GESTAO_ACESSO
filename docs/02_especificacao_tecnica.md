@@ -580,7 +580,7 @@ aqui (01_requisitos.md, seção 11).
 | Portaria | Bloqueio de tela por inatividade (parâmetro, valor inicial de 2 min): a SPA ofusca a tela e exige re-autenticação rápida (senha ou PIN do próprio operador) sem encerrar a sessão; a troca de turno exige logout e novo login (RN-05) |
 | Rate limit | Por IP e por login: 5 falhas em 15 min bloqueiam o login por 15 min (429 `LOGIN_BLOQUEADO` com `Retry-After`), com atraso crescente (250 ms × 2^(n-1), teto de 3 s); resposta sem distinguir "usuário inexistente" de "senha errada", inclusive no tempo (login inexistente verifica contra um hash fictício). Contador persistente em `login_limite`, não em memória, porque a API pode ter mais de uma réplica. A tentativa é contada ANTES de verificar a senha (UPSERT atômico), então uma rajada paralela não ganha mais que 5 palpites; o sucesso zera o contador do login e só desfaz a própria tentativa no do IP. O limite "global" da rota é um semáforo POR PROCESSO de hashes argon2 simultâneos (2, fila de 50, depois 503): protege a memória do container (64 MiB por hash). A troca de senha conta no mesmo limite do login (sessão roubada adivinhando a senha atual) |
 | Registro | `auth.login`, `auth.logout`, `auth.login_falha` (motivo: login_inexistente, usuario_inativo, senha_incorreta ou bloqueado), `auth.bloqueio`, `auth.trocar_senha` e `auth.trocar_senha_falha` em `audit_log`, sem a senha tentada; o login digitado tem sequências de 9+ dígitos mascaradas. Todo 403 grava `acesso.negado` com a ação RBAC tentada |
-| Validação e erros | DTOs em Zod (`z.strictObject`: campo desconhecido é 400), um pipe por parâmetro. Filtro global no formato `{ codigo, mensagem, detalhes? }`; erro de driver nunca chega ao cliente nem ao log (só SQLSTATE e constraint) |
+| Validação e erros | DTOs em Zod (`z.strictObject`: campo desconhecido é 400), um pipe por parâmetro. Filtro global no formato `{ statusCode, error, code, message, details?, timestamp, path }`; erro de driver nunca chega ao cliente nem ao log (só SQLSTATE e constraint) |
 | Recuperação | Redefinição de senha por administração (`usuario.gerenciar`; alvo síndico exige `usuario.gerenciar_sindico`): gera senha temporária de 16 caracteres mostrada uma única vez, marca `deve_trocar_senha`, revoga as sessões do alvo e desbloqueia o login dele; a recuperação do TOTP (quem redefine o TOTP do síndico é decisão em aberto, nº 11) fica para a fase de segurança |
 
 ### 5.2 Matriz RBAC
@@ -625,8 +625,11 @@ Pontos de projeto:
 
 ## 6. API REST
 
-Base: `/api/v1`. JSON em UTF-8. Autenticação por cookie de sessão; erros no formato
-`{ "codigo": "...", "mensagem": "...", "detalhes": [...] }`. Listagens paginadas por cursor.
+Base: `/api/v1`. JSON em UTF-8. Autenticação por cookie de sessão. Envelope único em toda resposta 2xx com corpo:
+`{ "data": ... }`; listagens paginadas por cursor em `{ "data": [...], "pagination": { "cursor": "...", "hasNextPage": true } }`
+(`?limite=1..100`, padrão 50, e `?cursor=` opaco); `204` sem corpo. Erros no formato
+`{ "statusCode": 422, "error": "Unprocessable Entity", "code": "...", "message": "...", "details": [...], "timestamp": "...", "path": "..." }`
+(`details` só quando há lista de problemas, cada um `{ "field", "message" }`; `path` sem a query string).
 Papéis: SI = síndico, AD = administração, PO = porteiro, AU = auditor (somente leitura nas rotas GET
 quando listado).
 
@@ -769,9 +772,13 @@ Exemplo de erro:
 
 ```json
 {
-  "codigo": "AUTORIZADO_POR_OBRIGATORIO",
-  "mensagem": "Informe quem autorizou a entrada (RN-01).",
-  "detalhes": [{ "campo": "autorizado_por_tipo", "regra": "RN-01" }]
+  "statusCode": 422,
+  "error": "Unprocessable Entity",
+  "code": "AUTORIZADO_POR_OBRIGATORIO",
+  "message": "Informe quem autorizou a entrada (RN-01).",
+  "details": [{ "field": "autorizado_por_tipo", "message": "obrigatório (RN-01)" }],
+  "timestamp": "2026-10-09T14:32:00.000Z",
+  "path": "/api/v1/eventos-acesso"
 }
 ```
 

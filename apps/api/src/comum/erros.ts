@@ -1,10 +1,35 @@
-// Erros da API no formato da spec §6: { codigo, mensagem, detalhes? }.
+// Erros da API. Internamente a exceção carrega { codigo, mensagem, detalhes? }; o FiltroExcecao serializa no
+// envelope da skill rest-api (req-error-format): { statusCode, error, code, message, details?, timestamp, path }.
+import { STATUS_CODES } from 'node:http';
 import { ForbiddenException, HttpException } from '@nestjs/common';
 
 export interface CorpoErro {
   codigo: string;
   mensagem: string;
   detalhes?: unknown;
+}
+
+/** Corpo de erro na resposta HTTP. `path` sem query string: a query pode carregar dado pessoal (busca por CPF). */
+export interface RespostaErro {
+  statusCode: number;
+  error: string;
+  code: string;
+  message: string;
+  details?: unknown;
+  timestamp: string;
+  path: string | null;
+}
+
+export function respostaErro(status: number, corpo: CorpoErro, url: string | undefined, agora = new Date()): RespostaErro {
+  return {
+    statusCode: status,
+    error: STATUS_CODES[status] ?? 'Error',
+    code: corpo.codigo,
+    message: corpo.mensagem,
+    ...(corpo.detalhes === undefined ? {} : { details: corpo.detalhes }),
+    timestamp: agora.toISOString(),
+    path: url ? url.split('?')[0]! : null,
+  };
 }
 
 export const erroApi = (status: number, codigo: string, mensagem: string, detalhes?: unknown) =>

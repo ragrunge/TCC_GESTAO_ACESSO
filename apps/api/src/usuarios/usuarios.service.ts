@@ -3,7 +3,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { pode, type Acao } from '@portaria/domain/rbac';
 import type { Papel } from '@portaria/domain/types';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { colunasPublicas, paraPublico, type UsuarioPublico } from '../auth/auth.service';
 import { LimiteLoginService } from '../auth/limite-login.service';
@@ -11,11 +12,15 @@ import { SenhaService } from '../auth/senha.service';
 import { SessaoService } from '../auth/sessao.service';
 import type { Contexto } from '../auth/tipos';
 import { AcessoNegado, codigoPg, erroApi } from '../comum/erros';
+import { codificarCursor, decodificarCursor, Pagina, type Paginacao } from '../comum/pagina';
 import { RELOGIO, type Relogio } from '../comum/relogio';
 import { DB, type Db, type Tx } from '../database/database.module';
 import { usuarioSistema } from '../db/schema';
 
 type Alvo = Awaited<ReturnType<UsuariosService['travarAlvo']>>;
+
+/** Chave do cursor = chave de ordenação (nome, id) do último item: estável mesmo com inserção concorrente. */
+const CursorUsuarios = z.strictObject({ n: z.string(), i: z.uuid() });
 
 @Injectable()
 export class UsuariosService {
@@ -57,9 +62,16 @@ export class UsuariosService {
     if (ctx.ator.id === id) throw erroApi(422, codigo, mensagem);
   }
 
-  async listar(): Promise<UsuarioPublico[]> {
-    const linhas = await this.db.select(colunasPublicas).from(usuarioSistema).orderBy(asc(usuarioSistema.nome));
-    return linhas.map(paraPublico);
+  async listar(p: Paginacao): Promise<Pagina<UsuarioPublico>> {
+    const depois = p.cursor ? decodificarCursor(p.cursor, CursorUsuarios) : null;
+    const linhas = await this.db.select(colunasPublicas).from(usuarioSistema)
+      .where(depois ? sql`(${usuarioSistema.nome}, ${usuarioSistema.id}) > (${depois.n}, ${depois.i}::uuid)` : undefined)
+      .orderBy(asc(usuarioSistema.nome), asc(usuarioSistema.id))
+      .limit(p.limite + 1); // um a mais: diz se há próxima página sem COUNT
+    const pagina = linhas.slice(0, p.limite);
+    const ultimo = pagina[pagina.length - 1];
+    const proximo = linhas.length > p.limite && ultimo ? codificarCursor({ n: ultimo.nome, i: ultimo.id }) : null;
+    return new Pagina(pagina.map(paraPublico), proximo);
   }
 
   async criar(ctx: Contexto, i: { nome: string; login: string; papel: Papel }) {

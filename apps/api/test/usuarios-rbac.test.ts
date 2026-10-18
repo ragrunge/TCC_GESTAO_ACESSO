@@ -49,7 +49,7 @@ describe('RBAC: matriz do domain aplicada nas rotas de usuários', () => {
   it('todo 403 grava acesso.negado com a ação tentada, o usuário e a rota', async () => {
     const r = await api.http().get('/api/v1/usuarios').set('Cookie', cookies.porteiro);
     expect(r.status).toBe(403);
-    expect(r.body.codigo).toBe('SEM_PERMISSAO');
+    expect(r.body.code).toBe('SEM_PERMISSAO');
     const negado = (await trilha(api, 'acesso.negado')).at(-1)!;
     expect(negado).toMatchObject({ usuarioId: api.usuarios[LOGINS.porteiro]!.id, usuarioPapel: 'porteiro', entidade: 'acao' });
     expect(negado.depois).toMatchObject({ acao: 'usuario.gerenciar', metodo: 'GET', rota: '/api/v1/usuarios' });
@@ -92,12 +92,12 @@ describe('usuários: gestão, síndico protegido, sessões revogadas', () => {
     const id = api.usuarios[LOGINS.administracao]!.id;
     const r = await api.http().post(`/api/v1/usuarios/${id}/desativar`).set('Cookie', cookie);
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ ativo: false });
+    expect(r.body.data).toMatchObject({ ativo: false });
     expect((await api.http().get('/api/v1/auth/me').set('Cookie', adm.cookie)).status).toBe(401);
     const abertas = (await api.db.select().from(s.sessao).where(eq(s.sessao.usuarioId, id))).filter((x) => !x.revogadaEm);
     expect(abertas.length).toBe(0);
     const reativa = await api.http().post(`/api/v1/usuarios/${id}/reativar`).set('Cookie', cookie);
-    expect(reativa.body).toMatchObject({ ativo: true });
+    expect(reativa.body.data).toMatchObject({ ativo: true });
     expect((await api.http().get('/api/v1/auth/me').set('Cookie', adm.cookie)).status).toBe(401);
     const [aud] = await trilha(api, 'usuario.desativar');
     expect(aud).toMatchObject({ entidade: 'usuario_sistema', registroId: id });
@@ -116,20 +116,20 @@ describe('usuários: gestão, síndico protegido, sessões revogadas', () => {
     const { cookie } = await api.como('administracao');
     const r = await api.http().post('/api/v1/usuarios').set('Cookie', cookie).send({ nome: 'Marina Couto', login: 'Marina.Couto', papel: 'porteiro' });
     expect(r.status).toBe(201);
-    expect(r.body.usuario).toMatchObject({ login: 'marina.couto', deveTrocarSenha: true, ativo: true });
-    expect(r.body.senhaTemporaria).toMatch(/^[A-Za-z2-9]{16}$/);
+    expect(r.body.data.usuario).toMatchObject({ login: 'marina.couto', deveTrocarSenha: true, ativo: true });
+    expect(r.body.data.senhaTemporaria).toMatch(/^[A-Za-z2-9]{16}$/);
     const dup = await api.http().post('/api/v1/usuarios').set('Cookie', cookie).send({ nome: 'Marina 2', login: 'marina.couto', papel: 'porteiro' });
     expect(dup.status).toBe(409);
-    expect(dup.body).toEqual({ codigo: 'LOGIN_EXISTENTE', mensagem: 'Já existe um usuário com este login.' });
+    expect(dup.body).toMatchObject({ statusCode: 409, code: 'LOGIN_EXISTENTE', message: 'Já existe um usuário com este login.' });
     const [aud] = await trilha(api, 'usuario.criar').then((l) => l.filter((x) => x.usuarioId));
-    expect(JSON.stringify(aud)).not.toContain(r.body.senhaTemporaria);
+    expect(JSON.stringify(aud)).not.toContain(r.body.data.senhaTemporaria);
     expect(JSON.stringify(aud)).not.toMatch(/argon2/);
   });
 
   it('troca de senha: obrigatória antes de usar o sistema; política; revoga as OUTRAS sessões', async () => {
     const { cookie: adm } = await api.como('sindico');
     const criado = await api.http().post('/api/v1/usuarios').set('Cookie', adm).send({ nome: 'Nova Administração', login: 'nova.adm', papel: 'administracao' });
-    const temp = criado.body.senhaTemporaria as string;
+    const temp = criado.body.data.senhaTemporaria as string;
     const s1 = await api.entrar('nova.adm', temp);
     const s2 = await api.entrar('nova.adm', temp);
     expect(s1.corpo.usuario.deveTrocarSenha).toBe(true);
@@ -138,17 +138,17 @@ describe('usuários: gestão, síndico protegido, sessões revogadas', () => {
     expect((await api.http().get('/api/v1/auth/me').set('Cookie', s1.cookie)).status).toBe(200);
     const bloqueada = await api.http().get('/api/v1/usuarios').set('Cookie', s1.cookie);
     expect(bloqueada.status).toBe(403);
-    expect(bloqueada.body.codigo).toBe('TROCA_DE_SENHA_OBRIGATORIA');
+    expect(bloqueada.body.code).toBe('TROCA_DE_SENHA_OBRIGATORIA');
 
     const trocar = (senhaAtual: string, novaSenha: string) =>
       api.http().post('/api/v1/auth/trocar-senha').set('Cookie', s1.cookie).send({ senhaAtual, novaSenha });
-    expect((await trocar(temp, 'curta')).body.codigo).toBe('SENHA_FRACA');
-    expect((await trocar(temp, 'password1234')).body.codigo).toBe('SENHA_FRACA');
-    expect((await trocar(temp, 'xx-nova.adm-xx')).body.codigo).toBe('SENHA_FRACA'); // contém o login
-    expect((await trocar('nao-e-a-atual', 'uma senha nova e longa')).body.codigo).toBe('SENHA_ATUAL_INCORRETA');
+    expect((await trocar(temp, 'curta')).body.code).toBe('SENHA_FRACA');
+    expect((await trocar(temp, 'password1234')).body.code).toBe('SENHA_FRACA');
+    expect((await trocar(temp, 'xx-nova.adm-xx')).body.code).toBe('SENHA_FRACA'); // contém o login
+    expect((await trocar('nao-e-a-atual', 'uma senha nova e longa')).body.code).toBe('SENHA_ATUAL_INCORRETA');
     const ok = await trocar(temp, 'uma senha nova e longa');
     expect(ok.status).toBe(200);
-    expect(ok.body.usuario.deveTrocarSenha).toBe(false);
+    expect(ok.body.data.usuario.deveTrocarSenha).toBe(false);
 
     expect((await api.http().get('/api/v1/usuarios').set('Cookie', s1.cookie)).status).toBe(200); // a sessão atual segue
     expect((await api.http().get('/api/v1/auth/me').set('Cookie', s2.cookie)).status).toBe(401); // a outra caiu
@@ -164,9 +164,9 @@ describe('usuários: gestão, síndico protegido, sessões revogadas', () => {
     const { cookie } = await api.como('administracao');
     const r = await api.http().post(`/api/v1/usuarios/${api.usuarios[LOGINS.porteiro]!.id}/redefinir-senha`).set('Cookie', cookie);
     expect(r.status).toBe(200);
-    expect(r.body.usuario.deveTrocarSenha).toBe(true);
+    expect(r.body.data.usuario.deveTrocarSenha).toBe(true);
     expect((await api.http().get('/api/v1/auth/me').set('Cookie', alvo.cookie)).status).toBe(401);
-    const nova = await api.entrar(LOGINS.porteiro, r.body.senhaTemporaria);
+    const nova = await api.entrar(LOGINS.porteiro, r.body.data.senhaTemporaria);
     expect(nova.corpo.usuario.deveTrocarSenha).toBe(true);
   });
 
@@ -183,8 +183,8 @@ describe('audit_log: snake_case e sem dado sensível em TODA a trilha gerada', (
     try {
       const { cookie } = await api.como('sindico');
       const c = await api.http().post('/api/v1/usuarios').set('Cookie', cookie).send({ nome: 'Edson Ramos', login: 'edson.ramos', papel: 'porteiro' });
-      await api.http().patch(`/api/v1/usuarios/${c.body.usuario.id}`).set('Cookie', cookie).send({ papel: 'auditor' });
-      await api.http().post(`/api/v1/usuarios/${c.body.usuario.id}/redefinir-senha`).set('Cookie', cookie);
+      await api.http().patch(`/api/v1/usuarios/${c.body.data.usuario.id}`).set('Cookie', cookie).send({ papel: 'auditor' });
+      await api.http().post(`/api/v1/usuarios/${c.body.data.usuario.id}/redefinir-senha`).set('Cookie', cookie);
       await api.http().post('/api/v1/auth/login').send({ login: '529.982.247-25', senha: SENHA });
       await api.http().get('/api/v1/usuarios').set('Cookie', (await api.como('porteiro')).cookie);
       await api.http().post('/api/v1/auth/logout').set('Cookie', cookie);
@@ -202,11 +202,70 @@ describe('audit_log: snake_case e sem dado sensível em TODA a trilha gerada', (
       const tudo = JSON.stringify(linhas);
       expect(tudo).not.toMatch(/argon2/);
       expect(tudo).not.toContain(SENHA);
-      expect(tudo).not.toContain(c.body.senhaTemporaria);
+      expect(tudo).not.toContain(c.body.data.senhaTemporaria);
       expect(tudo).not.toMatch(/token_hash|senha_hash|documento_busca/);
-      expect(tudo).not.toMatch(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/); // nenhum CPF em claro
+      // nenhum CPF em claro. Os uuids saem antes: o último grupo (12 hex) às vezes tem 11 dígitos seguidos e o
+      // teste falhava ao acaso, sem CPF nenhum.
+      const semUuid = tudo.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<uuid>');
+      expect(semUuid).not.toMatch(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/);
     } finally {
       await api.app.close(); await api.client.close();
     }
+  });
+});
+
+describe('formato REST (skill rest-api): envelope { data }, paginação por cursor e erro padronizado', () => {
+  let api: ApiDeTeste;
+  let cookie: string;
+  beforeAll(async () => { api = await novaApi(); cookie = (await api.como('sindico')).cookie; });
+  afterAll(async () => { await api.app.close(); await api.client.close(); });
+
+  it('GET /usuarios pagina por cursor: { data, pagination: { cursor, hasNextPage } }, sem repetir nem pular', async () => {
+    const vistos: string[] = [];
+    let cursor: string | null = null;
+    let paginas = 0;
+    do {
+      const q: Record<string, string | number> = { limite: 3 };
+      if (cursor) q.cursor = cursor;
+      const r = await api.http().get('/api/v1/usuarios').query(q).set('Cookie', cookie);
+      expect(r.status).toBe(200);
+      expect(Object.keys(r.body).sort()).toEqual(['data', 'pagination']);
+      expect(r.body.data.length).toBeLessThanOrEqual(3);
+      vistos.push(...r.body.data.map((u: { login: string }) => u.login));
+      cursor = r.body.pagination.cursor;
+      expect(r.body.pagination.hasNextPage).toBe(cursor !== null);
+      paginas++;
+    } while (cursor && paginas < 10);
+    expect(paginas).toBe(2); // 4 usuários do seed em páginas de 3
+    expect(new Set(vistos).size).toBe(vistos.length);
+    expect([...vistos].sort()).toEqual(Object.values(LOGINS).sort());
+
+    const tudo = await api.http().get('/api/v1/usuarios').set('Cookie', cookie);
+    expect(tudo.body.data).toHaveLength(4);
+    expect(tudo.body.pagination).toEqual({ cursor: null, hasNextPage: false });
+  });
+
+  it('cursor adulterado, limite fora da faixa e parâmetro desconhecido são 400 com details { field, message }', async () => {
+    const ruim = await api.http().get('/api/v1/usuarios').query({ cursor: 'nao-e-cursor' }).set('Cookie', cookie);
+    expect(ruim.status).toBe(400);
+    expect(ruim.body).toMatchObject({ statusCode: 400, error: 'Bad Request', code: 'CURSOR_INVALIDO', path: '/api/v1/usuarios' });
+    expect(ruim.body.path).not.toContain('?'); // a query nunca volta no corpo
+    const limite = await api.http().get('/api/v1/usuarios').query({ limite: 500 }).set('Cookie', cookie);
+    expect(limite.status).toBe(400);
+    expect(limite.body.details[0]).toMatchObject({ field: 'limite' });
+    expect((await api.http().get('/api/v1/usuarios').query({ papel: 'x' }).set('Cookie', cookie)).status).toBe(400);
+  });
+
+  it('item único vem em { data }; 204 sai sem corpo; erro traz statusCode, error, code, message, timestamp e path', async () => {
+    const me = await api.http().get('/api/v1/auth/me').set('Cookie', cookie);
+    expect(Object.keys(me.body)).toEqual(['data']);
+    const e = await api.http().get('/api/v1/usuarios').set('Cookie', (await api.como('porteiro')).cookie);
+    expect(e.status).toBe(403);
+    expect(Object.keys(e.body).sort()).toEqual(['code', 'error', 'message', 'path', 'statusCode', 'timestamp']);
+    expect(e.body).toMatchObject({ statusCode: 403, error: 'Forbidden', code: 'SEM_PERMISSAO' });
+    expect(Number.isNaN(Date.parse(e.body.timestamp))).toBe(false);
+    const sai = await api.http().post('/api/v1/auth/logout').set('Cookie', cookie);
+    expect(sai.status).toBe(204);
+    expect(sai.text).toBe('');
   });
 });

@@ -14,7 +14,7 @@ export class ZodPipe<T extends z.ZodType> implements PipeTransform<unknown, z.ou
     if (r.success) return r.data;
     // Só caminho e mensagem: o valor recebido nunca volta na resposta (pode ser senha).
     throw erroApi(400, 'DADOS_INVALIDOS', 'Dados inválidos.',
-      r.error.issues.map((i) => ({ campo: i.path.join('.') || '(corpo)', problema: i.message })));
+      r.error.issues.map((i) => ({ field: i.path.join('.') || '(corpo)', message: i.message })));
   }
 }
 
