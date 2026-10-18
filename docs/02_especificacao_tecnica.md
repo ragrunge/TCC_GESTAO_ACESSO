@@ -590,6 +590,7 @@ Legenda: S = permitido, N = negado, L = somente leitura, P = próprio (só os re
 | Ação | Síndico | Administração | Porteiro | Auditor | Requisito |
 |---|---|---|---|---|---|
 | Cadastrar/editar unidade, pessoa, veículo, funcionário | S | S | pessoa e veículo: cadastro de visitante/prestador (S), edição de morador (N) | L | RF-01, RF-02, RF-08, RF-09 |
+| Consultar a lista e a ficha de funcionários (`funcionario.ver`) | S | S | N (só a escala da pessoa sendo registrada, na entrada) | L | RF-09 (decisão do usuário, §14 nº 29) |
 | Criar vínculo (pendente) | S | S | N | N | RF-03, RF-04 |
 | Registrar conferência do comprovante do vínculo | S | S | N | N | RF-05 |
 | Aprovar/rejeitar vínculo | S | S | N | N | RN-03, RF-06 |
@@ -675,7 +676,8 @@ Respostas da API saem com `Cache-Control: no-store`.
 | GET | /unidades/:id/autorizadores | SI, AD, PO, AU | moradores com vínculo válido (base do registro de acesso) |
 | GET | /documentos/:id/conteudo | SI, AD | RF-27, RN-10 (foto ou anexo de ocorrência; descriptografa sob demanda; acesso registrado) |
 | POST/PATCH | /veiculos | SI, AD | RF-08 (a leitura vem no detalhe da unidade; placa ativa única, 409 `PLACA_DUPLICADA`) |
-| GET/POST/PATCH | /funcionarios | SI, AD (GET: PO) | RF-09 |
+| GET/POST/PATCH | /funcionarios | SI, AD (GET: AU; o porteiro NÃO lista) | RF-09 (§14 nº 29) |
+| GET | /funcionarios/:id/escala | SI, AD, PO | RF-09: só função, escala, ativo e `emEscalaAgora` da pessoa sendo registrada na entrada (sem dados da pessoa). A validação do meio `escala` é feita pela própria API no `POST /eventos-acesso` |
 | GET/POST/PATCH | /pontos-acesso | SI, AD | base de RF-10 |
 | GET/POST/PATCH | /dispositivos | SI, AD (fase 3) | RF-10 |
 | PUT | /dispositivos/:id/habilitacoes | SI, AD (fase 3) | RF-10 |
@@ -684,20 +686,34 @@ Respostas da API saem com `Cache-Control: no-store`.
 
 ### 6.3 M2 — Controle de acesso
 
+Implementado em `apps/api/src/eventos` (2026-10-18). Instantes em epoch ms; datas de calendário em `'AAAA-MM-DD'` (dia BRT).
+Todas as listas dos eventos usam os **valores efetivos** (original + última correção, §4.4) e devolvem a mesma `EventoView`
+do mock (nomes por join; o evento guarda só ids).
+
 | Método | Rota | Papéis | RF |
 |---|---|---|---|
-| POST | /eventos-acesso | SI, AD, PO | RF-12, RF-13, RF-17, RN-01 |
-| GET | /eventos-acesso?pessoa_id=&unidade_id=&de=&ate=&operador_id= | SI, AD, PO, AU | RF-19 |
-| GET | /eventos-acesso/:id | SI, AD, PO, AU | RF-19 |
-| POST | /eventos-acesso/:id/correcoes | SI, AD | RN-04 |
-| GET | /acessos/presentes | SI, AD, PO, AU | RF-20 |
-| GET | /restricoes/verificar?pessoa_id=&unidade_id= | SI, AD, PO | RF-16 |
-| GET/POST | /restricoes | SI, AD, PO (POST escopo unidade) | RF-15 |
-| POST | /restricoes/:id/aprovar | SI | RN-06 |
-| POST | /restricoes/:id/revogar | SI, AD | RF-15 |
-| GET/POST | /autorizacoes-previas | SI, AD, PO | RF-14, RN-07 |
-| POST | /autorizacoes-previas/:id/revogar | SI, AD, PO | RF-14 |
-| GET | /autorizacoes-previas/vigentes?pessoa_id=&unidade_id= | SI, AD, PO | RF-14 |
+| POST | /eventos-acesso | SI, AD, PO (retroativo: `evento.retroativo`) | RF-12, RF-13, RF-16, RF-17, RF-35, RF-36, RN-01, RN-07. Restrição vigente grava o evento `negado` (commitado) e responde 422 `PESSOA_EM_RESTRICAO` com `details: { eventoId, codigo, restricoes }` (§14 nº 28) |
+| POST | /eventos-acesso/recusas | SI, AD, PO | UC02 A4: `{ pessoaId, unidadeDestinoId, meio: interfone \| morador_presente, moradorPessoaId }` -> evento `recusado` |
+| POST | /eventos-acesso/:id/saida | SI, AD, PO | RF-13: evento novo ligado à entrada; retroativo com hora real entre a entrada e agora e nº do formulário; dupla: 409 `SAIDA_JA_REGISTRADA` (índice único) |
+| POST | /eventos-acesso/:id/correcoes | SI, AD | RN-04: `{ justificativa (15+), observacao?, valores? }`; correção de correção: 422; `correcao_valores` acumula as anteriores |
+| GET | /eventos-acesso?de=&ate=&unidadeId=&pessoaId=&operadorId=&tipo=&meio=&somenteExcecoes=&somenteRetroativos=&excluirTipos=&limite=&cursor= | SI, AD, PO, AU | RF-19: página por `seq` decrescente. Sem texto livre na URL |
+| POST | /eventos-acesso/busca | SI, AD, PO, AU | Os mesmos filtros mais `pessoa` (nome, sem acento, parcial) no CORPO: o nome identifica alguém e a query string fica nos logs de proxy (mesma regra de `/pessoas/busca`) |
+| GET | /eventos-acesso/:id, /eventos-acesso/:id/correcoes | SI, AD, PO, AU | RF-19 (detalhe com o original, a última correção e os valores substituídos; correções em ordem) |
+| GET | /acessos/presentes?limite=&cursor= | SI, AD, PO, AU | RF-20: entradas sem saída |
+| GET | /restricoes/verificar?pessoaId=&unidadeId= | SI, AD, PO, AU | RF-16 (sem `unidadeId`: só as de condomínio aprovadas, para funcionário sem destino) |
+| GET | /restricoes?unidadeId=, /restricoes/pendentes | SI, AD, PO, AU | RF-15 (vigentes da unidade; condomínio pendentes de aprovação) |
+| POST | /restricoes | SI, AD, PO | RF-15: escopo unidade exige o morador solicitante com vínculo válido; condomínio nasce pendente |
+| POST | /restricoes/:id/aprovar | SI | RN-06 (uma vez: 409 `RESTRICAO_JA_APROVADA`) |
+| POST | /restricoes/:id/revogar | SI, AD | RF-15 (204; uma vez: 409 `RESTRICAO_JA_REVOGADA`) |
+| POST | /autorizacoes-previas | SI, AD, PO (área comum: SI, AD) | RF-14, RN-07, RF-36: com solicitante, vínculo válido; sem solicitante, justificativa (conta como exceção de quem cadastrou, RF-31) |
+| POST | /autorizacoes-previas/:id/revogar | SI, AD, PO (área comum: SI, AD) | RF-14 (204; uma vez: 409) |
+| GET | /autorizacoes-previas/vigentes?pessoaId=&unidadeId= \| areaComumId= | SI, AD, PO | RF-14 (válidas agora ou fora da janela hoje) |
+| GET | /autorizacoes-previas/hoje, /autorizacoes-previas?unidadeId= | SI, AD, PO, AU | RF-14 (painel; detalhe da unidade) |
+
+Concorrência: o trigger serializa a cadeia (§4.3). A API trava a pessoa (`FOR NO KEY UPDATE`) na entrada, para a
+segunda entrada simultânea da mesma pessoa ver "já está dentro"; usa advisory lock da transação na correção (o
+`app_rw` não tem `UPDATE` em `evento_acesso`, então não há `FOR UPDATE`); e repete a transação inteira em 40001/40P01
+(até 3 vezes). Erros de CHECK e de trigger viram 409/422 legíveis, sem a mensagem do driver.
 
 ### 6.4 M3 — Encomendas
 
@@ -718,18 +734,17 @@ Respostas da API saem com `Cache-Control: no-store`.
 | PATCH | /ocorrencias/:id | SI, AD, PO (própria, aberta) | RF-27 |
 | PUT | /ocorrencias/:id/eventos | SI, AD, PO | RF-28 |
 | POST | /ocorrencias/:id/anexos | SI, AD, PO | RF-27 |
-| GET | /turnos/resumo | SI, AD, PO | RF-29 |
-| GET | /relatorios/acessos | SI, AD, AU | RF-30 |
-| GET | /relatorios/excecoes | SI, AD, AU | RF-31 |
+| GET | /turnos/resumo | SI, AD, PO | RF-29 (implementado) |
+| GET | /relatorios/resumo?de=&ate=&unidadeId=&categoria=&meio= | SI, AD, AU | RF-30, RF-31 (implementado): acessos por dia e por meio, exceções por responsável, encomendas pendentes por idade, cadastro completo e totais, pelos valores efetivos. Datas `'AAAA-MM-DD'`; padrão: últimos 30 dias; máximo 366 |
+| GET | /relatorios/resumo/csv | SI, AD, AU | O mesmo resumo em CSV (UTF-8 com BOM, `;`), gerado pelo construtor de `@portaria/domain/relatorio` (o mesmo do mock) |
 
 ### 6.6 Auditoria
 
 | Método | Rota | Papéis | RF |
 |---|---|---|---|
-| GET | /auditoria/integridade | SI, AD, AU | RNF-01 |
-| POST | /auditoria/exportacoes | SI, AD, AU | RF-32 |
-| GET | /auditoria/exportacoes/:id | SI, AD, AU | RF-32 |
-| GET | /auditoria/alteracoes?tabela=&registro_id= | SI, AD, AU | RF-06 e audit_log |
+| GET | /auditoria/integridade | SI, AD, AU | RNF-01, RF-37 (implementado): recalcula a cadeia em lotes com a serialização do domain, a partir da gênese ou do selo do corte; confere a cabeça (`evento_acesso_cadeia`, pega remoção no fim) e cada selo diário (`selo_divergente`, pega a cadeia recalculada inteira) |
+| POST | /auditoria/exportacoes | SI, AD, AU | RF-32 (implementado, síncrono): filtros no corpo; devolve `{ nomeArquivo, conteudo, quantidade }` no formato JSONL v2 do mock (`@portaria/domain/exportacao`). Teto de 20.000 eventos (422 `EXPORTACAO_GRANDE`). A exportação vai para o `audit_log` (`auditoria.exportar`, sem o texto do filtro de nome) |
+| GET | /auditoria/alteracoes?de=&ate=&usuarioId=&acao=&entidade=&limite=&cursor= | SI, AD, AU | audit_log paginado (mais recente primeiro), sem IP |
 | GET | /auditoria/checkpoints | SI, AD, AU | seção 4.6 |
 
 ### 6.7 LGPD
@@ -772,7 +787,7 @@ Regras de validação (nesta ordem):
 | RN-07 | `autorizado_por_tipo = autorizacao_previa` sem `autorizacao_previa_id` válido para pessoa, unidade, data e horário | 422 `AUTORIZACAO_PREVIA_INVALIDA` |
 | RN-02 | Pessoa com categoria morador sem vínculo aprovado ou legado vigente | 422 `VINCULO_SEM_ACESSO` |
 | RNF-05 | `retroativo = true` sem `ocorrido_em` anterior ao instante atual, ou `retroativo = false` com `ocorrido_em` fora da tolerância | 422 `DATA_INCONSISTENTE` |
-| RF-16 | Existe restrição vigente para a pessoa na unidade ou no condomínio | 422 `PESSOA_EM_RESTRICAO`: a entrada não é gravada (RF-16 bloqueante, 01_requisitos.md v0.2); o porteiro pode abrir ocorrência citando o `restricao_id` |
+| RF-16 | Existe restrição vigente para a pessoa na unidade ou no condomínio | 422 `PESSOA_EM_RESTRICAO`: a ENTRADA não é gravada (RF-16 bloqueante), mas a tentativa é gravada como evento `negado` (RN-11), numa transação que commita antes da resposta; `details` traz `eventoId` e `codigo` para a tela não gravar outro (§14 nº 28) |
 | Autorização | Papel sem permissão | 403 |
 
 Exemplo de erro:
@@ -1295,3 +1310,6 @@ O morador não opera o sistema em nenhuma fase prevista: não há ator novo nem 
 | 25 | Modelo da conferência do comprovante (RF-05) | Colunas no vínculo (uma conferência vigente); tabela própria com histórico de conferências; manter o arquivo cifrado em `documento` | **Resolvida (2026-10-17):** colunas `conferencia_*` e `conferido_por_id` em `vinculo_unidade`, sem arquivo. A regra "aprovado exige conferência" fica num CHECK da própria linha, sem trigger entre tabelas, e o histórico de conferências refeitas já está no `audit_log` (`vinculo.conferir`, antes e depois). Uma tabela própria só se justificaria se fosse preciso consultar várias conferências por vínculo, e nenhum RF pede isso. Saíram `documento_id`, o checklist `conferencias` (jsonb de texto livre, que costumava citar nomes e CPF parcial) e o valor `comprovante_vinculo` de `tipo_documento`. Com isso, aprovar "com item que não confere mediante justificativa" deixa de existir: comprovante que não confere não é registrado, e o vínculo é rejeitado (RN-02) | Resolvida |
 | 26 | Deploy do front (Vercel) e da API (VPS) com cookie `SameSite=Strict` | Domínios separados (`*.vercel.app` e domínio da VPS) com `SameSite=None` + CORS + CSRF por cabeçalho; rewrite de `/api/*` pela Vercel para a VPS (mesma origem); domínio próprio com subdomínios (`app.` e `api.` do mesmo site); front servido pela própria VPS | **Resolvida (2026-10-18): rewrite pela Vercel** no `apps/web/vercel.json`, ANTES do fallback da SPA: `{ "source": "/api/:caminho*", "destination": "https://API_DA_VPS/api/:caminho*" }` (placeholder; a VPS ainda não existe). O navegador vê uma origem só, o cookie fica `Strict` e o CORS fica desligado em produção (`CORS_ORIGENS` vazio). Descartado `SameSite=None`: perde a proteção de CSRF sem código, exige CSRF por cabeçalho e CORS exato, e cada combinação parcial falha parecendo bug. **Custo aceito:** o IP do cliente chega à API só pelo `X-Forwarded-For` que a Vercel monta, e quem acessar a VPS direto pode forjar esse cabeçalho. Por isso o limite por IP é auxiliar, e o controle que vale é o limite por login. Configuração: no proxy da VPS (Caddy), confiar no salto da Vercel e repassar o XFF (a Vercel não publica faixa fixa de IP, então na prática é um `trusted_proxies` amplo, e daí vem a possibilidade de forjar), e na API `TRUST_PROXY=2` (Vercel + Caddy). Com `TRUST_PROXY` errado, o IP visto vira o da borda da Vercel, e 30 falhas de qualquer pessoa (o limite por IP) bloqueiam o login de todos por trás daquela borda: conferir com `curl` no deploy. Evolução sem esse custo: domínio próprio com `api.` no mesmo site (IP real pelo Caddy, sem a Vercel no caminho da autenticação) | Responsável técnico |
 | 27 | Limite por IP com a guarita atrás de NAT | Manter 5 falhas por IP (spec); limite por IP maior que o por login; só limite por login | **Resolvida (2026-10-18, decisão do usuário): 30 falhas por IP e 10 por login em 15 min, com bloqueio de 15 min**, configuráveis por ambiente (padrões em `PADROES_LOGIN`, `apps/api/src/config/config.ts`). Justificativa: a guarita sai por um único IP (NAT), então o limite por IP precisa acomodar os erros de digitação de vários operadores, inclusive na troca de turno; o limite por login protege cada conta. Com argon2id e a política de 12 caracteres fora da lista comum, 10 tentativas por login a cada 15 min (cerca de 960 por dia) tornam a força bruta inviável. O limite por IP continua auxiliar (ver nº 26: atrás da Vercel o IP pode ser forjado). Custo aceito: quem conhece um login pode mantê-lo bloqueado errando a senha de propósito; a redefinição de senha pela administração desbloqueia | Resolvida |
+| 28 | Tentativa barrada por restrição (RF-16) | Não gravar nada (v0.1 desta seção); gravar o evento `negado` | **Resolvida (2026-10-18):** grava `negado` com o id da restrição, como o mock (RN-11: "negativa por restrição gera registro imutável"). A checagem da restrição vem ANTES da validação do autorizador, então a tentativa é gravada mesmo sem meio (a tela grava o negado detectado ao escolher a unidade). O negado commita antes do 422 e nunca é repetido pelo retry de 40001: cada tentativa gera exatamente um evento | Resolvida |
+| 29 | Lista de funcionários para o porteiro | Porteiro lista (`pessoa.ver`, como era); só SI/AD/AU | **Resolvida (2026-10-18, decisão do usuário):** `funcionario.ver` = SI, AD, AU. A entrada por escala é validada pela própria API; a tela de entrada lê só a escala da pessoa escolhida (`GET /funcionarios/:id/escala`), sem a lista nem os dados da pessoa | Resolvida |
+| 30 | Prazo de regularização do legado (RN-09) | Fixo em 90 dias; configurável | **Resolvida (2026-10-18):** `IMPORTACAO_PRAZO_LEGADO_DIAS` (padrão 90, de 1 a 730), porque o prazo é definido em assembleia. Vale para as importações novas; os legados já criados guardam o prazo do dia da importação | Resolvida |
