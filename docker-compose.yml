@@ -1,0 +1,73 @@
+# Ambiente de desenvolvimento da Portaria Parque: db -> migrate (roda e termina) -> api.
+# Uso: cp .env.example .env (preencher) && docker compose up -d --build   (ver apps/api/README.md e db/README.md)
+# Docker Desktop no macOS: export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+name: portaria
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      APP_MIGRATOR_PASSWORD: ${APP_MIGRATOR_PASSWORD:?defina APP_MIGRATOR_PASSWORD no .env}
+      APP_RW_PASSWORD: ${APP_RW_PASSWORD:?defina APP_RW_PASSWORD no .env}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
+    volumes:
+      # Roda UMA vez, na primeira subida do volume (00_roles.sh precisa de chmod +x: o entrypoint o executa com /bin/sh)
+      - ./db/bootstrap:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # -h 127.0.0.1 força TCP: durante o init o servidor temporário só escuta no socket unix e
+      # enganaria um pg_isready sem -h, liberando o migrate antes da hora.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d portaria"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    mem_limit: 512m
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    image: portaria-migrate:dev
+    environment:
+      DATABASE_URL_MIGRATOR: postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@db:5432/portaria
+    command: ["npx", "drizzle-kit", "migrate"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    image: portaria-api:dev
+    environment:
+      NODE_ENV: production
+      TZ: UTC
+      PORT: "3000"
+      # A API usa app_rw (sem DELETE, sem UPDATE nas trilhas, sem CREATE). Nunca app_migrator.
+      DATABASE_URL: postgres://app_rw:${APP_RW_PASSWORD}@db:5432/portaria
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/v1/saude"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    mem_limit: 384m
+    restart: unless-stopped
+
+volumes:
+  pgdata: {}
