@@ -1,7 +1,7 @@
 // Server state compartilhado pelo Layout e pela tela de Unidades (React Query v5). Chaves num lugar só: quem escreve
 // (CRUD de unidades, decisão de vínculo) invalida pelo prefixo, sem precisar conhecer cada tela que lê.
 import { useEffect, useState } from 'react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../api';
 
 export const CHAVES = {
@@ -10,9 +10,38 @@ export const CHAVES = {
   unidades: ['unidades'] as const,
   unidadesDaTorre: (torre: number) => ['unidades', 'lista', torre] as const,
   unidade: (ref: string) => ['unidades', 'detalhe', ref] as const,
+  /** Prefixo de tudo que é de vínculo: filas, contagens (badge) e autorizadores da unidade. */
+  vinculos: ['vinculos'] as const,
   vinculosPendentes: ['vinculos', 'contagem', 'pendente'] as const,
+  vinculosContagem: (status: string) => ['vinculos', 'contagem', status] as const,
+  vinculosFila: (aba: string) => ['vinculos', 'fila', aba] as const,
+  autorizadores: (unidadeId: string) => ['vinculos', 'autorizadores', unidadeId] as const,
+  /** Prefixo de tudo que é de pessoa: lista do Cadastro, busca da tela e ficha. */
+  pessoas: ['pessoas'] as const,
+  pessoasLista: (categoria: string) => ['pessoas', 'lista', categoria] as const,
+  /** O termo pode ser CPF: a chave fica só na memória (gcTime curto, nada de persistir o cache). */
+  pessoasBusca: (q: string) => ['pessoas', 'busca', q] as const,
+  ficha: (id: string) => ['pessoas', 'ficha', id] as const,
+  funcionarios: ['funcionarios'] as const,
+  /** Prefixo da busca do topo. */
+  busca: ['busca'] as const,
   buscaGlobal: (q: string) => ['busca', 'global', q] as const,
 };
+
+/** Escritas que mudam vínculo: a fila, o badge, a unidade (moradores e resumo), a pessoa (ficha, categoria) e a busca. */
+export const APOS_VINCULO = [CHAVES.vinculos, CHAVES.unidades, CHAVES.pessoas, CHAVES.busca] as const;
+/** Escritas de pessoa: lista, ficha, busca, e os nomes nas filas de vínculo e nos funcionários. */
+export const APOS_PESSOA = [CHAVES.pessoas, CHAVES.busca, CHAVES.vinculos, CHAVES.funcionarios] as const;
+/** Escritas de veículo: o detalhe da unidade e a busca por placa. */
+export const APOS_VEICULO = [CHAVES.unidades, CHAVES.busca] as const;
+export const APOS_FUNCIONARIO = [CHAVES.funcionarios, CHAVES.pessoas, CHAVES.busca] as const;
+
+/** Invalida os prefixos dados (resolve quando as consultas ativas recarregaram). */
+export function useInvalidar() {
+  const qc = useQueryClient();
+  return (prefixos: readonly (readonly unknown[])[]) =>
+    Promise.all(prefixos.map((k) => qc.invalidateQueries({ queryKey: k }))).then(() => undefined);
+}
 
 /** Valor que só muda depois de `ms` sem alteração (busca enquanto digita). */
 export function useDebounce<T>(valor: T, ms: number): T {

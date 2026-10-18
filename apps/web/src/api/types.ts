@@ -225,7 +225,20 @@ export interface UnidadeDetalhe {
 }
 export interface Autorizador { pessoa: Pessoa; vinculo: VinculoUnidade }
 
-export interface FichaPessoa { pessoa: Pessoa; funcionario?: Funcionario; vinculos: VinculoView[]; eventos: EventoView[] }
+/** `eventos` null: o módulo de eventos ainda não existe na API real (a ficha mostra "disponível em breve"). */
+export interface FichaPessoa { pessoa: Pessoa; funcionario?: Funcionario; vinculos: VinculoView[]; eventos: EventoView[] | null }
+
+/** Linha da tela Cadastro: a pessoa e o vínculo que melhor a representa (aprovado > legado > pendente > rejeitado > encerrado). */
+export interface PessoaLista extends PessoaBusca {
+  vinculoPrincipal: { id: string; unidadeId: string; unidadeCodigo: string; tipo: TipoVinculo; status: StatusVinculo } | null;
+}
+export interface FiltroPessoas { categoria?: CategoriaPessoa; cursor?: string | null; limite?: number }
+/** recentes: solicitação mais nova primeiro; decisao: decisão/encerramento mais novo; prazo: prazo de regularização (vencidos primeiro). */
+export type OrdemVinculos = 'recentes' | 'decisao' | 'prazo';
+export interface FiltroVinculos { status?: StatusVinculo[]; unidadeId?: string; pessoaId?: string; ordem?: OrdemVinculos; cursor?: string | null; limite?: number }
+/** RF-07: encerramento manual. `data` (início do dia BRT): padrão hoje, ou o fim da vigência se ele já passou. */
+export interface EncerrarVinculoInput { motivo: string; data?: number }
+export interface EditarVeiculoInput { id: string; placa?: string; modelo?: string; cor?: string; ativo?: boolean }
 
 export interface ResumoTurno {
   pessoasDentro: number; encomendasPendentes: number; ocorrenciasAbertas: number; autorizacoesHoje: number;
@@ -283,6 +296,8 @@ export interface Api {
     /** `limite`: máximo de resultados (padrão 8). A portaria pede 9 para saber se há mais que 8. */
     buscar(q: string, opts?: { semMoradores?: boolean; limite?: number }): Promise<PessoaBusca[]>;
     listar(): Promise<PessoaBusca[]>;
+    /** Uma página (cursor), em ordem alfabética; `categoria` filtra no servidor. Texto livre vai por `buscar` (pode ser CPF). */
+    listarPagina(f?: FiltroPessoas): Promise<Pagina<PessoaLista>>;
     ficha(id: string): Promise<FichaPessoa>;
     criar(i: NovaPessoaInput): Promise<Pessoa>;
     /** pessoa.editar (SI/AD): completa ou corrige o cadastro, com antes/depois na trilha. */
@@ -308,9 +323,15 @@ export interface Api {
     criar(i: NovoFuncionarioInput): Promise<FuncionarioView>;
     editar(i: EditarFuncionarioInput): Promise<FuncionarioView>;
   };
-  veiculos: { criar(i: { unidadeId: string; placa: string; modelo: string; cor: string }): Promise<Veiculo> };
+  veiculos: {
+    criar(i: { unidadeId: string; placa: string; modelo: string; cor: string }): Promise<Veiculo>;
+    /** RF-08: corrige placa/modelo/cor ou desativa (`ativo: false`, some do detalhe). Placa ativa é única. */
+    editar(i: EditarVeiculoInput): Promise<Veiculo>;
+  };
   vinculos: {
     listar(f?: { status?: StatusVinculo }): Promise<VinculoView[]>;
+    /** Uma página (cursor). `status` aceita vários (aba Decididos). */
+    listarPagina(f?: FiltroVinculos): Promise<Pagina<VinculoView>>;
     /** Quantos vínculos há no status (badge "Vínculos pendentes" do menu). */
     contar(status: StatusVinculo): Promise<number>;
     criar(i: NovoVinculoInput): Promise<VinculoUnidade>;
@@ -320,6 +341,8 @@ export interface Api {
     decidir(i: { id: string; decisao: 'aprovar' | 'rejeitar'; justificativa?: string }): Promise<VinculoUnidade>;
     /** RN-09: legado -> aprovado, com conferência registrada e cadastro completo. */
     regularizar(id: string, opcoes?: { vigenciaFim?: number | null }): Promise<VinculoUnidade>;
+    /** RF-07: aprovado ou legado -> encerrado, com motivo (>= 15 caracteres). */
+    encerrar(id: string, i: EncerrarVinculoInput): Promise<VinculoUnidade>;
     autorizadores(unidadeId: string): Promise<Autorizador[]>;
   };
   autorizacoes: {

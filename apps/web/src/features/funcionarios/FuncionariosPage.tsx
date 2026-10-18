@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useApi, type FuncionarioView } from '../../api';
 import { useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
@@ -13,7 +14,8 @@ import type { Escala } from '@portaria/domain/types';
 import { descreverJanela, hhmmAtravessaMeiaNoite, validarEscala } from './escala';
 import { DIAS_SEMANA_ABREV } from '@portaria/domain/time';
 import { formatarTelefone } from '@portaria/domain/cpf';
-import { mensagemErro, useAsync } from '../../app/useAsync';
+import { mensagemErro } from '../../app/useAsync';
+import { APOS_FUNCIONARIO, CHAVES, useInvalidar } from '../../app/consultas';
 
 const COLUNAS = 'minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.3fr) 150px 120px';
 const ESCALA_PADRAO: Escala = { diasSemana: [1, 2, 3, 4, 5], horaInicio: '07:00', horaFim: '16:00' };
@@ -23,7 +25,8 @@ export function FuncionariosPage() {
   const api = useApi();
   const { avisar } = useToast();
   const podeGerenciar = useCan('funcionario.gerenciar');
-  const lista = useAsync(() => api.funcionarios.listar(), []);
+  const invalidar = useInvalidar();
+  const lista = useQuery({ queryKey: CHAVES.funcionarios, queryFn: () => api.funcionarios.listar() });
   const [novo, setNovo] = useState(false);
   const [editando, setEditando] = useState<FuncionarioView | null>(null);
   const dados = lista.data ?? [];
@@ -31,12 +34,12 @@ export function FuncionariosPage() {
     <div className="flex flex-col gap-5">
       <PageHeader titulo="Funcionários" descricao="Funcionários do condomínio entram por Escala, só nos dias e horários cadastrados. Turno que atravessa a meia-noite vale no dia do início."
         acoes={podeGerenciar && <Button variante="primario" onClick={() => setNovo(true)}>Novo funcionário</Button>} />
-      {lista.error && <Alert tom="vermelho" role="alert">{lista.error}</Alert>}
+      {lista.error && <Alert tom="vermelho" role="alert">{mensagemErro(lista.error)}</Alert>}
       <Lista legenda="Funcionários do condomínio" colunas={COLUNAS}>
         <ListaCab rotulos={['Nome', 'Função', 'Escala', 'Situação', '']} />
         {dados.map((f) => (
           <ListaLinha key={f.pessoaId} minH={56} padY={8}>
-            <Cel className="flex flex-col"><span className="font-medium">{f.pessoa.nome}</span><span className="font-mono text-[13px] text-[#56616B]">{f.pessoa.documentoMascarado} · {formatarTelefone(f.pessoa.telefone)}</span></Cel>
+            <Cel className="flex flex-col"><span className="font-medium">{f.pessoa.nome}</span><span className="font-mono text-[13px] text-[#56616B]">{f.pessoa.documentoMascarado} · {f.pessoa.telefone ? formatarTelefone(f.pessoa.telefone) : f.pessoa.telefoneMascarado ?? '—'}</span></Cel>
             <Cel className="text-[14px]">{f.funcao}</Cel>
             <Cel className="text-[14px]">{descreverJanela(f.escala)}{hhmmAtravessaMeiaNoite(f.escala) ? ' (atravessa a meia-noite)' : ''}</Cel>
             <Cel className="flex flex-wrap gap-1">
@@ -46,10 +49,10 @@ export function FuncionariosPage() {
             <Cel>{podeGerenciar && <Button pequeno aria-label={`Editar ${f.pessoa.nome}`} onClick={() => setEditando(f)}>Editar</Button>}</Cel>
           </ListaLinha>
         ))}
-        {!lista.loading && dados.length === 0 && <Vazio>Nenhum funcionário cadastrado.</Vazio>}
+        {!lista.isLoading && dados.length === 0 && <Vazio>Nenhum funcionário cadastrado.</Vazio>}
       </Lista>
-      {novo && <FuncionarioModal onClose={() => setNovo(false)} onFeito={(f) => { setNovo(false); avisar({ texto: `${f.pessoa.nome} cadastrado(a) como ${f.funcao}.` }); void lista.recarregar(); }} />}
-      {editando && <FuncionarioModal atual={editando} onClose={() => setEditando(null)} onFeito={(f) => { setEditando(null); avisar({ texto: `Cadastro de ${f.pessoa.nome} atualizado.` }); void lista.recarregar(); }} />}
+      {novo && <FuncionarioModal onClose={() => setNovo(false)} onFeito={(f) => { setNovo(false); avisar({ texto: `${f.pessoa.nome} cadastrado(a) como ${f.funcao}.` }); void invalidar(APOS_FUNCIONARIO); }} />}
+      {editando && <FuncionarioModal atual={editando} onClose={() => setEditando(null)} onFeito={(f) => { setEditando(null); avisar({ texto: `Cadastro de ${f.pessoa.nome} atualizado.` }); void invalidar(APOS_FUNCIONARIO); }} />}
     </div>
   );
 }

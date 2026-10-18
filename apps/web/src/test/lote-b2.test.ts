@@ -361,7 +361,7 @@ describe('LGPD (spec 9.3) e retenção (RNF-09)', () => {
     expect(ficha.pessoa).toMatchObject({ nome: 'Pessoa anonimizada', documentoMascarado: '(anonimizado)' });
     expect(ficha.pessoa.documentoBusca).toBeUndefined();
     expect(ficha.pessoa.telefone).toBeUndefined();
-    expect(ficha.eventos.length).toBe(1); // o evento fica (só o id)
+    expect(ficha.eventos!.length).toBe(1); // o evento fica (só o id)
     expect((await esperaErro(api.lgpd.anonimizar(p.id))).status).toBe(409);
     expect((await api.pessoas.buscar('Titular Pede')).length).toBe(0);
     const trilha = await api.auditoria.alteracoes({ entidade: 'pessoa' });

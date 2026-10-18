@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Info } from 'lucide-react';
 import { useApi, type ResultadoAnonimizacao } from '../../api';
 import { useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
@@ -11,7 +13,8 @@ import { Avatar } from '../../components/UnitTag';
 import { ROTULO_CATEGORIA, ROTULO_VINCULO, type Pessoa } from '@portaria/domain/types';
 import { formatarTelefone } from '@portaria/domain/cpf';
 import { agora, fmtDataHora } from '@portaria/domain/time';
-import { mensagemErro, useAsync } from '../../app/useAsync';
+import { mensagemErro } from '../../app/useAsync';
+import { APOS_PESSOA, CHAVES, useInvalidar } from '../../app/consultas';
 import { chipDoEvento, quandoCurto, textoAutorizacao } from '../common/evento';
 import { baixarArquivo } from '../historico/download';
 
@@ -25,7 +28,8 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
   const podeEditar = useCan('pessoa.editar');
   const podeExportar = useCan('lgpd.exportar');
   const podeAnonimizar = useCan('lgpd.anonimizar');
-  const ficha = useAsync(() => api.pessoas.ficha(id), [id]);
+  const invalidar = useInvalidar();
+  const ficha = useQuery({ queryKey: CHAVES.ficha(id), queryFn: () => api.pessoas.ficha(id), staleTime: 0 });
   const [editando, setEditando] = useState(false);
   const [anonimizando, setAnonimizando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoAnonimizacao | null>(null);
@@ -46,7 +50,7 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
       const r = await api.lgpd.anonimizar(id);
       setResultado(r); setAnonimizando(false);
       avisar({ tom: 'ambar', titulo: 'Pessoa anonimizada', texto: `Dados pessoais removidos; ${r.registrosRedigidos} registro(s) da trilha redigido(s).` });
-      void ficha.recarregar();
+      void invalidar(APOS_PESSOA);
     } catch (e) { setErro(mensagemErro(e)); }
   }
 
@@ -57,14 +61,14 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
       {f && !anonimizada && podeAnonimizar && !anonimizando && <Button variante="perigo" onClick={() => { setAnonimizando(true); setErro(''); }}>Anonimizar…</Button>}
       <Button className="ml-auto" data-autofocus onClick={onClose}>Fechar</Button>
     </>}>
-      {ficha.error && <Alert tom="vermelho" role="alert">{ficha.error}</Alert>}
+      {ficha.error && <Alert tom="vermelho" role="alert">{mensagemErro(ficha.error)}</Alert>}
       {f && (
         <div className="flex flex-col gap-5">
           <div className="flex items-center gap-[14px]">
             <Avatar nome={f.pessoa.nome} tamanho={44} />
             <div className="flex-1">
               <p className="text-[18px] font-semibold">{f.pessoa.nome}</p>
-              <p className="text-[14px] text-[#33424B]"><span className="font-mono">{f.pessoa.documentoMascarado}</span>{f.pessoa.telefone && <> · {formatarTelefone(f.pessoa.telefone)}</>}{f.pessoa.empresa && <> · {f.pessoa.empresa}{f.pessoa.servico ? ` (${f.pessoa.servico})` : ''}</>}</p>
+              <p className="text-[14px] text-[#33424B]"><span className="font-mono">{f.pessoa.documentoMascarado}</span>{f.pessoa.telefone ? <> · {formatarTelefone(f.pessoa.telefone)}</> : f.pessoa.telefoneMascarado ? <> · {f.pessoa.telefoneMascarado}</> : null}{f.pessoa.empresa && <> · {f.pessoa.empresa}{f.pessoa.servico ? ` (${f.pessoa.servico})` : ''}</>}</p>
             </div>
             <Badge tom="neutro">{ROTULO_CATEGORIA[f.pessoa.categoria]}</Badge>
           </div>
@@ -83,7 +87,7 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
             </div>
           )}
           {editando && <EditarCadastro pessoa={f.pessoa} onCancelar={() => setEditando(false)}
-            onSalvo={() => { setEditando(false); avisar({ texto: 'Cadastro atualizado. Antes e depois ficam na trilha de alterações.' }); void ficha.recarregar(); }} />}
+            onSalvo={() => { setEditando(false); avisar({ texto: 'Cadastro atualizado. Antes e depois ficam na trilha de alterações.' }); void invalidar(APOS_PESSOA); }} />}
           {f.funcionario && <Alert tom="petroleo">Funcionário do condomínio: {f.funcionario.funcao}. Escala {f.funcionario.escala.horaInicio}–{f.funcionario.escala.horaFim}.</Alert>}
           <section>
             <h3 className="mb-2 text-[15px] font-semibold">Vínculos com unidades</h3>
@@ -99,7 +103,11 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
           </section>
           <section>
             <h3 className="mb-2 text-[15px] font-semibold">Últimos acessos</h3>
-            {f.eventos.length === 0 ? <p className="text-[#56616B]">Sem acessos registrados.</p> : (
+            {f.eventos === null ? (
+              <p className="flex items-start gap-2 text-[14px] text-[#56616B]" role="note" aria-label="Últimos acessos: disponível em breve">
+                <Info className="mt-[2px] h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />Disponível em breve na API real.
+              </p>
+            ) : f.eventos.length === 0 ? <p className="text-[#56616B]">Sem acessos registrados.</p> : (
               <div className="rounded-[10px] border border-[#DCE1E5]" title={`Atualizado em ${fmtDataHora(agora())}`}>
                 {f.eventos.map((e) => (
                   <div key={e.id} className="grid min-h-12 grid-cols-[110px_120px_minmax(0,1fr)] items-center gap-3 border-b border-[#EEF1F3] px-4 py-2 last:border-b-0">
@@ -131,7 +139,8 @@ function EditarCadastro({ pessoa, onCancelar, onSalvo }: { pessoa: Pessoa; onCan
     setErro('');
     try {
       await api.pessoas.editar({
-        id: pessoa.id, nome, telefone, ...(cpf.trim() ? { documento: cpf } : {}),
+        // Telefone em branco não é enviado (importado sem telefone pode corrigir só o nome)
+        id: pessoa.id, nome, ...(telefone.trim() ? { telefone } : {}), ...(cpf.trim() ? { documento: cpf } : {}),
         ...(pessoa.categoria === 'prestador' ? { empresa, servico } : {}),
       });
       onSalvo();

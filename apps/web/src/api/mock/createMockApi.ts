@@ -4,7 +4,7 @@
 // (nomes só nas views), hash da trilha com a serialização canônica v1 do domain (a mesma do trigger do banco).
 import type {
   Api, Autorizador, AutorizacaoView, Catalogo, EncomendaView, FichaPessoa, FiltroEventos, FiltroRelatorio, FuncionarioView,
-  InconsistenciaImportacao, LinhaPlanilha, NovaPessoaInput, OcorrenciaView, PessoaBusca, RelatorioImportacao, RelatorioResumo,
+  InconsistenciaImportacao, LinhaPlanilha, NovaPessoaInput, OcorrenciaView, Pagina, PessoaBusca, PessoaLista, RelatorioImportacao, RelatorioResumo,
   RestricaoView, UnidadeDetalhe, UnidadeResumo, VinculoView,
 } from '../types';
 import { ApiError } from '../types';
@@ -73,6 +73,29 @@ const snap = (v: unknown): Record<string, unknown> | null => (v === null || v ==
 
 let contadorId = 0;
 const uid = (prefixo: string) => `${prefixo}-${Date.now().toString(36)}${(++contadorId).toString(36)}`;
+/** Keyset em memória (mesmo contrato da API real): `chave` é a tupla de ordenação do item, crescente; cursor opaco. */
+type Chave = (string | number)[];
+const compararChave = (a: Chave, b: Chave) => {
+  for (let i = 0; i < a.length; i++) { if (a[i]! < b[i]!) return -1; if (a[i]! > b[i]!) return 1; }
+  return 0;
+};
+function paginarMemoria<T>(itens: T[], chave: (t: T) => Chave, f: { cursor?: string | null; limite?: number }): Pagina<T> {
+  const limite = f.limite ?? 50;
+  let depois: Chave | null = null;
+  if (f.cursor) {
+    try { depois = JSON.parse(decodeURIComponent(escape(atob(f.cursor)))) as Chave; } catch { depois = null; }
+    if (!Array.isArray(depois)) throw new ApiError(400, 'CURSOR_INVALIDO', 'Cursor de paginação inválido.');
+  }
+  const dep = depois;
+  const ordenados = [...itens].sort((a, b) => compararChave(chave(a), chave(b)));
+  const candidatos = dep ? ordenados.filter((t) => compararChave(chave(t), dep) > 0) : ordenados;
+  const pagina = candidatos.slice(0, limite);
+  const ultimo = pagina[pagina.length - 1];
+  const temMais = candidatos.length > limite;
+  return { itens: pagina, temMais, cursor: temMais && ultimo ? btoa(unescape(encodeURIComponent(JSON.stringify(chave(ultimo))))) : null };
+}
+const PRIORIDADE_VINCULO = ['aprovado', 'legado', 'pendente', 'rejeitado', 'encerrado'];
+
 const isoSP = (ts: number) => new Date(ts - 3 * 3600 * 1000).toISOString().replace('Z', '-03:00');
 
 export function createMockApi(opts: MockOptions = {}): Api {
@@ -638,7 +661,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
           if (consulta.length >= 3) {
             const nq = consulta.toUpperCase().replace(/[^A-Z0-9]/g, '');
             for (const v of d.veiculos) {
-              if (v.placa.replace('-', '').includes(nq) && nq.length >= 3) unidades.push({ id: v.unidadeId, motivo: `Placa ${v.placa} · ${v.modelo}` });
+              if (v.ativo !== false && v.placa.replace('-', '').includes(nq) && nq.length >= 3) unidades.push({ id: v.unidadeId, motivo: `Placa ${v.placa} · ${v.modelo}` });
               if (unidades.length > 6) break;
             }
           }
@@ -657,6 +680,25 @@ export function createMockApi(opts: MockOptions = {}): Api {
     pessoas: {
       async buscar(q, o) { exige('pessoa.ver'); return ler(async (d) => (await buscarPessoas(d, q, !!o?.semMoradores)).slice(0, o?.limite ?? 8)); },
       async listar() { exige('pessoa.ver'); return ler((d) => { const ix = indices(d); return d.pessoas.map((p) => pessoaBusca(d, p, ix)).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')); }); },
+      async listarPagina(f = {}) {
+        exige('pessoa.ver');
+        return ler((d) => {
+          const ix = indices(d);
+          const lista = d.pessoas.filter((p) => !f.categoria || p.categoria === f.categoria);
+          const pg = paginarMemoria(lista, (p) => [norm(p.nome), p.id], f);
+          return {
+            ...pg,
+            itens: pg.itens.map((p): PessoaLista => {
+              const v = d.vinculos.filter((x) => x.pessoaId === p.id)
+                .sort((a, b) => PRIORIDADE_VINCULO.indexOf(a.status) - PRIORIDADE_VINCULO.indexOf(b.status))[0];
+              return {
+                ...pessoaBusca(d, p, ix),
+                vinculoPrincipal: v ? { id: v.id, unidadeId: v.unidadeId, unidadeCodigo: ix.codigoUn(v.unidadeId) ?? '?', tipo: v.tipo, status: v.status } : null,
+              };
+            }),
+          };
+        });
+      },
       async ficha(id) {
         exige('pessoa.ver');
         return ler((d): FichaPessoa => {
@@ -757,7 +799,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
           return {
             unidade,
             vinculos: d.vinculos.filter((v) => v.unidadeId === uid_).map((v) => vinculoView(v, ix)),
-            veiculos: d.veiculos.filter((v) => v.unidadeId === uid_),
+            veiculos: d.veiculos.filter((v) => v.unidadeId === uid_ && v.ativo !== false),
             autorizacoes: d.autorizacoes.filter((a) => a.unidadeId === uid_ && a.revogadaEm === null && agora() <= a.validaAte).map((a) => autorizacaoView(a, d, ix)),
             restricoes: d.restricoes.filter((r) => (r.unidadeId === uid_) && r.revogadaEm === null && agora() <= r.validaAte).map((r) => restricaoView(r, ix)),
             eventos: d.eventos.filter((e) => ix.ef(e).unidadeDestinoId === uid_ && e.tipo !== 'correcao').slice(-12).reverse().map((e) => view(e, ix)),
@@ -874,10 +916,40 @@ export function createMockApi(opts: MockOptions = {}): Api {
           if (!/^[A-Z]{3}\d[A-Z0-9]\d{2}$/.test(placa)) throw new ApiError(422, 'PLACA_INVALIDA', 'Placa fora do padrão antigo ou Mercosul.');
           unidadeOu404(d, i.unidadeId, true);
           const fmt = `${placa.slice(0, 3)}-${placa.slice(3)}`;
-          if (d.veiculos.some((v) => v.placa === fmt)) throw new ApiError(409, 'PLACA_DUPLICADA', 'Placa já cadastrada.');
+          if (!i.modelo.trim()) throw new ApiError(422, 'MODELO_OBRIGATORIO', 'Informe o modelo.');
+          if (!i.cor.trim()) throw new ApiError(422, 'COR_OBRIGATORIA', 'Informe a cor.');
+          if (d.veiculos.some((v) => v.placa === fmt && v.ativo !== false)) throw new ApiError(409, 'PLACA_DUPLICADA', 'Placa já cadastrada.');
           const v = { id: uid('ve'), unidadeId: i.unidadeId, placa: fmt, modelo: i.modelo.trim(), cor: i.cor.trim() };
           d.veiculos.push(v);
           registrar(d, u, 'veiculo.criar', 'veiculo', v.id, null, v);
+          return v;
+        });
+      },
+      // RF-08: corrige placa, modelo ou cor, ou desativa. Placa ATIVA é única (mesmo índice parcial do banco).
+      async editar(i) {
+        const u = exige('veiculo.cadastrar');
+        return escrever((d) => {
+          const v = d.veiculos.find((x) => x.id === i.id);
+          if (!v) throw new ApiError(404, 'VEICULO_NAO_ENCONTRADO', 'Veículo não encontrado.');
+          const antes = clone(v);
+          const novo = clone(v);
+          if (i.placa !== undefined) {
+            const placa = i.placa.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            if (!/^[A-Z]{3}\d[A-Z0-9]\d{2}$/.test(placa)) throw new ApiError(422, 'PLACA_INVALIDA', 'Placa fora do padrão antigo ou Mercosul.');
+            novo.placa = `${placa.slice(0, 3)}-${placa.slice(3)}`;
+          }
+          if (i.modelo !== undefined) { if (!i.modelo.trim()) throw new ApiError(422, 'MODELO_OBRIGATORIO', 'Informe o modelo.'); novo.modelo = i.modelo.trim(); }
+          if (i.cor !== undefined) { if (!i.cor.trim()) throw new ApiError(422, 'COR_OBRIGATORIA', 'Informe a cor.'); novo.cor = i.cor.trim(); }
+          if (i.ativo !== undefined) novo.ativo = i.ativo;
+          if (novo.ativo !== false && d.veiculos.some((x) => x.id !== v.id && x.placa === novo.placa && x.ativo !== false)) {
+            throw new ApiError(409, 'PLACA_DUPLICADA', 'Placa já cadastrada.');
+          }
+          if (JSON.stringify(novo) === JSON.stringify(antes)) return v;
+          if (novo.ativo !== false && !unidadeOu404(d, v.unidadeId).ativo && antes.ativo === false) {
+            throw new ApiError(422, 'UNIDADE_INATIVA', 'A unidade está desativada: o veículo não pode ser reativado.');
+          }
+          Object.assign(v, novo);
+          registrar(d, u, 'veiculo.editar', 'veiculo', v.id, antes, v);
           return v;
         });
       },
@@ -889,6 +961,20 @@ export function createMockApi(opts: MockOptions = {}): Api {
         return ler((d) => {
           const ix = indices(d);
           return d.vinculos.filter((v) => !f?.status || v.status === f.status).sort((a, b) => b.solicitadoEm - a.solicitadoEm).map((v) => vinculoView(v, ix));
+        });
+      },
+      async listarPagina(f = {}) {
+        exige('vinculo.ver');
+        return ler((d) => {
+          const ix = indices(d);
+          const lista = d.vinculos.filter((v) => (!f.status?.length || f.status.includes(v.status))
+            && (!f.unidadeId || v.unidadeId === f.unidadeId) && (!f.pessoaId || v.pessoaId === f.pessoaId));
+          const ordem = f.ordem ?? 'recentes';
+          const chave = (v: VinculoUnidade): Chave => ordem === 'prazo'
+            ? [v.prazoRegularizacao ?? Number.MAX_SAFE_INTEGER, v.id]
+            : ordem === 'decisao' ? [-(v.decididoEm ?? v.encerradoEm ?? v.solicitadoEm), v.id] : [-v.solicitadoEm, v.id];
+          const pg = paginarMemoria(lista, chave, f);
+          return { ...pg, itens: pg.itens.map((v) => vinculoView(v, ix)) };
         });
       },
       async contar(status) {
@@ -987,6 +1073,30 @@ export function createMockApi(opts: MockOptions = {}): Api {
           v.decididoPorId = u.id; v.decididoEm = agora();
           if (pessoa && pessoa.categoria !== 'morador') pessoa.categoria = 'morador';
           registrar(d, u, 'vinculo.regularizar', 'vinculo', v.id, antes, v);
+          return v;
+        });
+      },
+      // RF-07: encerramento manual (aprovado ou legado -> encerrado, transição do trigger vinculo_unidade_transicao)
+      async encerrar(id, i) {
+        const u = exige('vinculo.decidir');
+        return escrever((d) => {
+          const v = d.vinculos.find((x) => x.id === id);
+          if (!v) throw new ApiError(404, 'VINCULO_NAO_ENCONTRADO', 'Vínculo não encontrado.');
+          if (v.status !== 'aprovado' && v.status !== 'legado') {
+            throw new ApiError(409, 'VINCULO_NAO_ENCERRAVEL', v.status === 'pendente'
+              ? 'Vínculo pendente não é encerrado: rejeite a solicitação.' : 'Este vínculo já está encerrado ou rejeitado.');
+          }
+          if (!justificativaValida(i.motivo)) throw new ApiError(422, 'MOTIVO_OBRIGATORIO', `Informe o motivo do encerramento (mínimo de ${MIN_JUSTIFICATIVA} caracteres).`);
+          const hoje = inicioDoDia(agora());
+          // Sem data: hoje, ou o fim da vigência se ele já passou (o vínculo deixou de valer ali)
+          const data = i.data !== undefined ? inicioDoDia(i.data) : v.vigenciaFim !== null && inicioDoDia(v.vigenciaFim) < hoje ? inicioDoDia(v.vigenciaFim) : hoje;
+          if (data > hoje) throw new ApiError(422, 'DATA_FUTURA', 'A data do encerramento não pode ser futura.');
+          if (v.vigenciaInicio !== null && data < inicioDoDia(v.vigenciaInicio)) throw new ApiError(422, 'DATA_ANTES_DO_INICIO', 'A data do encerramento é anterior ao início da vigência.');
+          const antes = clone(v);
+          v.status = 'encerrado';
+          v.encerradoEm = data === hoje ? agora() : data;
+          v.justificativa = i.motivo.trim();
+          registrar(d, u, 'vinculo.encerrar', 'vinculo', v.id, antes, v);
           return v;
         });
       },
@@ -1880,7 +1990,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
     const idsPorUnidade = un ? new Set(d.vinculos.filter((v) => v.unidadeId === un.id && v.status !== 'rejeitado' && v.status !== 'encerrado').map((v) => v.pessoaId)) : null;
     // Placa: pessoas com vínculo VÁLIDO na unidade do veículo (pendente/rejeitado/encerrado não contam)
     const idsPorPlaca = placa.length >= 4
-      ? new Set(d.veiculos.filter((v) => v.placa.replace('-', '').includes(placa)).flatMap((v) => validos.filter((x) => x.unidadeId === v.unidadeId).map((x) => x.pessoaId)))
+      ? new Set(d.veiculos.filter((v) => v.ativo !== false && v.placa.replace('-', '').includes(placa)).flatMap((v) => validos.filter((x) => x.unidadeId === v.unidadeId).map((x) => x.pessoaId)))
       : null;
     const achados = d.pessoas.filter((p) => {
       if (p.anonimizadaEm) return false; // cadastro anonimizado não aparece na busca

@@ -1,6 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import { Ban, Check, Info } from 'lucide-react';
 import { useApi, type AutorizacaoView, type PessoaBusca, type RestricaoView } from '../../api';
 import { useCan } from '../../auth/AuthContext';
@@ -11,13 +10,13 @@ import { Field } from '../../components/Field';
 import { Modal } from '../../components/Modal';
 import { PessoaPicker } from '../../components/PessoaPicker';
 import { useToast } from '../../components/Toast';
-import { ROTULO_VINCULO, type EventoView, type TipoVinculo } from '@portaria/domain/types';
+import { ROTULO_VINCULO, type EventoView, type TipoVinculo, type Veiculo } from '@portaria/domain/types';
 import { MIN_JUSTIFICATIVA, descreverJanela } from '@portaria/domain/rules';
 import { DIAS_SEMANA_ABREV, fmtData, fromInput, toInputDate, agora } from '@portaria/domain/time';
 import { acharUnidadePorTexto } from '@portaria/domain/units';
 import { mensagemErro, useAsync } from '../../app/useAsync';
 import { useCatalogo } from '../../app/catalogo';
-import { CHAVES } from '../../app/consultas';
+import { APOS_VEICULO, APOS_VINCULO, useInvalidar } from '../../app/consultas';
 import { useAcoesUnidade, useUnidadeDetalhe } from './useUnidades';
 import { chipDoEvento, quandoCurto, textoAutorizacao } from '../common/evento';
 import { EventoGaveta } from '../historico/EventoGaveta';
@@ -38,7 +37,7 @@ function SecaoEmBreve({ titulo, children }: { titulo: string; children?: ReactNo
 export function UnidadeDetalhe({ id }: { id: string }) {
   const api = useApi();
   const nav = useNavigate();
-  const qc = useQueryClient();
+  const invalidar = useInvalidar();
   const { avisar } = useToast();
   const catalogo = useCatalogo();
   const acoes = useAcoesUnidade();
@@ -46,6 +45,7 @@ export function UnidadeDetalhe({ id }: { id: string }) {
   const suporta = (op: string) => api.suporta?.(op) ?? true;
   const [modo, setModo] = useState<Modo>(null);
   const [evento, setEvento] = useState<EventoView | null>(null);
+  const [veiculoEditado, setVeiculoEditado] = useState<Veiculo | null>(null);
   const podeVinculo = useCan('vinculo.criar');
   const podePrevia = useCan('autorizacao.criar');
   const podeRestricao = useCan('restricao.criar');
@@ -53,8 +53,8 @@ export function UnidadeDetalhe({ id }: { id: string }) {
   const podeVeiculo = useCan('veiculo.cadastrar');
   const podeEditarUnidade = useCan('unidade.editar');
   const det = useUnidadeDetalhe(id);
-  /** Vínculo, autorização, restrição ou veículo novos mudam o detalhe e o resumo da torre. */
-  const recarregar = () => qc.invalidateQueries({ queryKey: CHAVES.unidades });
+  /** Vínculo, autorização ou restrição novos mudam o detalhe, o resumo da torre, a fila de vínculos e a pessoa. */
+  const recarregar = () => invalidar(APOS_VINCULO);
 
   if (det.error) return <Alert tom="vermelho" role="alert">{mensagemErro(det.error)} <Link className="underline" to="/unidades">Voltar às unidades</Link></Alert>;
   // Dado anterior (placeholder) só vale se for a MESMA unidade (troca de "T4-32" para o uuid). De outra unidade, não:
@@ -124,7 +124,10 @@ export function UnidadeDetalhe({ id }: { id: string }) {
               <div className="flex items-center justify-between gap-2"><h2 className="text-[16px] font-semibold">Veículos</h2>
                 {podeVeiculo && suporta('veiculos.criar') && <button type="button" className={link} onClick={() => setModo('veiculo')}>+ Novo</button>}</div>
               {d.veiculos.map((v) => (
-                <div key={v.id} className="flex flex-col"><span className="font-mono text-[17px] font-semibold">{v.placa}</span><span className="text-[14px] text-[#56616B]">{v.modelo} · {v.cor}</span></div>
+                <div key={v.id} className="flex items-start justify-between gap-2">
+                  <div className="flex flex-col"><span className="font-mono text-[17px] font-semibold">{v.placa}</span><span className="text-[14px] text-[#56616B]">{v.modelo} · {v.cor}</span></div>
+                  {podeVeiculo && suporta('veiculos.editar') && <button type="button" className={link} aria-label={`Editar veículo ${v.placa}`} onClick={() => setVeiculoEditado(v)}>Editar</button>}
+                </div>
               ))}
               {d.veiculos.length === 0 && <span className={vazio}>Nenhum veículo cadastrado.</span>}
             </section>
@@ -192,7 +195,9 @@ export function UnidadeDetalhe({ id }: { id: string }) {
       {d && modo === 'vinculo' && <VinculoModal unidade={uid} onClose={() => setModo(null)} onFeito={() => feito('Vínculo solicitado. Fica pendente até a aprovação; pendente não dá acesso de morador.')} />}
       {d && modo === 'previa' && <PreviaModal unidade={uid} onClose={() => setModo(null)} onFeito={() => feito('Autorização prévia cadastrada.')} />}
       {d && modo === 'restricao' && <RestricaoModal unidade={uid} onClose={() => setModo(null)} onFeito={(todo) => feito(todo ? 'Pedido de restrição para todo o condomínio registrado. Aguarda aprovação do síndico.' : 'Restrição cadastrada.')} />}
-      {d && modo === 'veiculo' && <VeiculoModal unidade={uid} onClose={() => setModo(null)} onFeito={() => feito('Veículo cadastrado.')} />}
+      {d && modo === 'veiculo' && <VeiculoModal unidade={uid} onClose={() => setModo(null)} onFeito={() => { setModo(null); avisar({ texto: 'Veículo cadastrado.' }); void invalidar(APOS_VEICULO); }} />}
+      {d && veiculoEditado && <VeiculoModal unidade={uid} atual={veiculoEditado} onClose={() => setVeiculoEditado(null)}
+        onFeito={(texto) => { setVeiculoEditado(null); avisar({ texto }); void invalidar(APOS_VEICULO); }} />}
       {d && modo === 'editar' && <EditarUnidadeModal id={uid} torre={d.unidade.torre} numero={d.unidade.numero} onClose={() => setModo(null)}
         onFeito={(cod, novoId) => { feito(`Unidade alterada para ${cod}.`); nav(`/unidades/${novoId}`, { replace: true }); }} />}
     </div>
@@ -364,16 +369,30 @@ function RestricaoModal({ unidade, onClose, onFeito }: { unidade: string; onClos
   );
 }
 
-function VeiculoModal({ unidade, onClose, onFeito }: { unidade: string; onClose: () => void; onFeito: () => void }) {
+/** RF-08: novo veículo ou edição (placa, modelo, cor) e desativação. Placa ativa é única no condomínio. */
+function VeiculoModal({ unidade, atual, onClose, onFeito }: { unidade: string; atual?: Veiculo; onClose: () => void; onFeito: (texto: string) => void }) {
   const api = useApi();
-  const [f, setF] = useState({ placa: '', modelo: '', cor: '' });
+  const [f, setF] = useState({ placa: atual?.placa ?? '', modelo: atual?.modelo ?? '', cor: atual?.cor ?? '' });
   const [erro, setErro] = useState('');
   async function salvar(e: FormEvent) {
     e.preventDefault();
-    try { await api.veiculos.criar({ unidadeId: unidade, ...f }); onFeito(); } catch (err) { setErro(mensagemErro(err)); }
+    setErro('');
+    try {
+      if (atual) { await api.veiculos.editar({ id: atual.id, ...f }); onFeito('Veículo atualizado.'); }
+      else { await api.veiculos.criar({ unidadeId: unidade, ...f }); onFeito('Veículo cadastrado.'); }
+    } catch (err) { setErro(mensagemErro(err)); }
+  }
+  async function desativar() {
+    if (!atual) return;
+    setErro('');
+    try { await api.veiculos.editar({ id: atual.id, ativo: false }); onFeito(`Veículo ${atual.placa} desativado. O histórico é mantido.`); } catch (err) { setErro(mensagemErro(err)); }
   }
   return (
-    <Modal titulo="Novo veículo" onClose={onClose} rodape={rodapeForm(onClose, "f-vei", "Cadastrar")}>
+    <Modal titulo={atual ? 'Editar veículo' : 'Novo veículo'} onClose={onClose} rodape={<>
+      <Button type="submit" form="f-vei" variante="primario" grande className="flex-1">{atual ? 'Salvar' : 'Cadastrar'}</Button>
+      {atual && <Button grande variante="perigo" onClick={() => void desativar()}>Desativar veículo</Button>}
+      <Button grande onClick={onClose}>Cancelar</Button>
+    </>}>
       <UnidadeTitulo unidade={unidade} />
       <form id="f-vei" onSubmit={salvar} className="flex flex-col gap-[14px]">
         <Field label="Placa"><input data-autofocus className="input font-mono uppercase" value={f.placa} onChange={(e) => setF({ ...f, placa: e.target.value })} placeholder="ABC-1D23" /></Field>

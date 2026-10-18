@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Check, Info } from 'lucide-react';
-import { useApi, type VinculoView } from '../../api';
+import { useApi, type FiltroVinculos, type VinculoView } from '../../api';
 import { Alert } from '../../components/Alert';
 import { Badge, SeloVinculo } from '../../components/Badge';
 import { Button } from '../../components/Button';
@@ -10,84 +11,101 @@ import { Tabs } from '../../components/Tabs';
 import { useToast } from '../../components/Toast';
 import { Field } from '../../components/Field';
 import { ROTULO_COMPROVANTE, ROTULO_VINCULO, type TipoComprovante } from '@portaria/domain/types';
-import { MAX_DESCRICAO_COMPROVANTE, MAX_OBSERVACAO_CONFERENCIA, temNumeroDePessoa } from '@portaria/domain/rules';
+import { MAX_DESCRICAO_COMPROVANTE, MAX_OBSERVACAO_CONFERENCIA, MIN_JUSTIFICATIVA, temNumeroDePessoa } from '@portaria/domain/rules';
 import { fmtData, fmtDataHora, fromInput } from '@portaria/domain/time';
-import { mensagemErro, useAsync } from '../../app/useAsync';
+import { mensagemErro } from '../../app/useAsync';
 import { useCatalogo } from '../../app/catalogo';
+import { APOS_VINCULO, CHAVES, useContagemPendentes, useInvalidar } from '../../app/consultas';
 import { useCan } from '../../auth/AuthContext';
 import { FichaPessoaModal } from '../cadastro/FichaPessoaModal';
+
+type Aba = 'pendentes' | 'decididos' | 'legados';
+const POR_PAGINA = 50;
+/** Uma fila por aba, paginada no servidor. Legados por prazo: os vencidos vêm primeiro (RN-09). */
+const FILAS: Record<Aba, Pick<FiltroVinculos, 'status' | 'ordem'>> = {
+  pendentes: { status: ['pendente'], ordem: 'recentes' },
+  legados: { status: ['legado'], ordem: 'prazo' },
+  decididos: { status: ['aprovado', 'rejeitado', 'encerrado'], ordem: 'decisao' },
+};
 
 export function VinculosPage() {
   const api = useApi();
   const { avisar } = useToast();
   const { rotulo } = useCatalogo();
+  const invalidar = useInvalidar();
   const podeDecidir = useCan('vinculo.decidir');
-  const [aba, setAba] = useState<'pendentes' | 'decididos' | 'legados'>('pendentes');
+  const [aba, setAba] = useState<Aba>('pendentes');
   const [ficha, setFicha] = useState<string | null>(null);
   const [fimInquilino, setFimInquilino] = useState('');
-  const todos = useAsync(() => api.vinculos.listar(), []);
+  const fila = useInfiniteQuery({
+    queryKey: CHAVES.vinculosFila(aba),
+    queryFn: ({ pageParam }) => api.vinculos.listarPagina({ ...FILAS[aba], cursor: pageParam, limite: POR_PAGINA }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (p) => (p.temMais && p.cursor ? p.cursor : undefined),
+    staleTime: 0,
+  });
+  const nPend = useContagemPendentes(true).data;
+  const nLeg = useQuery({ queryKey: CHAVES.vinculosContagem('legado'), queryFn: () => api.vinculos.contar('legado'), staleTime: 0 }).data;
   const [sel, setSel] = useState<string | null>(null);
   const [rejeitando, setRejeitando] = useState(false);
+  const [encerrando, setEncerrando] = useState(false);
   const [just, setJust] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const [dataEnc, setDataEnc] = useState('');
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
 
-  const pend = (todos.data ?? []).filter((v) => v.status === 'pendente');
-  const decid = (todos.data ?? []).filter((v) => v.status === 'aprovado' && v.decididoEm || v.status === 'rejeitado').sort((a, b) => (b.decididoEm ?? 0) - (a.decididoEm ?? 0));
-  // RN-09: legados da planilha, com os de prazo vencido primeiro (em destaque) para revisão da administração
-  const legados = (todos.data ?? []).filter((v) => v.status === 'legado')
-    .sort((a, b) => Number(b.legadoVencido) - Number(a.legadoVencido) || a.unidadeCodigo.localeCompare(b.unidadeCodigo, 'pt-BR', { numeric: true }));
-  const nVencidos = legados.filter((v) => v.legadoVencido).length;
-  const lista = aba === 'pendentes' ? pend : aba === 'legados' ? legados : decid;
+  const lista = fila.data?.pages.flatMap((p) => p.itens) ?? [];
+  const nVencidos = aba === 'legados' ? lista.filter((v) => v.legadoVencido).length : 0;
   const atual: VinculoView | undefined = lista.find((v) => v.id === sel) ?? lista[0];
+  const recarregar = () => invalidar(APOS_VINCULO);
 
-  useEffect(() => { setRejeitando(false); setJust(''); setErro(''); setFimInquilino(''); }, [atual?.id]);
+  useEffect(() => { setRejeitando(false); setEncerrando(false); setJust(''); setMotivo(''); setDataEnc(''); setErro(''); setFimInquilino(''); }, [atual?.id]);
 
-  async function regularizar() {
-    if (!atual) return;
+  async function executar(fn: () => Promise<unknown>, texto: string, tom?: 'verde' | 'ambar') {
     setSalvando(true); setErro('');
     try {
-      await api.vinculos.regularizar(atual.id, fimInquilino ? { vigenciaFim: fromInput(fimInquilino) } : undefined);
-      avisar({ texto: `Vínculo legado de ${atual.pessoaNome} (${atual.unidadeCodigo}) regularizado: agora está aprovado.` });
-      setSel(null);
-      await todos.recarregar();
+      await fn();
+      avisar({ ...(tom ? { tom } : {}), texto });
+      setRejeitando(false); setEncerrando(false); setJust(''); setMotivo(''); setSel(null);
+      await recarregar();
     } catch (e) { setErro(mensagemErro(e)); } finally { setSalvando(false); }
   }
+
+  const regularizar = () => atual && executar(
+    () => api.vinculos.regularizar(atual.id, fimInquilino ? { vigenciaFim: fromInput(fimInquilino) } : undefined),
+    `Vínculo legado de ${atual.pessoaNome} (${atual.unidadeCodigo}) regularizado: agora está aprovado.`);
+  const decidir = (decisao: 'aprovar' | 'rejeitar') => atual && executar(
+    () => api.vinculos.decidir({ id: atual.id, decisao, justificativa: just }),
+    `Vínculo de ${atual.pessoaNome} (${atual.unidadeCodigo}) ${decisao === 'aprovar' ? 'aprovado' : 'rejeitado'}. A decisão e a justificativa ficam registradas.`,
+    decisao === 'aprovar' ? 'verde' : 'ambar');
+  const encerrar = () => atual && executar(
+    () => api.vinculos.encerrar(atual.id, { motivo, ...(dataEnc ? { data: fromInput(dataEnc)! } : {}) }),
+    `Vínculo de ${atual.pessoaNome} (${atual.unidadeCodigo}) encerrado. Deixa de valer para acesso; o histórico é mantido.`, 'ambar');
 
   const conferido = !!atual?.conferencia;
-
-  async function decidir(decisao: 'aprovar' | 'rejeitar') {
-    if (!atual) return;
-    setSalvando(true); setErro('');
-    try {
-      await api.vinculos.decidir({ id: atual.id, decisao, justificativa: just });
-      avisar({ tom: decisao === 'aprovar' ? 'verde' : 'ambar', texto: `Vínculo de ${atual.pessoaNome} (${atual.unidadeCodigo}) ${decisao === 'aprovar' ? 'aprovado' : 'rejeitado'}. A decisão e a justificativa ficam registradas.` });
-      setRejeitando(false); setJust(''); setSel(null);
-      await todos.recarregar();
-    } catch (e) { setErro(mensagemErro(e)); } finally { setSalvando(false); }
-  }
-
   const justOk = just.trim().length > 0;
+  const motivoOk = motivo.trim().length >= MIN_JUSTIFICATIVA;
   const rot = 'text-[13px] text-[#56616B]';
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader titulo="Vínculos pendentes" descricao={`${pend.length} ${pend.length === 1 ? 'solicitação aguardando' : 'solicitações aguardando'} decisão da administração.`} />
+      <PageHeader titulo="Vínculos pendentes" descricao={nPend === undefined ? 'Solicitações aguardando decisão da administração.' : `${nPend} ${nPend === 1 ? 'solicitação aguardando' : 'solicitações aguardando'} decisão da administração.`} />
       <div className="flex items-center gap-[10px] rounded-lg border border-[#A9D2D8] bg-[#E3F0F2] px-4 py-3 font-medium text-[#0B4450]">
         <Info className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
         Vínculo pendente não dá acesso de morador. Documento apresentado na portaria não substitui esta aprovação.
       </div>
-      {todos.error && <Alert tom="vermelho" role="alert">{todos.error}</Alert>}
+      {fila.error && <Alert tom="vermelho" role="alert">{mensagemErro(fila.error)}</Alert>}
 
       <div className="grid grid-cols-[340px_minmax(0,1fr)] items-start gap-4">
         <div className="flex flex-col gap-2">
           <Tabs rotulo="Fila de vínculos" ativa={aba} onChange={(a) => { setAba(a); setSel(null); }}
-            abas={[{ id: 'pendentes', rotulo: `Pendentes (${pend.length})` }, { id: 'legados', rotulo: `Legados (${legados.length})` }, { id: 'decididos', rotulo: `Decididos (${decid.length})` }]} />
+            abas={[{ id: 'pendentes', rotulo: `Pendentes${nPend === undefined ? '' : ` (${nPend})`}` }, { id: 'legados', rotulo: `Legados${nLeg === undefined ? '' : ` (${nLeg})`}` }, { id: 'decididos', rotulo: 'Decididos' }]} />
           {aba === 'legados' && (
             <p className="text-[13px] text-[#56616B]">Importados da planilha (RN-09). Valem até o prazo de regularização; {nVencidos} com prazo vencido, em destaque.</p>
           )}
           <ul className="flex max-h-[70vh] flex-col gap-2 overflow-y-auto" aria-label="Fila">
-            {lista.length === 0 && <li className="rounded-[10px] border border-dashed border-[#C5CDD3] bg-white p-4 text-[#56616B]">Nenhum vínculo nesta lista.</li>}
+            {!fila.isLoading && lista.length === 0 && <li className="rounded-[10px] border border-dashed border-[#C5CDD3] bg-white p-4 text-[#56616B]">Nenhum vínculo nesta lista.</li>}
             {lista.map((v) => (
               <li key={v.id}>
                 <button type="button" aria-current={atual?.id === v.id} onClick={() => setSel(v.id)}
@@ -100,6 +118,9 @@ export function VinculosPage() {
                 </button>
               </li>
             ))}
+            {fila.hasNextPage && (
+              <li><Button className="w-full" carregando={fila.isFetchingNextPage} onClick={() => void fila.fetchNextPage()}>Carregar mais</Button></li>
+            )}
           </ul>
         </div>
 
@@ -124,7 +145,7 @@ export function VinculosPage() {
 
             <div className="grid grid-cols-2 gap-5">
               <ConferenciaComprovanteBloco key={atual.id} vinculo={atual} podeRegistrar={podeDecidir && (atual.status === 'pendente' || atual.status === 'legado')}
-                onRegistrado={async () => { await todos.recarregar(); }} />
+                onRegistrado={recarregar} />
 
               <div className="flex flex-col gap-[14px]">
                 <h3 className="text-[15px] font-semibold">Decisão</h3>
@@ -159,7 +180,7 @@ export function VinculosPage() {
                     )}
                   </>
                 )}
-                {atual.status === 'legado' && (
+                {atual.status === 'legado' && !encerrando && (
                   <div className="flex flex-col gap-[10px]">
                     <div className={`rounded-lg border px-3 py-[10px] text-[14px] ${atual.legadoVencido ? 'border-[#FDA29B] bg-[#FEE4E2] text-[#912018]' : 'border-[#D5DDE2] bg-[#EEF2F4] text-[#33424B]'}`}>
                       {atual.legadoVencido ? <strong>Prazo de regularização vencido em {fmtData(atual.prazoRegularizacao!)}.</strong> : <>Legado válido até {fmtData(atual.prazoRegularizacao!)}.</>}{' '}
@@ -182,16 +203,46 @@ export function VinculosPage() {
                 )}
                 {atual.decididoEm && (
                   <div className={`rounded-lg border px-[14px] py-3 font-medium ${atual.status === 'rejeitado' ? 'border-[#FDA29B] bg-[#FEE4E2] text-[#B42318]' : 'border-[#75E0A7] bg-[#DCFAE6] text-[#05603A]'}`}>
-                    <Badge tom={atual.status === 'rejeitado' ? 'vermelho' : atual.status === 'encerrado' ? 'neutro' : 'verde'} tamanho="xs">{atual.status === 'rejeitado' ? 'Rejeitado' : atual.status === 'encerrado' ? 'Encerrado' : 'Aprovado'}</Badge>{' '}
-                    por {atual.decididoPorNome} em {fmtDataHora(atual.decididoEm)}{atual.justificativa && <><br />Justificativa: {atual.justificativa}</>}
+                    <Badge tom={atual.status === 'rejeitado' ? 'vermelho' : 'verde'} tamanho="xs">{atual.status === 'rejeitado' ? 'Rejeitado' : 'Aprovado'}</Badge>{' '}
+                    por {atual.decididoPorNome} em {fmtDataHora(atual.decididoEm)}{atual.justificativa && atual.status !== 'encerrado' && <><br />Justificativa: {atual.justificativa}</>}
                   </div>
                 )}
+                {atual.status === 'encerrado' && (
+                  <div className="rounded-lg border border-[#D5DDE2] bg-[#EEF2F4] px-[14px] py-3 font-medium text-[#33424B]">
+                    <Badge tom="neutro" tamanho="xs">Encerrado</Badge>{' '}
+                    em {atual.encerradoEm ? fmtDataHora(atual.encerradoEm) : '—'}{atual.justificativa && <><br />Motivo: {atual.justificativa}</>}
+                  </div>
+                )}
+                {/* RF-07: encerramento manual (aprovado ou legado). Pendente se rejeita; rejeitado e encerrado são finais. */}
+                {podeDecidir && (atual.status === 'aprovado' || atual.status === 'legado') && (
+                  encerrando ? (
+                    <div className="flex flex-col gap-[10px] rounded-lg border border-[#D5DDE2] p-3">
+                      <label htmlFor="motivo-enc" className="flex flex-col gap-1.5 text-[14px] font-medium">Motivo do encerramento (obrigatório)
+                        <textarea id="motivo-enc" autoFocus className="input font-normal" rows={3} value={motivo} onChange={(e) => setMotivo(e.target.value)}
+                          placeholder="Ex.: Locação encerrada; o inquilino entregou as chaves à administração." />
+                      </label>
+                      <span className="text-[13px] text-[#56616B]">{motivo.trim().length} de {MIN_JUSTIFICATIVA} caracteres no mínimo</span>
+                      <label className="flex flex-col gap-1.5 text-[14px] font-medium">Data do encerramento (opcional)
+                        <input type="date" className="input font-normal" value={dataEnc} onChange={(e) => setDataEnc(e.target.value)} />
+                        <span className="text-[13px] font-normal text-[#56616B]">Em branco: hoje, ou o fim da vigência se ele já passou. Não pode ser futura.</span>
+                      </label>
+                      {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
+                      <div className="flex gap-[10px]">
+                        <Button variante="perigo" className="flex-1" disabled={!motivoOk} carregando={salvando} onClick={() => void encerrar()}>Confirmar encerramento</Button>
+                        <Button onClick={() => { setEncerrando(false); setErro(''); }}>Cancelar</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div><Button onClick={() => { setEncerrando(true); setErro(''); }}>Encerrar vínculo</Button></div>
+                  )
+                )}
+                {erro && atual.status === 'aprovado' && !encerrando && <Alert tom="vermelho" role="alert">{erro}</Alert>}
               </div>
             </div>
           </div>
         )}
       </div>
-      {ficha && <FichaPessoaModal id={ficha} onClose={() => { setFicha(null); void todos.recarregar(); }} />}
+      {ficha && <FichaPessoaModal id={ficha} onClose={() => { setFicha(null); void recarregar(); }} />}
     </div>
   );
 }
@@ -201,7 +252,7 @@ export function VinculosPage() {
  * e registra só o tipo, a data e quem conferiu. O arquivo não entra no sistema (LGPD, art. 6º, III).
  */
 function ConferenciaComprovanteBloco({ vinculo, podeRegistrar, onRegistrado }: {
-  vinculo: VinculoView; podeRegistrar: boolean; onRegistrado: () => Promise<void>;
+  vinculo: VinculoView; podeRegistrar: boolean; onRegistrado: () => Promise<unknown>;
 }) {
   const api = useApi();
   const { avisar } = useToast();

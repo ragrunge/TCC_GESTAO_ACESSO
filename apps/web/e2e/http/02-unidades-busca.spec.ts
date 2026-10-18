@@ -1,5 +1,5 @@
 // E2E contra a API real (Docker local): catálogo e badge no Layout, busca do topo por nome e por unidade, detalhe da
-// unidade com seções "em breve" e o CRUD de unidade (criar e desativar). Depende do seed de dev com as pessoas fictícias
+// unidade com moradores e veículos da API e as demais seções "em breve", e o CRUD de unidade (criar e desativar). Depende do seed de dev com as pessoas fictícias
 // (docker compose exec api node dist/cli/seed-dev.js). A senha do seed vem de SEED_SENHA_DEV e nunca é impressa.
 // Unidade de teste: torre 99, número aleatório, desativada no fim (não há exclusão: as inativas se acumulam na torre 99;
 // para limpar, docker compose down -v).
@@ -41,7 +41,7 @@ test.describe.serial('API real: catálogo, badge, busca e unidades', () => {
 
   test('administração vê o catálogo na grade de unidades e o badge de vínculos pendentes', async ({ page }) => {
     await entrar(page, 'paula.nogueira', SENHA!);
-    await expect(page).toHaveURL(/\/vinculos$/); // rota inicial da administração (módulo ainda "em breve")
+    await expect(page).toHaveURL(/\/vinculos$/); // rota inicial da administração
     // Badge: o número vem da API (mesma sessão do navegador)
     const r = await page.request.get('/api/v1/vinculos/contagem?status=pendente');
     expect(r.status()).toBe(200);
@@ -78,12 +78,12 @@ test.describe.serial('API real: catálogo, badge, busca e unidades', () => {
     await opcao.click();
     await expect(page).toHaveURL(/\/unidades\/[0-9a-f-]{36}$/);
     await expect(page.getByRole('heading', { name: 'Torre 4 · Apartamento 32' })).toBeVisible();
-    await expect(page.getByText('FKR2C41')).toBeVisible(); // veículos já vêm da API
-    await expect(page.getByRole('note', { name: 'Moradores: disponível em breve' })).toBeVisible();
+    await expect(page.getByText('FKR-2C41')).toBeVisible(); // veículos vêm da API (exibidos com hífen, como no mock)
+    await expect(page.getByText('Ana Ribeiro', { exact: true })).toBeVisible(); // moradores (vínculos) vêm da API
     await expect(page.getByRole('note', { name: 'Restrições: disponível em breve' })).toBeVisible();
     await expect(page.getByRole('note', { name: 'Histórico recente de acessos: disponível em breve' })).toBeVisible();
-    // ações de módulos sem API não aparecem (não dariam 501)
-    await expect(page.getByRole('button', { name: 'Solicitar vínculo' })).toHaveCount(0);
+    // ações de módulos sem API não aparecem (não dariam 501); vínculo já tem API
+    await expect(page.getByRole('button', { name: 'Solicitar vínculo' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Nova restrição' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Desativar unidade' })).toBeVisible();
   });

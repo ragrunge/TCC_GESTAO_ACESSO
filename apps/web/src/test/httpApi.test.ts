@@ -1,7 +1,8 @@
 // Adaptador HTTP (axios) com o transporte mockado: um `adapter` de teste no lugar da rede. Cobre o desembrulho dos
 // formatos da API, a conversão de erro em ApiError, o aviso único de sessão expirada e o 429 com Retry-After.
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
-import { createHttpApi, MENSAGEM_MODULO_INDISPONIVEL } from '../api/http/createHttpApi';
+import { createHttpApi, diaParaMs, MENSAGEM_MODULO_INDISPONIVEL, msParaDia } from '../api/http/createHttpApi';
+import { brt } from '@portaria/domain/time';
 import { segundosRetryAfter } from '../api/http/cliente';
 import { ApiError, type EventoSessao } from '../api/types';
 import { deveRepetir } from '../app/queryClient';
@@ -173,10 +174,11 @@ describe('adaptador HTTP (axios)', () => {
     expect(e).toMatchObject({ status: 501, code: 'MODULO_INDISPONIVEL', message: MENSAGEM_MODULO_INDISPONIVEL });
     expect(adapter).not.toHaveBeenCalled();
     expect(api.modo).toBe('http');
-    expect(api.rotasDisponiveis).toEqual(['usuarios', 'unidades']);
+    expect(api.rotasDisponiveis).toEqual(['usuarios', 'unidades', 'cadastro', 'vinculos', 'funcionarios', 'importar']);
     expect(api.suporta!('unidades.criar')).toBe(true);
-    expect(api.suporta!('veiculos.criar')).toBe(false);
-    expect(await esperaErro(api.vinculos.listar())).toMatchObject({ status: 501 });
+    expect(api.suporta!('veiculos.criar')).toBe(true);
+    expect(api.suporta!('autorizacoes.criar')).toBe(false);
+    expect(await esperaErro(api.encomendas.listar())).toMatchObject({ status: 501 });
   });
 });
 
@@ -208,7 +210,7 @@ describe('adaptador HTTP: catálogo, unidades, busca e contagem', () => {
     const d = await api.unidades.detalhe('T4-32');
     expect(adapter.mock.calls[0]![0].url).toBe('/unidades/T4-32');
     expect(d).toMatchObject({ unidade: UN, vinculos: null, autorizacoes: null, restricoes: null, eventos: null });
-    expect(d.veiculos).toHaveLength(1);
+    expect(d.veiculos).toEqual([{ id: 'v1', unidadeId: 'u-432', placa: 'FKR-2C41', modelo: 'Honda Fit', cor: 'prata' }]);
   });
 
   it('CRUD de unidade: POST, PATCH e verbos de transição; erro de regra chega com o código da API', async () => {
@@ -296,5 +298,217 @@ describe('mock cumpre a mesma interface', () => {
     expect((await api.usuarios.redefinirAcesso(r.usuario.id)).senhaTemporaria).toHaveLength(16);
     expect((await esperaErro(api.auth.trocarSenha({ senhaAtual: 'x', novaSenha: 'curta' }))).code).toBe('SENHA_FRACA');
     expect((await api.auth.trocarSenha({ senhaAtual: 'x', novaSenha: 'uma-senha-bem-longa' })).deveTrocarSenha).toBe(false);
+  });
+});
+
+describe('adaptador HTTP: pessoas, funcionários, veículos, vínculos e importação', () => {
+  const corpo = (c: InternalAxiosRequestConfig) => (c.data ? JSON.parse(c.data as string) : undefined);
+  const PESSOA = {
+    id: 'p1', nome: 'Ana Ribeiro', documentoTipo: 'cpf', categoria: 'morador', semCpf: false, documentoMascarado: '***.982.247-**',
+    telefoneMascarado: '(**) *****-0001', anonimizadaEm: null, criadoEm: 1,
+  };
+  const VINCULO = {
+    id: 'v1', pessoaId: 'p1', unidadeId: 'u-432', tipo: 'inquilino', status: 'pendente',
+    vigenciaInicio: '2026-10-01', vigenciaFim: '2027-07-31', prazoRegularizacao: null,
+    conferencia: { tipoDocumento: 'contrato_locacao', data: '2026-10-17', conferidoPorId: 'u-2' },
+    solicitadoPor: 'Paula Nogueira', solicitadoEm: 10, registradoPorId: 'u-2', encerradoEm: null,
+    pessoaNome: 'Ana Ribeiro', pessoaDocumento: '***.982.247-**', pessoaCadastroCompleto: true, unidadeCodigo: 'T4-32',
+    decididoPorNome: null, registradoPorNome: 'Paula Nogueira', conferidoPorNome: 'Paula Nogueira', legadoVencido: false,
+  };
+  const ESCALA = { diasSemana: [1, 2, 3, 4, 5], horaInicio: '22:00', horaFim: '06:00' };
+  const FUNC = { pessoaId: 'p9', funcao: 'Vigia', escala: ESCALA, ativo: true, pessoa: { ...PESSOA, id: 'p9', categoria: 'funcionario' }, emEscalaAgora: true };
+
+  it('datas de calendário: "YYYY-MM-DD" <-> início do dia BRT (ida e volta)', () => {
+    expect(diaParaMs('2026-10-17')).toBe(brt(2026, 10, 17));
+    expect(msParaDia(brt(2026, 10, 17))).toBe('2026-10-17');
+    expect(msParaDia(null)).toBeNull();
+    expect(diaParaMs(null)).toBeNull();
+    expect(() => diaParaMs('17/10/2026')).toThrow();
+  });
+
+  it('pessoas.criar: POST /pessoas só com os campos preenchidos; sem CPF não manda documento', async () => {
+    const { api, adapter } = montar(() => ({ status: 201, data: { data: PESSOA } }));
+    const p = await api.pessoas.criar({ nome: 'Ana', documento: '529.982.247-25', telefone: '(11) 98765-0001', categoria: 'visitante', empresa: ' ' });
+    expect(p).toMatchObject({ id: 'p1', telefoneMascarado: '(**) *****-0001' });
+    expect(corpo(adapter.mock.calls[0]![0])).toEqual({ nome: 'Ana', documento: '529.982.247-25', telefone: '(11) 98765-0001', categoria: 'visitante' });
+    await api.pessoas.criar({ nome: 'Cláudia', documento: '123', telefone: '11987650016', categoria: 'prestador', empresa: 'Autônoma', semCpf: true });
+    expect(corpo(adapter.mock.calls[1]![0])).toEqual({ nome: 'Cláudia', telefone: '11987650016', categoria: 'prestador', empresa: 'Autônoma', semCpf: true });
+  });
+
+  it('pessoas.editar: PATCH /pessoas/:id sem o id e sem chaves indefinidas; 409 vira ApiError', async () => {
+    const { api, adapter } = montar((c) => (corpo(c).documento ? { status: 409, data: { code: 'PESSOA_DUPLICADA', message: 'Já existe cadastro com este CPF.' } } : { status: 200, data: { data: PESSOA } }));
+    await api.pessoas.editar({ id: 'p1', nome: 'Ana R.', telefone: undefined });
+    expect(adapter.mock.calls[0]![0]).toMatchObject({ method: 'patch', url: '/pessoas/p1' });
+    expect(corpo(adapter.mock.calls[0]![0])).toEqual({ nome: 'Ana R.' });
+    expect(await esperaErro(api.pessoas.editar({ id: 'p1', documento: '52998224725' }))).toMatchObject({ status: 409, code: 'PESSOA_DUPLICADA' });
+  });
+
+  it('listarPagina de pessoas: categoria e cursor na query (texto livre nunca na URL)', async () => {
+    const linha = { ...PESSOA, ultimoAcesso: 'Sem acessos', unidadesVinculadas: [], unidadesVinculadasCodigos: [], vinculoPrincipal: null };
+    const { api, adapter } = montar(() => ({ status: 200, data: { data: [linha], pagination: { cursor: null, hasNextPage: false } } }));
+    const p = await api.pessoas.listarPagina({ categoria: 'morador', cursor: 'c1' });
+    expect(p).toMatchObject({ temMais: false, cursor: null, itens: [{ id: 'p1', vinculoPrincipal: null }] });
+    expect(adapter.mock.calls[0]![0]).toMatchObject({ url: '/pessoas', params: { limite: 50, categoria: 'morador', cursor: 'c1' } });
+  });
+
+  it('ficha: vínculos com datas convertidas, funcionário sem a pessoa, eventos null (módulo ainda sem API)', async () => {
+    const { api } = montar(() => ({ status: 200, data: { data: { pessoa: { ...PESSOA, telefone: '11987650001' }, funcionario: null, vinculos: [VINCULO], eventos: null } } }));
+    const f = await api.pessoas.ficha('p1');
+    expect(f.eventos).toBeNull();
+    expect(f.funcionario).toBeUndefined();
+    expect(f.pessoa.telefone).toBe('11987650001');
+    expect(f.vinculos[0]).toMatchObject({ vigenciaInicio: brt(2026, 10, 1), vigenciaFim: brt(2027, 7, 31), prazoRegularizacao: null, conferencia: { data: brt(2026, 10, 17) } });
+  });
+
+  it('pessoas.funcionario: 404 vira null (não é funcionário); outro erro propaga', async () => {
+    const { api } = montar((c) => (c.url === '/funcionarios/p1' ? { status: 404, data: { code: 'FUNCIONARIO_NAO_ENCONTRADO', message: 'x' } }
+      : c.url === '/funcionarios/p9' ? { status: 200, data: { data: FUNC } } : { status: 500, data: {} }));
+    expect(await api.pessoas.funcionario('p1')).toBeNull();
+    expect(await api.pessoas.funcionario('p9')).toEqual({ pessoaId: 'p9', funcao: 'Vigia', escala: ESCALA, ativo: true });
+    expect((await esperaErro(api.pessoas.funcionario('p2'))).status).toBe(500);
+  });
+
+  it('funcionários: listar percorre páginas; criar e editar mandam escala e o corpo certo', async () => {
+    const { api, adapter } = montar((c) => (c.method === 'get'
+      ? { status: 200, data: { data: [FUNC], pagination: { cursor: null, hasNextPage: false } } }
+      : { status: c.method === 'post' ? 201 : 200, data: { data: FUNC } }));
+    const l = await api.funcionarios.listar();
+    expect(l[0]).toMatchObject({ pessoaId: 'p9', emEscalaAgora: true, pessoa: { id: 'p9' } });
+    await api.funcionarios.criar({ nome: 'Nilo', documento: '529.982.247-25', telefone: '11977776666', funcao: 'Vigia', escala: ESCALA });
+    expect(corpo(adapter.mock.calls[1]![0])).toEqual({ nome: 'Nilo', documento: '529.982.247-25', telefone: '11977776666', funcao: 'Vigia', escala: ESCALA });
+    await api.funcionarios.editar({ pessoaId: 'p9', ativo: false });
+    expect(adapter.mock.calls[2]![0]).toMatchObject({ method: 'patch', url: '/funcionarios/p9' });
+    expect(corpo(adapter.mock.calls[2]![0])).toEqual({ ativo: false });
+  });
+
+  it('veículos: criar e editar; placa da API exibida com hífen; 409 de placa vira mensagem', async () => {
+    const VE = { id: 've1', unidadeId: 'u-432', placa: 'ABC1D23', modelo: 'Fit', cor: 'prata', ativo: true };
+    const { api, adapter } = montar((c) => (c.method === 'patch' && corpo(c).placa ? { status: 409, data: { code: 'PLACA_DUPLICADA', message: 'Placa já cadastrada.' } }
+      : { status: c.method === 'post' ? 201 : 200, data: { data: VE } }));
+    expect((await api.veiculos.criar({ unidadeId: 'u-432', placa: 'abc-1d23', modelo: 'Fit', cor: 'prata' })).placa).toBe('ABC-1D23');
+    expect(adapter.mock.calls[0]![0]).toMatchObject({ method: 'post', url: '/veiculos' });
+    await api.veiculos.editar({ id: 've1', ativo: false });
+    expect(corpo(adapter.mock.calls[1]![0])).toEqual({ ativo: false });
+    expect(await esperaErro(api.veiculos.editar({ id: 've1', placa: 'XYZ1234' }))).toMatchObject({ status: 409, message: 'Placa já cadastrada.' });
+  });
+
+  it('vínculos: listarPagina junta os status; criar converte datas; decidir vai para /aprovar ou /rejeitar', async () => {
+    const { api, adapter } = montar((c) => (c.method === 'get'
+      ? { status: 200, data: { data: [VINCULO], pagination: { cursor: 'c2', hasNextPage: true } } }
+      : { status: 200, data: { data: VINCULO } }));
+    const p = await api.vinculos.listarPagina({ status: ['aprovado', 'rejeitado', 'encerrado'], ordem: 'decisao' });
+    expect(p.temMais).toBe(true);
+    expect(adapter.mock.calls[0]![0]).toMatchObject({ url: '/vinculos', params: { limite: 50, status: 'aprovado,rejeitado,encerrado', ordem: 'decisao' } });
+    await api.vinculos.criar({ pessoaId: 'p1', unidadeId: 'u-432', tipo: 'inquilino', vigenciaInicio: brt(2026, 10, 18), vigenciaFim: null, solicitadoPor: '' });
+    expect(corpo(adapter.mock.calls[1]![0])).toEqual({ pessoaId: 'p1', unidadeId: 'u-432', tipo: 'inquilino', vigenciaInicio: '2026-10-18', vigenciaFim: null });
+    await api.vinculos.decidir({ id: 'v1', decisao: 'aprovar', justificativa: 'ignorada' });
+    await api.vinculos.decidir({ id: 'v1', decisao: 'rejeitar', justificativa: 'Comprovante não confere' });
+    expect(adapter.mock.calls[2]![0].url).toBe('/vinculos/v1/aprovar');
+    expect(corpo(adapter.mock.calls[2]![0])).toEqual({});
+    expect(adapter.mock.calls[3]![0].url).toBe('/vinculos/v1/rejeitar');
+    expect(corpo(adapter.mock.calls[3]![0])).toEqual({ justificativa: 'Comprovante não confere' });
+  });
+
+  it('vínculos: conferência, regularizar e encerrar mandam datas como dia; autorizadores pela unidade', async () => {
+    const { api, adapter } = montar((c) => (c.url?.endsWith('/autorizadores')
+      ? { status: 200, data: { data: [{ pessoa: PESSOA, vinculo: { ...VINCULO, status: 'aprovado' } }] } }
+      : { status: c.url?.endsWith('/conferencias') ? 201 : 200, data: { data: VINCULO } }));
+    await api.vinculos.registrarConferencia('v1', { tipo: 'outro', descricao: 'Certidão', data: brt(2026, 10, 16) });
+    expect(corpo(adapter.mock.calls[0]![0])).toEqual({ tipo: 'outro', descricao: 'Certidão', data: '2026-10-16' });
+    await api.vinculos.regularizar('v1');
+    expect(corpo(adapter.mock.calls[1]![0])).toEqual({});
+    await api.vinculos.regularizar('v1', { vigenciaFim: brt(2027, 1, 31) });
+    expect(corpo(adapter.mock.calls[2]![0])).toEqual({ vigenciaFim: '2027-01-31' });
+    await api.vinculos.encerrar('v1', { motivo: 'Locação encerrada pelo proprietário' });
+    expect(adapter.mock.calls[3]![0].url).toBe('/vinculos/v1/encerrar');
+    expect(corpo(adapter.mock.calls[3]![0])).toEqual({ motivo: 'Locação encerrada pelo proprietário' });
+    const a = await api.vinculos.autorizadores('u-432');
+    expect(adapter.mock.calls[4]![0]).toMatchObject({ method: 'get', url: '/unidades/u-432/autorizadores' });
+    expect(a[0]).toMatchObject({ pessoa: { id: 'p1' }, vinculo: { status: 'aprovado', vigenciaFim: brt(2027, 7, 31) } });
+  });
+
+  it('detalhe da unidade: vínculos vêm da API (datas convertidas)', async () => {
+    const UN = { id: 'u-432', torre: 4, numero: '32', ativo: true };
+    const { api } = montar(() => ({ status: 200, data: { data: { unidade: UN, veiculos: [], vinculos: [VINCULO] } } }));
+    const d = await api.unidades.detalhe('u-432');
+    expect(d.vinculos).toHaveLength(1);
+    expect(d.vinculos![0]!.vigenciaInicio).toBe(brt(2026, 10, 1));
+    expect(d.autorizacoes).toBeNull();
+  });
+
+  it('importação: confirmar reenvia as linhas do analisar (a API não as guarda); sem análise nesta aba é 404 local', async () => {
+    const linhas = [{ linha: 2, torre: '4', unidade: '32', nome: 'Ana', documento: '52998224725', telefone: '11987650001', tipo: 'proprietario' }];
+    const { api, adapter } = montar((c) => (c.url === '/importacoes'
+      ? { status: 201, data: { data: { id: 'imp1', arquivo: 'a.csv', status: 'analisada', lidas: 1, importaveis: 1, rejeitadas: 0, avisos: 0, inconsistencias: [], amostra: [], prazoRegularizacao: '2027-01-16' } } }
+      : { status: 200, data: { data: { importados: 1, reaproveitados: 0, prazoRegularizacao: '2027-01-16' } } }));
+    const rel = await api.importacao.analisar({ arquivo: 'a.csv', linhas });
+    expect(rel.prazoRegularizacao).toBe(brt(2027, 1, 16));
+    expect(corpo(adapter.mock.calls[0]![0])).toEqual({ arquivo: 'a.csv', linhas });
+    expect(await api.importacao.confirmar('imp1')).toEqual({ importados: 1, reaproveitados: 0, prazoRegularizacao: brt(2027, 1, 16) });
+    expect(adapter.mock.calls[1]![0]).toMatchObject({ method: 'post', url: '/importacoes/imp1/confirmar' });
+    expect(corpo(adapter.mock.calls[1]![0])).toEqual({ linhas });
+    // Já confirmada (linhas descartadas) ou outra aba: não vai à rede
+    expect(await esperaErro(api.importacao.confirmar('imp1'))).toMatchObject({ status: 404, code: 'IMPORTACAO_NAO_ENCONTRADA' });
+    expect(adapter).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('mock: operações novas do lote de pessoas e vínculos (mesmo contrato da API)', () => {
+  it('pessoas.listarPagina e vinculos.listarPagina percorrem tudo sem repetir; categoria e status filtram', async () => {
+    const { novaApi, entrarComo } = await import('./helpers');
+    const api = novaApi();
+    await entrarComo(api, 'paula.nogueira');
+    const vistos: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const p = await api.pessoas.listarPagina({ limite: 5, cursor });
+      vistos.push(...p.itens.map((x) => x.id));
+      cursor = p.cursor;
+    } while (cursor);
+    expect(new Set(vistos).size).toBe((await api.pessoas.listar()).length);
+    const moradores = await api.pessoas.listarPagina({ categoria: 'morador', limite: 100 });
+    expect(moradores.itens.every((p) => p.categoria === 'morador')).toBe(true);
+    expect(moradores.itens.find((p) => p.nome === 'Ana Ribeiro')?.vinculoPrincipal).toMatchObject({ status: 'aprovado', unidadeCodigo: 'T4-32' });
+    const legados = await api.vinculos.listarPagina({ status: ['legado'], ordem: 'prazo', limite: 100 });
+    const nLegados = await api.vinculos.contar('legado');
+    expect(legados.itens.length).toBe(Math.min(100, nLegados));
+    expect(legados.temMais).toBe(nLegados > 100);
+    // ordem 'prazo': não decrescente
+    const prazos = legados.itens.map((v) => v.prazoRegularizacao!);
+    expect([...prazos].sort((x, y) => x - y)).toEqual(prazos);
+    const decididos = await api.vinculos.listarPagina({ status: ['aprovado', 'rejeitado'], ordem: 'decisao', limite: 100 });
+    expect(decididos.itens.every((v) => v.status === 'aprovado' || v.status === 'rejeitado')).toBe(true);
+  });
+
+  it('encerrar (RF-07): só aprovado ou legado, motivo >= 15, data não futura; depois é final', async () => {
+    const { novaApi, entrarComo, esperaErro: erro } = await import('./helpers');
+    const api = novaApi();
+    await entrarComo(api, 'paula.nogueira');
+    const todos = await api.vinculos.listar();
+    const aprovado = todos.find((v) => v.status === 'aprovado')!;
+    const pendente = todos.find((v) => v.status === 'pendente')!;
+    expect((await erro(api.vinculos.encerrar(pendente.id, { motivo: 'Motivo suficientemente longo' }))).code).toBe('VINCULO_NAO_ENCERRAVEL');
+    expect((await erro(api.vinculos.encerrar(aprovado.id, { motivo: 'curto' }))).code).toBe('MOTIVO_OBRIGATORIO');
+    expect((await erro(api.vinculos.encerrar(aprovado.id, { motivo: 'Motivo suficientemente longo', data: Date.now() + 400 * 86_400_000 }))).code).toBe('DATA_FUTURA');
+    const v = await api.vinculos.encerrar(aprovado.id, { motivo: 'Mudou-se do condomínio em outubro' });
+    expect(v).toMatchObject({ status: 'encerrado', justificativa: 'Mudou-se do condomínio em outubro' });
+    expect(v.encerradoEm).not.toBeNull();
+    expect((await erro(api.vinculos.encerrar(aprovado.id, { motivo: 'Motivo suficientemente longo' }))).code).toBe('VINCULO_NAO_ENCERRAVEL');
+    expect((await erro(api.pessoas.listar().then(() => api.vinculos.encerrar('nao-existe', { motivo: 'Motivo suficientemente longo' })))).status).toBe(404);
+  });
+
+  it('veiculos.editar: formato e unicidade da placa ativa; desativado sai do detalhe e libera a placa', async () => {
+    const { novaApi, entrarComo, esperaErro: erro, un } = await import('./helpers');
+    const api = novaApi();
+    await entrarComo(api, 'paula.nogueira');
+    const [a, b] = (await api.unidades.detalhe(un('T4-32'))).veiculos;
+    expect((await erro(api.veiculos.editar({ id: a!.id, placa: 'XX' }))).code).toBe('PLACA_INVALIDA');
+    expect((await erro(api.veiculos.editar({ id: a!.id, placa: b!.placa }))).code).toBe('PLACA_DUPLICADA');
+    expect((await api.veiculos.editar({ id: a!.id, cor: 'azul' })).cor).toBe('azul');
+    await api.veiculos.editar({ id: b!.id, ativo: false });
+    const ids = (await api.unidades.detalhe(un('T4-32'))).veiculos.map((v) => v.id);
+    expect(ids).toContain(a!.id);
+    expect(ids).not.toContain(b!.id);
+    expect((await api.veiculos.editar({ id: a!.id, placa: b!.placa })).placa).toBe(b!.placa);
   });
 });
