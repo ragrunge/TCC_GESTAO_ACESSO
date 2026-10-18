@@ -663,21 +663,24 @@ Respostas da API saem com `Cache-Control: no-store`.
 | POST | /pessoas/busca | SI, AD, PO, AU | RF-02, RF-18. `{ q, limite?, semMoradores? }` -> `{ pessoas, temMais }`. POST com o termo no corpo, não `GET ?busca=`: o termo pode ser CPF, e a query string fica nos logs de proxy e da borda da Vercel, fora do controle da API |
 | POST | /busca | SI, AD, PO, AU | RF-34: busca do topo (`{ q }` -> `{ pessoas, unidades: [{ id, motivo }], temMaisPessoas }`), por nome, CPF, unidade ou placa |
 | GET | /vinculos/contagem?status= | SI, AD, AU | badge de vínculos pendentes (`{ status, total }`) |
-| POST/PATCH | /pessoas | SI, AD; PO só visitante/prestador | RF-02, RF-18 |
+| POST/PATCH | /pessoas | SI, AD; PO só visitante/prestador (PATCH: SI, AD) | RF-02, RF-18. 409 `PESSOA_DUPLICADA` (HMAC do CPF); a resposta nunca traz `documento_busca`, e o telefone completo só sai para SI/AD |
+| GET | /pessoas?categoria=&limite=&cursor=, /pessoas/:id | SI, AD, PO, AU | RF-02: lista paginada (nome + id, sem filtro de texto na URL: a busca é o POST acima) e ficha (vínculos; eventos `null` até o módulo M2) |
 | POST | /vinculos | SI, AD | RF-03, RF-04 |
-| GET | /vinculos?status=&unidade_id= | SI, AD, AU | RF-03 |
+| GET | /vinculos?status=a,b&unidadeId=&pessoaId=&ordem=recentes\|decisao\|prazo, /vinculos/:id | SI, AD, AU | RF-03 (ordem `prazo` põe os legados vencidos primeiro) |
 | POST | /vinculos/:id/conferencias | SI, AD | RF-05 (tipo do documento e data; o conferente é o usuário autenticado; não recebe arquivo) |
 | POST | /vinculos/:id/aprovar | SI, AD | RF-06, RN-02, RN-03 |
 | POST | /vinculos/:id/rejeitar | SI, AD | RF-06 (justificativa obrigatória) |
-| POST | /vinculos/:id/encerrar | SI, AD | RF-07 |
+| POST | /vinculos/:id/encerrar | SI, AD | RF-07, encerramento manual: `{ motivo (15+), data? }`; só aprovado ou legado |
+| POST | /vinculos/:id/regularizar | SI, AD | RN-09 (legado -> aprovado, exige conferência e cadastro completo) |
+| GET | /unidades/:id/autorizadores | SI, AD, PO, AU | moradores com vínculo válido (base do registro de acesso) |
 | GET | /documentos/:id/conteudo | SI, AD | RF-27, RN-10 (foto ou anexo de ocorrência; descriptografa sob demanda; acesso registrado) |
-| GET/POST/PATCH | /veiculos | SI, AD (GET: todos) | RF-08 |
+| POST/PATCH | /veiculos | SI, AD | RF-08 (a leitura vem no detalhe da unidade; placa ativa única, 409 `PLACA_DUPLICADA`) |
 | GET/POST/PATCH | /funcionarios | SI, AD (GET: PO) | RF-09 |
 | GET/POST/PATCH | /pontos-acesso | SI, AD | base de RF-10 |
 | GET/POST/PATCH | /dispositivos | SI, AD (fase 3) | RF-10 |
 | PUT | /dispositivos/:id/habilitacoes | SI, AD (fase 3) | RF-10 |
-| POST | /importacoes/planilha | SI, AD | RF-11 |
-| GET | /importacoes/:id/relatorio | SI, AD | RF-11 |
+| POST | /importacoes | SI, AD | RF-11: `{ arquivo, linhas }` -> relatório de inconsistências. As linhas (CPF em claro) não são guardadas: `arquivo_sha256` guarda o HMAC delas |
+| POST | /importacoes/:id/confirmar | SI, AD | RF-11, RN-09: o cliente reenvia as linhas; a API confere o HMAC (409 `IMPORTACAO_DIVERGENTE`) e cria os legados |
 
 ### 6.3 M2 — Controle de acesso
 
@@ -983,8 +986,8 @@ ao menos um documento ou telefone.
 
 | Etapa | Ação |
 |---|---|
-| 1. Upload | `POST /importacoes/planilha` (multipart); limite de tamanho (ex.: 5 MiB); arquivo guardado cifrado e removido após o processamento do relatório, conforme retenção |
-| 2. Pré-análise (dry-run) | Valida sem gravar e devolve o relatório; só após a revisão, `POST /importacoes/:id/confirmar` grava |
+| 1. Leitura e envio | O navegador lê o .csv/.xlsx e manda as linhas em JSON (`POST /importacoes`, até 3.000 linhas, corpo de até 1 MB). O arquivo não sobe nem é guardado; as linhas também não (só o HMAC delas em `arquivo_sha256`) |
+| 2. Pré-análise (dry-run) | Valida e grava só o relatório (`importacao` analisada e `importacao_inconsistencia`), sem pessoa nem vínculo; só após a revisão, `POST /importacoes/:id/confirmar` (com as mesmas linhas) grava, reprocessando contra o banco do momento |
 | 3. Normalização | Torre e número em formato canônico; nome com trim; telefone só dígitos; documento sem pontuação |
 | 4. Validação | Regras da tabela 8.2 |
 | 5. Gravação | Em transação única por lote: cria `unidade` (se ausente, a critério de configuração), `pessoa` e `vinculo_unidade` |
