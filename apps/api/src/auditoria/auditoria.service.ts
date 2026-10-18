@@ -47,10 +47,20 @@ export const ipOuNulo = (ip: string | null | undefined) => (ip && isIP(ip) ? ip 
 @Injectable()
 export class AuditoriaService {
   async registrar(exec: Executor, e: EntradaAuditoria): Promise<void> {
+    await exec.insert(auditLog).values(this.linha(e));
+  }
+
+  /** Várias linhas num INSERT só (importação da planilha: centenas de pessoas e vínculos na mesma transação). */
+  async registrarVarios(exec: Executor, es: EntradaAuditoria[], lote = 500): Promise<void> {
+    const linhas = es.map((e) => this.linha(e)); // valida tudo antes do primeiro INSERT
+    for (let i = 0; i < linhas.length; i += lote) await exec.insert(auditLog).values(linhas.slice(i, i + lote));
+  }
+
+  private linha(e: EntradaAuditoria) {
     if (!ACAO.test(e.acao)) throw new Error(`ação de auditoria fora do formato entidade.acao: ${e.acao}`);
     if (e.registroId && !UUID.test(e.registroId)) throw new Error('registroId da auditoria precisa ser uuid');
     const nome = e.ator?.nome ?? mascararDigitos((e.nomeInformado ?? '').trim()).slice(0, 100);
-    await exec.insert(auditLog).values({
+    return {
       usuarioId: e.ator?.id ?? null,
       usuarioPapel: e.ator?.papel ?? null,
       usuarioNome: nome || '(vazio)',
@@ -60,7 +70,7 @@ export class AuditoriaService {
       antes: snapshot(e.antes),
       depois: snapshot(e.depois),
       ip: ipOuNulo(e.ip),
-    });
+    };
   }
 }
 

@@ -19,6 +19,7 @@ import {
   areaComum, autorizacaoPrevia, encomenda, eventoAcesso, ocorrencia, pontoAcesso, restricao, unidade, veiculo, vinculoUnidade,
 } from '../db/schema';
 import { vinculoValidoSql } from '../vinculos/vinculo-valido';
+import { carregarVinculos } from '../vinculos/vinculo-view';
 
 export interface UnidadeApi { id: string; torre: number; numero: string; ativo: boolean }
 export interface UnidadeCatalogo extends UnidadeApi { codigo: string; rotulo: string }
@@ -112,14 +113,18 @@ export class UnidadesService {
   }
 
   /**
-   * Detalhe da unidade. Só o que já tem módulo na API: a unidade e os veículos ativos. Vínculos completos, autorizações,
-   * restrições e eventos chegam com os respectivos módulos (o front mostra "disponível em breve" por seção).
+   * Detalhe da unidade. Só o que já tem módulo na API: a unidade, os vínculos (todos os status, como o mock) e os
+   * veículos ativos. Autorizações, restrições e eventos chegam com os respectivos módulos (o front mostra "disponível em
+   * breve" por seção).
    */
   async detalhe(ref: string) {
     const u = await this.porReferencia(ref);
-    const veiculos = await this.db.select({ id: veiculo.id, unidadeId: veiculo.unidadeId, placa: veiculo.placa, modelo: veiculo.modelo, cor: veiculo.cor })
-      .from(veiculo).where(and(eq(veiculo.unidadeId, u.id), eq(veiculo.ativo, true))).orderBy(asc(veiculo.placa));
-    return { unidade: u, veiculos };
+    const [veiculos, vinculos] = await Promise.all([
+      this.db.select({ id: veiculo.id, unidadeId: veiculo.unidadeId, placa: veiculo.placa, modelo: veiculo.modelo, cor: veiculo.cor, ativo: veiculo.ativo })
+        .from(veiculo).where(and(eq(veiculo.unidadeId, u.id), eq(veiculo.ativo, true))).orderBy(asc(veiculo.placa)),
+      carregarVinculos(this.db, eq(vinculoUnidade.unidadeId, u.id), diaBrt(this.relogio.agora())),
+    ]);
+    return { unidade: u, veiculos, vinculos };
   }
 
   private validar(torre: number, numero: string) {

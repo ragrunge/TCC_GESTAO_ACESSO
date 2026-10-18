@@ -51,6 +51,9 @@ const escaparLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 const SEM_CPF = '(sem CPF)';
 
+/** Nome sem acento e minúsculo no SQL (mesma normalização de `normalizar`). */
+export const nomeSemAcentoSql = (col: SQL | typeof pessoa.nome = pessoa.nome): SQL => sql`translate(lower(${col}), ${COM_ACENTO}, ${SEM_ACENTO})`;
+
 @Injectable()
 export class BuscaService {
   constructor(
@@ -61,7 +64,7 @@ export class BuscaService {
 
   /** Nome normalizado no SQL. Calculado por linha (sem índice): com milhares de pessoas a varredura custa milissegundos. */
   private nomeNormalizado(): SQL {
-    return sql`translate(lower(${pessoa.nome}), ${COM_ACENTO}, ${SEM_ACENTO})`;
+    return nomeSemAcentoSql();
   }
 
   async pessoas(q: string, o: { limite: number; semMoradores?: boolean }): Promise<ResultadoBusca> {
@@ -151,7 +154,7 @@ export class BuscaService {
   }
 
   /** Unidades com vínculo válido de cada pessoa (uma consulta para a página toda, sem N+1). */
-  private async unidadesValidas(ids: string[], hoje: string) {
+  async unidadesValidas(ids: string[], hoje: string) {
     const mapa = new Map<string, { id: string; torre: number; numero: string }[]>();
     if (!ids.length) return mapa;
     const linhas = await this.db.select({ pessoaId: vinculoUnidade.pessoaId, id: unidade.id, torre: unidade.torre, numero: unidade.numero })
@@ -167,7 +170,7 @@ export class BuscaService {
    * Limitação conhecida: usa os valores gravados no evento, não os efetivos depois de uma correção (o módulo de
    * registro de acesso traz a view de valores efetivos).
    */
-  private async ultimosAcessos(ids: string[]) {
+  async ultimosAcessos(ids: string[]) {
     type Ultimo = { tipo: string; ocorridoEm: Date; torre: number | null; numero: string | null; area: string | null };
     const mapa = new Map<string, Ultimo>();
     if (!ids.length) return mapa;
@@ -184,7 +187,7 @@ export class BuscaService {
   }
 
   /** "Hoje 14:32 · T4-32", "08/10 · Salão de festas (negado)" ou "Sem acessos" (mesmo texto do mock). */
-  private textoUltimoAcesso(u: { tipo: string; ocorridoEm: Date; torre: number | null; numero: string | null; area: string | null } | undefined, agora: Date) {
+  textoUltimoAcesso(u: { tipo: string; ocorridoEm: Date; torre: number | null; numero: string | null; area: string | null } | undefined, agora: Date) {
     if (!u) return 'Sem acessos';
     const t = u.ocorridoEm.getTime();
     const quando = fmtData(agora.getTime()) === fmtData(t) ? `Hoje ${fmtHora(t)}` : fmtData(t).slice(0, 5);

@@ -10,6 +10,8 @@ export function configurarApp(app: NestExpressApplication, config: Config) {
   // entrada do cliente e o limite de login por IP viraria opcional para quem forja o cabeçalho.
   app.set('trust proxy', config.trustProxy);
   app.disable('x-powered-by');
+  // JSON até 1 MB: a planilha de importação (RF-11) chega a ~3000 linhas. O resto da API manda corpos de poucos KB.
+  app.useBodyParser('json', { limit: '1mb' });
   app.use(logDeRequisicao);
   app.use((_req: Request, res: Response, next: NextFunction) => {
     // Respostas da API carregam dado pessoal e, na redefinição, a senha temporária: nada em cache.

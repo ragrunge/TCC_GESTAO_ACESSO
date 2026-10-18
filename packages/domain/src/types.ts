@@ -42,6 +42,8 @@ export interface Pessoa {
   semCpf?: boolean;
   /** Só dígitos, com DDD (10 ou 11). Ausente apenas em importado (legado) ou anonimizado. */
   telefone?: string;
+  /** API real: '(**) *****-1234' nas listas e para quem não pode editar o cadastro (o telefone completo não vem). */
+  telefoneMascarado?: string;
   categoria: CategoriaPessoa;
   empresa?: string;
   servico?: string;
@@ -115,7 +117,7 @@ export interface VinculoUnidade {
   encerradoEm: number | null;
 }
 
-export interface Veiculo { id: string; unidadeId: string; placa: string; modelo: string; cor: string }
+export interface Veiculo { id: string; unidadeId: string; placa: string; modelo: string; cor: string; /** Ausente = ativo (mock). */ ativo?: boolean }
 
 export interface AutorizacaoPrevia {
   id: string;
