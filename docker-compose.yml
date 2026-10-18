@@ -67,6 +67,11 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:?defina TRUST_PROXY (false ou número de proxies) no .env}
       SESSAO_ABSOLUTA_MIN: ${SESSAO_ABSOLUTA_MIN:?defina SESSAO_ABSOLUTA_MIN no .env}
       SESSAO_INATIVIDADE_MIN: ${SESSAO_INATIVIDADE_MIN:?defina SESSAO_INATIVIDADE_MIN no .env}
+      # Limite de login (spec §5.1). Vazio = padrão da API: 10 por login, 30 por IP, janela e bloqueio de 15 min.
+      LOGIN_MAX_FALHAS_LOGIN: ${LOGIN_MAX_FALHAS_LOGIN:-}
+      LOGIN_MAX_FALHAS_IP: ${LOGIN_MAX_FALHAS_IP:-}
+      LOGIN_JANELA_MIN: ${LOGIN_JANELA_MIN:-}
+      LOGIN_BLOQUEIO_MIN: ${LOGIN_BLOQUEIO_MIN:-}
       PORTARIA_HMAC_CPF_KEY: ${PORTARIA_HMAC_CPF_KEY:?defina PORTARIA_HMAC_CPF_KEY no .env}
       PORTARIA_KEK: ${PORTARIA_KEK:?defina PORTARIA_KEK no .env}
       PORTARIA_KEK_VERSAO: ${PORTARIA_KEK_VERSAO:?defina PORTARIA_KEK_VERSAO no .env}

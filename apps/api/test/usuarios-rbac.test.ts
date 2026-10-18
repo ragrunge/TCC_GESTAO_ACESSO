@@ -4,6 +4,7 @@ import { MATRIZ, pode } from '@portaria/domain/rbac';
 import type { Papel } from '@portaria/domain/types';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PADROES_LOGIN } from '../src/config/config';
 import * as s from '../src/db/schema';
 import { type ApiDeTeste, LOGINS, novaApi, type PapelTeste, SENHA, trilha } from './helpers/app';
 
@@ -158,8 +159,8 @@ describe('usuários: gestão, síndico protegido, sessões revogadas', () => {
 
   it('redefinir senha: derruba as sessões do alvo, exige troca e desbloqueia o login', async () => {
     const alvo = await api.como('porteiro');
-    for (let i = 0; i < 5; i++) await api.http().post('/api/v1/auth/login').set('X-Forwarded-For', `198.51.100.${i}`).send({ login: LOGINS.porteiro, senha: 'x' });
-    expect((await api.http().post('/api/v1/auth/login').set('X-Forwarded-For', '198.51.100.9').send({ login: LOGINS.porteiro, senha: SENHA })).status).toBe(429);
+    for (let i = 0; i < PADROES_LOGIN.maxFalhasLogin; i++) await api.http().post('/api/v1/auth/login').set('X-Forwarded-For', `198.51.100.${i}`).send({ login: LOGINS.porteiro, senha: 'x' });
+    expect((await api.http().post('/api/v1/auth/login').set('X-Forwarded-For', '198.51.100.99').send({ login: LOGINS.porteiro, senha: SENHA })).status).toBe(429);
 
     const { cookie } = await api.como('administracao');
     const r = await api.http().post(`/api/v1/usuarios/${api.usuarios[LOGINS.porteiro]!.id}/redefinir-senha`).set('Cookie', cookie);

@@ -67,7 +67,10 @@ describe('config do ambiente (falha no boot em vez de default silencioso)', () =
     const c = carregarConfig(base);
     expect(c.cookie).toEqual({ secure: false, nome: 'portaria_sessao' });
     expect(c.sessao).toMatchObject({ absolutaMin: 720, inatividadeMin: 30 });
-    expect(c.login).toMatchObject({ maxFalhasLogin: 5, janelaMin: 15, bloqueioMin: 15 });
+    expect(c.login).toMatchObject({ maxFalhasLogin: 10, maxFalhasIp: 30, janelaMin: 15, bloqueioMin: 15 });
+    expect(carregarConfig({ ...base, LOGIN_MAX_FALHAS_LOGIN: '', LOGIN_MAX_FALHAS_IP: ' ' }).login).toMatchObject({ maxFalhasLogin: 10, maxFalhasIp: 30 });
+    expect(carregarConfig({ ...base, LOGIN_MAX_FALHAS_LOGIN: '8', LOGIN_MAX_FALHAS_IP: '40', LOGIN_JANELA_MIN: '20', LOGIN_BLOQUEIO_MIN: '30' }).login)
+      .toMatchObject({ maxFalhasLogin: 8, maxFalhasIp: 40, janelaMin: 20, bloqueioMin: 30, atrasoBaseMs: 250 });
     expect(c.argon2).toMatchObject({ memoriaKib: 65536, iteracoes: 3, paralelismo: 1 });
     expect(carregarConfig({ ...base, COOKIE_SECURE: 'true' }).cookie.nome).toBe('__Host-portaria_sessao');
   });
@@ -76,6 +79,11 @@ describe('config do ambiente (falha no boot em vez de default silencioso)', () =
     [{ COOKIE_SECURE: 'FALSE' }, /COOKIE_SECURE/],
     [{ PORTARIA_AMBIENTE: 'producao' }, /não é permitido/],
     [{ TRUST_PROXY: 'true' }, /TRUST_PROXY/],
+    [{ LOGIN_MAX_FALHAS_LOGIN: '2' }, /LOGIN_MAX_FALHAS_LOGIN/],
+    [{ LOGIN_MAX_FALHAS_LOGIN: '10.5' }, /LOGIN_MAX_FALHAS_LOGIN/],
+    [{ LOGIN_MAX_FALHAS_IP: '1000' }, /LOGIN_MAX_FALHAS_IP/],
+    [{ LOGIN_JANELA_MIN: '0' }, /LOGIN_JANELA_MIN/],
+    [{ LOGIN_BLOQUEIO_MIN: 'quinze' }, /LOGIN_BLOQUEIO_MIN/],
     [{ CORS_ORIGENS: 'https://tccgestaoacesso.vercel.app/' }, /origem exata/],
     [{ CORS_ORIGENS: '*' }, /CORS_ORIGENS/],
     [{ SESSAO_INATIVIDADE_MIN: '800' }, /não pode passar/],

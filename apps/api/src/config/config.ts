@@ -29,9 +29,14 @@ export interface Config {
   hmacCpfKey: Buffer;
 }
 
-/** Valores da spec §5.1 que não vêm do ambiente (mudam com código + revisão, não com uma variável esquecida). */
+/**
+ * Padrões da spec §5.1 (§14 nº 27): 10 falhas por login e 30 por IP numa janela de 15 min bloqueiam por 15 min.
+ * O IP é mais folgado porque a guarita sai por um único IP (NAT) e vários operadores dividem o contador; o limite que
+ * protege cada conta é o por login. Os quatro números são ajustáveis por ambiente (LOGIN_MAX_FALHAS_LOGIN,
+ * LOGIN_MAX_FALHAS_IP, LOGIN_JANELA_MIN, LOGIN_BLOQUEIO_MIN); vazio ou ausente usa o padrão. O atraso crescente não.
+ */
 export const PADROES_LOGIN: Config['login'] = {
-  maxFalhasLogin: 5, maxFalhasIp: 5, janelaMin: 15, bloqueioMin: 15, atrasoBaseMs: 250, atrasoMaxMs: 3000,
+  maxFalhasLogin: 10, maxFalhasIp: 30, janelaMin: 15, bloqueioMin: 15, atrasoBaseMs: 250, atrasoMaxMs: 3000,
 };
 export const PADROES_ARGON2: Config['argon2'] = { memoriaKib: 64 * 1024, iteracoes: 3, paralelismo: 1, concorrencia: 2, filaMax: 50 };
 
@@ -96,7 +101,14 @@ export function carregarConfig(env: NodeJS.ProcessEnv = process.env): Config {
     corsOrigens,
     cookie: { secure, nome: nomeCookie(secure) },
     sessao: { absolutaMin, inatividadeMin, toqueSeg: 60 },
-    login: { ...PADROES_LOGIN },
+    login: {
+      ...PADROES_LOGIN,
+      // Faixas: abaixo do mínimo o erro de digitação bloqueia a guarita; acima do máximo o limite deixa de proteger.
+      maxFalhasLogin: inteiro(env, 'LOGIN_MAX_FALHAS_LOGIN', PADROES_LOGIN.maxFalhasLogin, 3, 50),
+      maxFalhasIp: inteiro(env, 'LOGIN_MAX_FALHAS_IP', PADROES_LOGIN.maxFalhasIp, 3, 500),
+      janelaMin: inteiro(env, 'LOGIN_JANELA_MIN', PADROES_LOGIN.janelaMin, 1, 24 * 60),
+      bloqueioMin: inteiro(env, 'LOGIN_BLOQUEIO_MIN', PADROES_LOGIN.bloqueioMin, 1, 24 * 60),
+    },
     argon2: { ...PADROES_ARGON2 },
     hmacCpfKey,
   };

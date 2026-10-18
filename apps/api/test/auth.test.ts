@@ -2,6 +2,7 @@
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as s from '../src/db/schema';
+import { PADROES_LOGIN } from '../src/config/config';
 import { type ApiDeTeste, LOGINS, novaApi, novoIp, SENHA, trilha } from './helpers/app';
 
 const LOGIN = '/api/v1/auth/login';
@@ -126,13 +127,20 @@ describe('auth: login, cookie, sessão e logout', () => {
   });
 });
 
-describe('auth: limite de tentativas (5 em 15 min, por login e por IP)', () => {
+describe('auth: limite de tentativas (padrão: 10 por login e 30 por IP em 15 min)', () => {
   let api: ApiDeTeste;
+  const L = PADROES_LOGIN.maxFalhasLogin;
+  const IP = PADROES_LOGIN.maxFalhasIp;
   beforeAll(async () => { api = await novaApi(); });
   afterAll(async () => { await api.app.close(); await api.client.close(); });
 
-  it('5 falhas no mesmo login (de IPs diferentes) bloqueiam até com a senha certa; libera após 15 min', async () => {
-    for (let i = 0; i < 5; i++) {
+  it('os padrões são os da spec §14 nº 27 (10 por login, 30 por IP, janela e bloqueio de 15 min)', () => {
+    expect(PADROES_LOGIN).toMatchObject({ maxFalhasLogin: 10, maxFalhasIp: 30, janelaMin: 15, bloqueioMin: 15 });
+    expect(api.config.login).toMatchObject({ maxFalhasLogin: 10, maxFalhasIp: 30 });
+  });
+
+  it(`${L} falhas no mesmo login (de IPs diferentes) bloqueiam até com a senha certa; libera após 15 min`, async () => {
+    for (let i = 0; i < L; i++) {
       const r = await api.http().post(LOGIN).set('X-Forwarded-For', novoIp()).send({ login: LOGINS.porteiro, senha: `errada-${i}` });
       expect(r.status).toBe(401);
     }
@@ -142,21 +150,35 @@ describe('auth: limite de tentativas (5 em 15 min, por login e por IP)', () => {
     expect(Number(bloqueado.headers['retry-after'])).toBeGreaterThan(0);
     const bloqueios = await trilha(api, 'auth.bloqueio');
     expect(bloqueios.length).toBe(1);
-    expect(bloqueios[0]!.depois).toMatchObject({ tipo: 'login', falhas: 5 });
+    expect(bloqueios[0]!.depois).toMatchObject({ tipo: 'login', falhas: L });
 
     api.relogio.avancarMin(15);
     await api.entrar(LOGINS.porteiro); // lança se não for 200
   });
 
+  it(`${L - 1} falhas não bloqueiam o login`, async () => {
+    for (let i = 0; i < L - 1; i++) await api.http().post(LOGIN).set('X-Forwarded-For', novoIp()).send({ login: LOGINS.auditor, senha: 'x' });
+    await api.entrar(LOGINS.auditor);
+  });
+
   it('login inexistente bloqueia igual (sem enumeração pelo comportamento do bloqueio)', async () => {
-    for (let i = 0; i < 5; i++) await api.http().post(LOGIN).set('X-Forwarded-For', novoIp()).send({ login: 'nao.existe', senha: 'x' });
+    for (let i = 0; i < L; i++) await api.http().post(LOGIN).set('X-Forwarded-For', novoIp()).send({ login: 'nao.existe', senha: 'x' });
     const r = await api.http().post(LOGIN).set('X-Forwarded-For', novoIp()).send({ login: 'nao.existe', senha: 'x' });
     expect(r.status).toBe(429);
   });
 
-  it('5 falhas do mesmo IP (logins variados) bloqueiam o IP, inclusive para um login válido', async () => {
+  it(`guarita atrás de NAT: ${IP - 1} falhas de operadores diferentes no mesmo IP não bloqueiam quem acerta a senha`, async () => {
+    const ip = '203.0.113.20';
+    // Erros de digitação espalhados por vários logins (nenhum chega ao limite por login), todos pelo mesmo IP.
+    for (let i = 0; i < IP - 1; i++) {
+      expect((await api.http().post(LOGIN).set('X-Forwarded-For', ip).send({ login: `operador.${i % 5}`, senha: 'x' })).status).toBe(401);
+    }
+    await api.entrar(LOGINS.auditor, SENHA, ip); // o sucesso desfaz só a própria reserva no contador do IP
+  });
+
+  it(`${IP} falhas do mesmo IP (logins variados) bloqueiam o IP, inclusive para um login válido`, async () => {
     const ip = '203.0.113.7';
-    for (let i = 0; i < 5; i++) await api.http().post(LOGIN).set('X-Forwarded-For', ip).send({ login: `spray.${i}`, senha: 'x' });
+    for (let i = 0; i < IP; i++) await api.http().post(LOGIN).set('X-Forwarded-For', ip).send({ login: `spray.${i}`, senha: 'x' });
     const r = await api.http().post(LOGIN).set('X-Forwarded-For', ip).send({ login: LOGINS.auditor, senha: SENHA });
     expect(r.status).toBe(429);
     // Outro IP entra normalmente
@@ -164,21 +186,39 @@ describe('auth: limite de tentativas (5 em 15 min, por login e por IP)', () => {
   });
 
   it('sucesso zera o contador do login (falhas antigas não somam com as novas)', async () => {
-    for (let i = 0; i < 4; i++) await api.http().post(LOGIN).set('X-Forwarded-For', novoIp()).send({ login: LOGINS.sindico, senha: 'x' });
+    for (let i = 0; i < L - 1; i++) await api.http().post(LOGIN).set('X-Forwarded-For', novoIp()).send({ login: LOGINS.sindico, senha: 'x' });
     await api.entrar(LOGINS.sindico);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < L - 1; i++) {
       expect((await api.http().post(LOGIN).set('X-Forwarded-For', novoIp()).send({ login: LOGINS.sindico, senha: 'x' })).status).toBe(401);
     }
     await api.entrar(LOGINS.sindico);
   });
 
-  it('rajada paralela: no máximo 5 senhas verificadas por login, o resto bloqueado sem verificar', async () => {
+  it(`rajada paralela: no máximo ${L} senhas verificadas por login, o resto bloqueado sem verificar`, async () => {
     const antes = (await trilha(api, 'auth.login_falha')).length;
-    const rs = await Promise.all(Array.from({ length: 12 }, (_, i) =>
+    const total = L + 7;
+    const rs = await Promise.all(Array.from({ length: total }, (_, i) =>
       api.http().post(LOGIN).set('X-Forwarded-For', novoIp()).send({ login: LOGINS.administracao, senha: `paralela-${i}` })));
-    expect(rs.filter((r) => r.status === 401).length).toBeLessThanOrEqual(5);
-    expect(rs.filter((r) => r.status === 429).length).toBeGreaterThanOrEqual(7);
+    expect(rs.filter((r) => r.status === 401).length).toBeLessThanOrEqual(L);
+    expect(rs.filter((r) => r.status === 429).length).toBeGreaterThanOrEqual(total - L);
     const novas = (await trilha(api, 'auth.login_falha')).slice(antes);
-    expect(novas.filter((f) => (f.depois as { motivo: string }).motivo === 'senha_incorreta').length).toBeLessThanOrEqual(5);
+    expect(novas.filter((f) => (f.depois as { motivo: string }).motivo === 'senha_incorreta').length).toBeLessThanOrEqual(L);
+  });
+});
+
+describe('auth: limite de tentativas configurado pelo ambiente', () => {
+  let api: ApiDeTeste;
+  beforeAll(async () => { api = await novaApi({ login: { ...PADROES_LOGIN, atrasoBaseMs: 0, maxFalhasLogin: 3, maxFalhasIp: 4, bloqueioMin: 2 } }); });
+  afterAll(async () => { await api.app.close(); await api.client.close(); });
+
+  it('valores do ambiente valem para login, IP e duração do bloqueio', async () => {
+    for (let i = 0; i < 3; i++) await api.http().post(LOGIN).set('X-Forwarded-For', novoIp()).send({ login: LOGINS.porteiro, senha: 'x' });
+    expect((await api.http().post(LOGIN).set('X-Forwarded-For', novoIp()).send({ login: LOGINS.porteiro, senha: SENHA })).status).toBe(429);
+    const ip = '203.0.113.30';
+    for (let i = 0; i < 4; i++) await api.http().post(LOGIN).set('X-Forwarded-For', ip).send({ login: `x.${i}`, senha: 'x' });
+    expect((await api.http().post(LOGIN).set('X-Forwarded-For', ip).send({ login: LOGINS.auditor, senha: SENHA })).status).toBe(429);
+    api.relogio.avancarMin(2);
+    await api.entrar(LOGINS.porteiro);
+    await api.entrar(LOGINS.auditor, SENHA, ip);
   });
 });

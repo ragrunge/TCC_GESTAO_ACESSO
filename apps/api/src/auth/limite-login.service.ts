@@ -1,8 +1,9 @@
-// Limite de tentativas de login (spec §5.1): 5 falhas em 15 min, por login e por IP, bloqueiam por 15 min.
+// Limite de tentativas de login (spec §5.1): 10 falhas por login ou 30 por IP em 15 min bloqueiam por 15 min
+// (padrões de config.ts, ajustáveis por ambiente).
 //
 // Persistente (tabela login_limite) e não em memória: com duas réplicas, um contador por processo dobraria o limite.
 // A tentativa é RESERVADA (contada) antes de verificar a senha, num UPSERT atômico: N requisições paralelas não
-// conseguem N palpites, porque a 6ª já vê o contador acima do limite. No sucesso, a reserva é desfeita.
+// conseguem N palpites, porque a (máximo+1)ª já vê o contador acima do limite. No sucesso, a reserva é desfeita.
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, or, isNull, lte, sql } from 'drizzle-orm';
 import { createHmac, hkdfSync } from 'node:crypto';
