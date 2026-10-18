@@ -173,7 +173,104 @@ describe('adaptador HTTP (axios)', () => {
     expect(e).toMatchObject({ status: 501, code: 'MODULO_INDISPONIVEL', message: MENSAGEM_MODULO_INDISPONIVEL });
     expect(adapter).not.toHaveBeenCalled();
     expect(api.modo).toBe('http');
-    expect(api.rotasDisponiveis).toEqual(['usuarios']);
+    expect(api.rotasDisponiveis).toEqual(['usuarios', 'unidades']);
+    expect(api.suporta!('unidades.criar')).toBe(true);
+    expect(api.suporta!('veiculos.criar')).toBe(false);
+    expect(await esperaErro(api.vinculos.listar())).toMatchObject({ status: 501 });
+  });
+});
+
+describe('adaptador HTTP: catálogo, unidades, busca e contagem', () => {
+  const UN = { id: 'u-432', torre: 4, numero: '32', ativo: true };
+  const corpo = (c: InternalAxiosRequestConfig) => (c.data ? JSON.parse(c.data as string) : undefined);
+
+  it('catálogo: GET /catalogo, unidades só com os campos da interface', async () => {
+    const { api, adapter } = montar(() => ({ status: 200, data: { data: {
+      unidades: [{ ...UN, codigo: 'T4-32', rotulo: 'Torre 4 · AP 32' }], areasComuns: [{ id: 'a1', nome: 'Piscina', ativo: true }], pontosAcesso: [],
+    } } }));
+    expect(await api.catalogo.obter()).toEqual({ unidades: [UN], areasComuns: [{ id: 'a1', nome: 'Piscina', ativo: true }] });
+    expect(adapter.mock.calls[0]![0]).toMatchObject({ url: '/catalogo', method: 'get' });
+  });
+
+  it('listarPagina: torre, limite e cursor na query; pagination vira { itens, cursor, temMais }', async () => {
+    const resumo = { unidade: UN, moradoresValidos: 3, pendentes: 0, restricoes: 0, cadastroCompleto: true };
+    const { api, adapter } = montar(() => ({ status: 200, data: { data: [resumo], pagination: { cursor: 'c2', hasNextPage: true } } }));
+    expect(await api.unidades.listarPagina({ torre: 4, cursor: 'c1', limite: 20 })).toEqual({ itens: [resumo], cursor: 'c2', temMais: true });
+    expect(adapter.mock.calls[0]![0]).toMatchObject({ url: '/unidades', params: { torre: 4, cursor: 'c1', limite: 20 } });
+    await api.unidades.listarPagina();
+    expect(adapter.mock.calls[1]![0].params).toEqual({ limite: 50 });
+    const ruim = montar(() => ({ status: 200, data: { data: [resumo] } }));
+    expect(await esperaErro(ruim.api.unidades.listarPagina())).toMatchObject({ code: 'RESPOSTA_INVALIDA' });
+  });
+
+  it('detalhe: código legível na URL codificado; seções sem módulo na API chegam como null', async () => {
+    const { api, adapter } = montar(() => ({ status: 200, data: { data: { unidade: UN, veiculos: [{ id: 'v1', unidadeId: 'u-432', placa: 'FKR2C41', modelo: 'Honda Fit', cor: 'prata' }] } } }));
+    const d = await api.unidades.detalhe('T4-32');
+    expect(adapter.mock.calls[0]![0].url).toBe('/unidades/T4-32');
+    expect(d).toMatchObject({ unidade: UN, vinculos: null, autorizacoes: null, restricoes: null, eventos: null });
+    expect(d.veiculos).toHaveLength(1);
+  });
+
+  it('CRUD de unidade: POST, PATCH e verbos de transição; erro de regra chega com o código da API', async () => {
+    const { api, adapter } = montar((c) => {
+      if (c.method === 'post' && c.url === '/unidades' && corpo(c).numero === '32') return { status: 409, data: { code: 'UNIDADE_DUPLICADA', message: 'Já existe a unidade T4-32 (ativa ou desativada).' } };
+      if (c.method === 'patch') return { status: 422, data: { code: 'UNIDADE_REFERENCIADA', message: 'A T4-32 já tem registros.' } };
+      return { status: c.method === 'post' && c.url === '/unidades' ? 201 : 200, data: { data: { ...UN, ativo: !c.url?.endsWith('/desativar') } } };
+    });
+    expect(await api.unidades.criar({ torre: 10, numero: '101' })).toEqual({ ...UN, ativo: true });
+    expect(corpo(adapter.mock.calls[0]![0])).toEqual({ torre: 10, numero: '101' });
+    expect((await esperaErro(api.unidades.criar({ torre: 4, numero: '32' }))).code).toBe('UNIDADE_DUPLICADA');
+    expect((await esperaErro(api.unidades.editar({ id: 'u-432', torre: 4, numero: '99' })))).toMatchObject({ status: 422, code: 'UNIDADE_REFERENCIADA' });
+    expect((await api.unidades.desativar('u-432')).ativo).toBe(false);
+    expect((await api.unidades.reativar('u-432')).ativo).toBe(true);
+    expect(adapter.mock.calls.map((c) => `${c[0].method} ${c[0].url}`)).toEqual([
+      'post /unidades', 'post /unidades', 'patch /unidades/u-432', 'post /unidades/u-432/desativar', 'post /unidades/u-432/reativar',
+    ]);
+  });
+
+  it('busca: POST com o termo no CORPO (CPF fora da URL); pessoas.buscar repassa limite e semMoradores', async () => {
+    const pessoa = { id: 'p1', nome: 'Ana Ribeiro', documentoTipo: 'cpf', documentoMascarado: '***.982.247-**', categoria: 'morador', ultimoAcesso: 'Sem acessos', unidadesVinculadas: [], unidadesVinculadasCodigos: [] };
+    const { api, adapter } = montar((c) => (c.url === '/busca'
+      ? { status: 200, data: { data: { pessoas: [pessoa], unidades: [{ id: 'u-432', motivo: 'Unidade' }], temMaisPessoas: false } } }
+      : { status: 200, data: { data: { pessoas: [pessoa], temMais: true } } }));
+    const g = await api.busca.global('529.982.247-25');
+    expect(g.pessoas[0]!.nome).toBe('Ana Ribeiro');
+    expect(g.unidades).toEqual([{ id: 'u-432', motivo: 'Unidade' }]);
+    expect(await api.pessoas.buscar('52998224725', { limite: 9, semMoradores: true })).toEqual([pessoa]);
+    for (const [c] of adapter.mock.calls) {
+      expect(c.method).toBe('post');
+      expect(`${c.url}?${new URLSearchParams(c.params ?? {}).toString()}`).not.toMatch(/529|982|247/);
+    }
+    expect(corpo(adapter.mock.calls[0]![0])).toEqual({ q: '529.982.247-25' });
+    expect(corpo(adapter.mock.calls[1]![0])).toEqual({ q: '52998224725', limite: 9, semMoradores: true });
+  });
+
+  it('contagem de vínculos: GET /vinculos/contagem?status=pendente devolve o número', async () => {
+    const { api, adapter } = montar(() => ({ status: 200, data: { data: { status: 'pendente', total: 3 } } }));
+    expect(await api.vinculos.contar('pendente')).toBe(3);
+    expect(adapter.mock.calls[0]![0]).toMatchObject({ url: '/vinculos/contagem', params: { status: 'pendente' } });
+  });
+});
+
+describe('mock: paginação de unidades e contagem (mesmo contrato da API)', () => {
+  it('listarPagina percorre as 165 sem repetir; torre filtra; cursor inválido é 400', async () => {
+    const { novaApi, entrarComo } = await import('./helpers');
+    const api = novaApi();
+    await entrarComo(api, 'paula.nogueira');
+    const vistos: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const p = await api.unidades.listarPagina({ limite: 40, cursor });
+      vistos.push(...p.itens.map((x) => x.unidade.id));
+      cursor = p.cursor;
+      expect(p.temMais).toBe(cursor !== null);
+    } while (cursor);
+    expect(new Set(vistos).size).toBe(165);
+    const t4 = await api.unidades.listarPagina({ torre: 4 });
+    expect(t4.itens).toHaveLength(20);
+    expect(t4.temMais).toBe(false);
+    expect((await esperaErro(api.unidades.listarPagina({ cursor: '%%' }))).code).toBe('CURSOR_INVALIDO');
+    expect(await api.vinculos.contar('pendente')).toBe((await api.vinculos.listar({ status: 'pendente' })).length);
   });
 });
 

@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
-import { Ban, Check } from 'lucide-react';
+import { useState, type FormEvent, type ReactNode } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { Ban, Check, Info } from 'lucide-react';
 import { useApi, type AutorizacaoView, type PessoaBusca, type RestricaoView } from '../../api';
 import { useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
@@ -13,18 +14,36 @@ import { useToast } from '../../components/Toast';
 import { ROTULO_VINCULO, type EventoView, type TipoVinculo } from '@portaria/domain/types';
 import { MIN_JUSTIFICATIVA, descreverJanela } from '@portaria/domain/rules';
 import { DIAS_SEMANA_ABREV, fmtData, fromInput, toInputDate, agora } from '@portaria/domain/time';
+import { acharUnidadePorTexto } from '@portaria/domain/units';
 import { mensagemErro, useAsync } from '../../app/useAsync';
 import { useCatalogo } from '../../app/catalogo';
+import { CHAVES } from '../../app/consultas';
+import { useAcoesUnidade, useUnidadeDetalhe } from './useUnidades';
 import { chipDoEvento, quandoCurto, textoAutorizacao } from '../common/evento';
 import { EventoGaveta } from '../historico/EventoGaveta';
 
 type Modo = null | 'vinculo' | 'previa' | 'restricao' | 'veiculo' | 'editar';
 
+/** Seção cujo módulo a API real ainda não tem: o resto da tela funciona normalmente. */
+function SecaoEmBreve({ titulo, children }: { titulo: string; children?: ReactNode }) {
+  return (
+    <div className="flex items-start gap-2 text-[14px] text-[#56616B]" role="note" aria-label={`${titulo}: disponível em breve`}>
+      <Info className="mt-[2px] h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+      <span>{children ?? 'Disponível em breve na API real.'}</span>
+    </div>
+  );
+}
+
 /** Detalhe da unidade (coluna direita do mestre-detalhe de Unidades). `id`: uuid ou código "T4-32". */
 export function UnidadeDetalhe({ id }: { id: string }) {
   const api = useApi();
+  const nav = useNavigate();
+  const qc = useQueryClient();
   const { avisar } = useToast();
   const catalogo = useCatalogo();
+  const acoes = useAcoesUnidade();
+  /** Operação com backend (mock: todas). Ação sem backend some da tela em vez de falhar com 501. */
+  const suporta = (op: string) => api.suporta?.(op) ?? true;
   const [modo, setModo] = useState<Modo>(null);
   const [evento, setEvento] = useState<EventoView | null>(null);
   const podeVinculo = useCan('vinculo.criar');
@@ -33,29 +52,35 @@ export function UnidadeDetalhe({ id }: { id: string }) {
   const podeRevogar = useCan('unidade.editar');
   const podeVeiculo = useCan('veiculo.cadastrar');
   const podeEditarUnidade = useCan('unidade.editar');
-  const det = useAsync(() => api.unidades.detalhe(id), [id]);
+  const det = useUnidadeDetalhe(id);
+  /** Vínculo, autorização, restrição ou veículo novos mudam o detalhe e o resumo da torre. */
+  const recarregar = () => qc.invalidateQueries({ queryKey: CHAVES.unidades });
 
-  if (det.error) return <Alert tom="vermelho" role="alert">{det.error} <Link className="underline" to="/unidades">Voltar às unidades</Link></Alert>;
-  const d = det.data;
+  if (det.error) return <Alert tom="vermelho" role="alert">{mensagemErro(det.error)} <Link className="underline" to="/unidades">Voltar às unidades</Link></Alert>;
+  // Dado anterior (placeholder) só vale se for a MESMA unidade (troca de "T4-32" para o uuid). De outra unidade, não:
+  // os botões agiriam sobre a unidade anterior enquanto a nova carrega.
+  const bruto = det.data;
+  const mesma = !!bruto && (bruto.unidade.id === id || !!acharUnidadePorTexto([bruto.unidade], id));
+  const d = det.isPlaceholderData && !mesma ? undefined : bruto;
   const uid = d?.unidade.id ?? '';
   const ativa = !!d?.unidade.ativo;
-  const feito = (texto: string) => { setModo(null); avisar({ texto }); void det.recarregar(); };
+  const feito = (texto: string) => { setModo(null); avisar({ texto }); void recarregar(); };
 
-  // RF-01: desativar/reativar (nunca excluir); o catálogo é recarregado para o seletor de unidades refletir
+  // RF-01: desativar/reativar (nunca excluir); a mutation invalida o catálogo, para o seletor de unidades refletir
   async function alternarAtivo() {
     if (!d) return;
+    const codigo = catalogo.codigo(uid);
     try {
-      if (ativa) await api.unidades.desativar(uid); else await api.unidades.reativar(uid);
-      avisar({ texto: ativa ? `Unidade ${catalogo.codigo(uid)} desativada. O histórico continua disponível.` : `Unidade ${catalogo.codigo(uid)} reativada.` });
-      await catalogo.recarregar(); void det.recarregar();
+      await acoes.alternarAtivo.mutateAsync({ id: uid, ativo: ativa });
+      avisar({ texto: ativa ? `Unidade ${codigo} desativada. O histórico continua disponível.` : `Unidade ${codigo} reativada.` });
     } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
   }
 
   async function revogarPrevia(a: AutorizacaoView) {
-    try { await api.autorizacoes.revogar(a.id); avisar({ texto: 'Autorização prévia revogada.' }); void det.recarregar(); } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
+    try { await api.autorizacoes.revogar(a.id); avisar({ texto: 'Autorização prévia revogada.' }); void recarregar(); } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
   }
   async function revogarRestricao(r: RestricaoView) {
-    try { await api.restricoes.revogar(r.id); avisar({ texto: 'Restrição revogada.' }); void det.recarregar(); } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
+    try { await api.restricoes.revogar(r.id); avisar({ texto: 'Restrição revogada.' }); void recarregar(); } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
   }
 
   const cartao = 'flex flex-col gap-[10px] rounded-[10px] border border-[#DCE1E5] bg-white px-[18px] py-[14px]';
@@ -66,11 +91,11 @@ export function UnidadeDetalhe({ id }: { id: string }) {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <h1 className="text-[30px] font-semibold">Torre {d?.unidade.torre} · Apartamento {d?.unidade.numero}</h1>
         <div className="flex flex-wrap gap-2">
-          {d && ativa && podePrevia && <Button variante="primario" onClick={() => setModo('previa')}>Nova autorização prévia</Button>}
-          {d && podeRestricao && <Button onClick={() => setModo('restricao')}>Nova restrição</Button>}
-          {d && ativa && podeVinculo && <Button onClick={() => setModo('vinculo')}>Solicitar vínculo</Button>}
+          {d && ativa && podePrevia && suporta('autorizacoes.criar') && <Button variante="primario" onClick={() => setModo('previa')}>Nova autorização prévia</Button>}
+          {d && podeRestricao && suporta('restricoes.criar') && <Button onClick={() => setModo('restricao')}>Nova restrição</Button>}
+          {d && ativa && podeVinculo && suporta('vinculos.criar') && <Button onClick={() => setModo('vinculo')}>Solicitar vínculo</Button>}
           {d && podeEditarUnidade && <Button onClick={() => setModo('editar')}>Editar número</Button>}
-          {d && podeEditarUnidade && <Button onClick={() => void alternarAtivo()}>{ativa ? 'Desativar unidade' : 'Reativar unidade'}</Button>}
+          {d && podeEditarUnidade && <Button disabled={acoes.alternarAtivo.isPending} onClick={() => void alternarAtivo()}>{ativa ? 'Desativar unidade' : 'Reativar unidade'}</Button>}
         </div>
       </div>
       {d && !ativa && (
@@ -81,7 +106,8 @@ export function UnidadeDetalhe({ id }: { id: string }) {
         <>
           <section className="rounded-[10px] border border-[#DCE1E5] bg-white">
             <h2 className="border-b border-[#E6EAED] px-5 py-[14px] text-[16px] font-semibold">Moradores</h2>
-            {d.vinculos.map((v) => (
+            {d.vinculos === null && <div className="px-5 py-4"><SecaoEmBreve titulo="Moradores">Vínculos da unidade: disponível em breve na API real.</SecaoEmBreve></div>}
+            {d.vinculos?.map((v) => (
               <div key={v.id} className="grid min-h-[52px] grid-cols-[minmax(0,1fr)_220px_120px] items-center gap-3 border-b border-[#EEF1F3] px-5 py-[10px] last:border-b-0">
                 <span className="truncate font-medium">{v.pessoaNome}</span>
                 <span className="truncate text-[14px]">{ROTULO_VINCULO[v.tipo]}
@@ -90,13 +116,13 @@ export function UnidadeDetalhe({ id }: { id: string }) {
                 <SeloVinculo status={v.status} />
               </div>
             ))}
-            {d.vinculos.length === 0 && <div className="px-5 py-4 text-[#56616B]">Nenhum vínculo cadastrado.</div>}
+            {d.vinculos?.length === 0 && <div className="px-5 py-4 text-[#56616B]">Nenhum vínculo cadastrado.</div>}
           </section>
 
           <div className="grid grid-cols-3 gap-4">
             <section className={cartao}>
               <div className="flex items-center justify-between gap-2"><h2 className="text-[16px] font-semibold">Veículos</h2>
-                {podeVeiculo && <button type="button" className={link} onClick={() => setModo('veiculo')}>+ Novo</button>}</div>
+                {podeVeiculo && suporta('veiculos.criar') && <button type="button" className={link} onClick={() => setModo('veiculo')}>+ Novo</button>}</div>
               {d.veiculos.map((v) => (
                 <div key={v.id} className="flex flex-col"><span className="font-mono text-[17px] font-semibold">{v.placa}</span><span className="text-[14px] text-[#56616B]">{v.modelo} · {v.cor}</span></div>
               ))}
@@ -105,7 +131,8 @@ export function UnidadeDetalhe({ id }: { id: string }) {
 
             <section className={cartao}>
               <h2 className="text-[16px] font-semibold">Autorizações prévias ativas</h2>
-              {d.autorizacoes.map((a) => (
+              {d.autorizacoes === null && <SecaoEmBreve titulo="Autorizações prévias" />}
+              {d.autorizacoes?.map((a) => (
                 <div key={a.id} className="flex items-start gap-2">
                   <Check className="mt-[3px] h-4 w-4 shrink-0 text-[#05603A]" strokeWidth={2.6} aria-hidden />
                   <div className="flex min-w-0 flex-1 flex-col">
@@ -118,12 +145,13 @@ export function UnidadeDetalhe({ id }: { id: string }) {
                   {podePrevia && <button type="button" className={link} aria-label={`Revogar autorização de ${a.pessoaNome}`} onClick={() => void revogarPrevia(a)}>Revogar</button>}
                 </div>
               ))}
-              {d.autorizacoes.length === 0 && <span className={vazio}>Nenhuma autorização ativa.</span>}
+              {d.autorizacoes?.length === 0 && <span className={vazio}>Nenhuma autorização ativa.</span>}
             </section>
 
             <section className={cartao}>
               <h2 className="text-[16px] font-semibold">Restrições</h2>
-              {d.restricoes.map((r) => (
+              {d.restricoes === null && <SecaoEmBreve titulo="Restrições" />}
+              {d.restricoes?.map((r) => (
                 <div key={r.id} className="flex items-start gap-2 text-[#B42318]">
                   <Ban className="mt-[3px] h-4 w-4 shrink-0" strokeWidth={2.4} aria-hidden />
                   <div className="flex min-w-0 flex-1 flex-col">
@@ -135,13 +163,14 @@ export function UnidadeDetalhe({ id }: { id: string }) {
                   {podeRevogar && <button type="button" className={link} aria-label={`Revogar restrição de ${r.pessoaNome}`} onClick={() => void revogarRestricao(r)}>Revogar</button>}
                 </div>
               ))}
-              {d.restricoes.length === 0 && <span className={vazio}>Nenhuma restrição.</span>}
+              {d.restricoes?.length === 0 && <span className={vazio}>Nenhuma restrição.</span>}
             </section>
           </div>
 
           <section className="rounded-[10px] border border-[#DCE1E5] bg-white">
             <h2 className="border-b border-[#E6EAED] px-5 py-[14px] text-[16px] font-semibold">Histórico recente de acessos</h2>
-            {d.eventos.map((e) => {
+            {d.eventos === null && <div className="px-5 py-4"><SecaoEmBreve titulo="Histórico recente de acessos" /></div>}
+            {d.eventos?.map((e) => {
               const c = chipDoEvento(e);
               return (
                 <button key={e.id} type="button" onClick={() => setEvento(e)}
@@ -154,7 +183,7 @@ export function UnidadeDetalhe({ id }: { id: string }) {
                 </button>
               );
             })}
-            {d.eventos.length === 0 && <div className="px-5 py-4 text-[#56616B]">Sem acessos recentes.</div>}
+            {d.eventos?.length === 0 && <div className="px-5 py-4 text-[#56616B]">Sem acessos recentes.</div>}
           </section>
         </>
       )}
@@ -165,7 +194,7 @@ export function UnidadeDetalhe({ id }: { id: string }) {
       {d && modo === 'restricao' && <RestricaoModal unidade={uid} onClose={() => setModo(null)} onFeito={(todo) => feito(todo ? 'Pedido de restrição para todo o condomínio registrado. Aguarda aprovação do síndico.' : 'Restrição cadastrada.')} />}
       {d && modo === 'veiculo' && <VeiculoModal unidade={uid} onClose={() => setModo(null)} onFeito={() => feito('Veículo cadastrado.')} />}
       {d && modo === 'editar' && <EditarUnidadeModal id={uid} torre={d.unidade.torre} numero={d.unidade.numero} onClose={() => setModo(null)}
-        onFeito={async (cod) => { await catalogo.recarregar(); feito(`Unidade alterada para ${cod}.`); }} />}
+        onFeito={(cod, novoId) => { feito(`Unidade alterada para ${cod}.`); nav(`/unidades/${novoId}`, { replace: true }); }} />}
     </div>
   );
 }
@@ -177,17 +206,18 @@ const UnidadeTitulo = ({ unidade }: { unidade: string }) => {
 
 /** RF-01: corrige torre/número de unidade ainda sem registros (a API recusa a referenciada com 422). */
 export function EditarUnidadeModal({ id, torre, numero, onClose, onFeito }: {
-  id: string | null; torre?: number; numero?: string; onClose: () => void; onFeito: (codigo: string) => void | Promise<void>;
+  id: string | null; torre?: number; numero?: string; onClose: () => void; onFeito: (codigo: string, id: string) => void | Promise<void>;
 }) {
-  const api = useApi();
+  const acoes = useAcoesUnidade();
   const [t, setT] = useState(torre ? String(torre) : '');
   const [n, setN] = useState(numero ?? '');
   const [erro, setErro] = useState('');
   async function salvar(e: FormEvent) {
     e.preventDefault();
     try {
-      const u = id ? await api.unidades.editar({ id, torre: Number(t), numero: n.trim() }) : await api.unidades.criar({ torre: Number(t), numero: n.trim() });
-      await onFeito(`T${u.torre}-${u.numero}`);
+      // mutateAsync resolve depois da invalidação (onSuccess): o catálogo já conhece a unidade quando a tela navega
+      const u = id ? await acoes.editar.mutateAsync({ id, torre: Number(t), numero: n.trim() }) : await acoes.criar.mutateAsync({ torre: Number(t), numero: n.trim() });
+      await onFeito(`T${u.torre}-${u.numero}`, u.id);
     } catch (err) { setErro(mensagemErro(err)); }
   }
   return (

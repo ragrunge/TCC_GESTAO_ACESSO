@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
-import { useApi } from '../api';
-import type { PessoaBusca } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { ROTAS, pode, type Rota } from '@portaria/domain/rbac';
 import { ROTULO_CATEGORIA, ROTULO_PAPEL } from '@portaria/domain/types';
 import { partes } from '@portaria/domain/time';
 import { temModalAberto } from '../components/Modal';
 import { FichaPessoaModal } from '../features/cadastro/FichaPessoaModal';
-import { useAgora, useAsync } from './useAsync';
+import { useAgora } from './useAsync';
+import { CHAVES, useBuscaGlobal, useContagemPendentes } from './consultas';
 import { useCatalogo } from './catalogo';
 import { useTituloPagina } from './titulo';
 
@@ -52,20 +52,14 @@ function Relogio() {
 }
 
 function BuscaGlobal({ onPessoa }: { onPessoa: (id: string) => void }) {
-  const api = useApi();
   const nav = useNavigate();
   const { codigo } = useCatalogo();
   const [q, setQ] = useState('');
   const [aberto, setAberto] = useState(false);
-  const [res, setRes] = useState<{ pessoas: PessoaBusca[]; unidades: { id: string; motivo: string }[] } | null>(null);
+  const busca = useBuscaGlobal(q);
+  // Abaixo de 2 caracteres ou com erro, a lista some (o placeholder não pode mostrar o resultado anterior).
+  const res = q.trim().length >= 2 && !busca.isError ? busca.data ?? null : null;
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (q.trim().length < 2) { setRes(null); return; }
-    let vivo = true;
-    const t = setTimeout(() => { api.busca.global(q).then((r) => vivo && setRes(r)).catch(() => vivo && setRes(null)); }, 150);
-    return () => { vivo = false; clearTimeout(t); };
-  }, [q, api]);
 
   useEffect(() => {
     function tecla(e: KeyboardEvent) {
@@ -103,6 +97,7 @@ function BuscaGlobal({ onPessoa }: { onPessoa: (id: string) => void }) {
               <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#56616B]">{ROTULO_CATEGORIA[p.categoria]}</span>
             </button>
           ))}
+          {res.temMaisPessoas && <div className="px-[10px] py-2 text-[13px] text-[#56616B]">Há mais pessoas com esse termo: continue digitando para refinar.</div>}
         </div>
       )}
     </div>
@@ -111,14 +106,20 @@ function BuscaGlobal({ onPessoa }: { onPessoa: (id: string) => void }) {
 
 export function Layout() {
   const { usuario, sair } = useAuth();
-  const api = useApi();
   const nav = useNavigate();
   const loc = useLocation();
+  const qc = useQueryClient();
   const [fichaId, setFichaId] = useState<string | null>(null);
   const papel = usuario!.papel;
   useTituloPagina(ROTULO_ROTA.get(loc.pathname.split('/')[1]));
 
-  const pend = useAsync(async () => (pode(papel, 'vinculo.decidir') ? (await api.vinculos.listar({ status: 'pendente' })).length : 0), [papel, loc.pathname]);
+  const pend = useContagemPendentes(pode(papel, 'vinculo.decidir'));
+  // Recontar a cada navegação (a decisão de um vínculo acontece em outra tela); a primeira carga já é do useQuery.
+  const primeiraRota = useRef(true);
+  useEffect(() => {
+    if (primeiraRota.current) { primeiraRota.current = false; return; }
+    void qc.invalidateQueries({ queryKey: CHAVES.vinculosPendentes });
+  }, [loc.pathname, qc]);
 
   // Atalhos globais (RNF-07): F2 nova entrada, F3 encomenda, F4 ocorrência
   useEffect(() => {

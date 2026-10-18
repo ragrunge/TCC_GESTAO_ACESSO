@@ -194,6 +194,17 @@ export interface OcorrenciaView extends Ocorrencia {
 /** Catálogo leve para a UI: todas as unidades (inclusive inativas, para o histórico) e áreas comuns. */
 export interface Catalogo { unidades: Unidade[]; areasComuns: AreaComum[] }
 
+/** Página de uma listagem por cursor (o envelope REST `{ data, pagination }` já desembrulhado). */
+export interface Pagina<T> { itens: T[]; cursor: string | null; temMais: boolean }
+export interface FiltroUnidades { torre?: number; cursor?: string | null; limite?: number }
+
+/** Busca do topo: pessoas (até 6) e unidades pelo código ou pela placa. */
+export interface ResultadoBuscaGlobal {
+  pessoas: PessoaBusca[]; unidades: { id: string; motivo: string }[];
+  /** Há mais pessoas além das mostradas (refinar a busca). */
+  temMaisPessoas?: boolean;
+}
+
 /** LGPD art. 18 (spec 9.3). */
 export interface ResultadoAnonimizacao { pessoaId: string; registrosRedigidos: number; retido: string[] }
 export interface ResultadoRetencao {
@@ -203,13 +214,14 @@ export interface ResultadoRetencao {
 export interface UnidadeResumo {
   unidade: Unidade; moradoresValidos: number; pendentes: number; restricoes: number; cadastroCompleto: boolean;
 }
+/** Seção `null`: o módulo ainda não existe na API real (a tela mostra "disponível em breve" só nela). */
 export interface UnidadeDetalhe {
   unidade: Unidade;
-  vinculos: VinculoView[];
+  vinculos: VinculoView[] | null;
   veiculos: Veiculo[];
-  autorizacoes: AutorizacaoView[];
-  restricoes: RestricaoView[];
-  eventos: EventoView[];
+  autorizacoes: AutorizacaoView[] | null;
+  restricoes: RestricaoView[] | null;
+  eventos: EventoView[] | null;
 }
 export interface Autorizador { pessoa: Pessoa; vinculo: VinculoUnidade }
 
@@ -251,6 +263,11 @@ export interface Api {
   modo: 'mock' | 'http';
   /** Rotas com backend disponível. Ausente = todas (mock). As demais mostram "disponível em breve". */
   rotasDisponiveis?: readonly Rota[];
+  /**
+   * Operação disponível nesta implementação ("veiculos.criar"). Ausente = todas (mock). A UI esconde a ação que a API
+   * real ainda não tem, em vez de deixá-la falhar com 501.
+   */
+  suporta?(operacao: string): boolean;
   /** Assina avisos de sessão (401 fora do login, 403 TROCA_DE_SENHA_OBRIGATORIA). Devolve o cancelamento. */
   aoEventoSessao?(cb: (e: EventoSessao) => void): () => void;
   auth: {
@@ -261,7 +278,7 @@ export interface Api {
     /** Troca a própria senha (mínimo de 12). Libera quem estava com troca obrigatória. */
     trocarSenha(i: TrocarSenhaInput): Promise<UsuarioSessao>;
   };
-  busca: { global(q: string): Promise<{ pessoas: PessoaBusca[]; unidades: { id: string; motivo: string }[] }> };
+  busca: { global(q: string): Promise<ResultadoBuscaGlobal> };
   pessoas: {
     /** `limite`: máximo de resultados (padrão 8). A portaria pede 9 para saber se há mais que 8. */
     buscar(q: string, opts?: { semMoradores?: boolean; limite?: number }): Promise<PessoaBusca[]>;
@@ -274,7 +291,10 @@ export interface Api {
   };
   catalogo: { obter(): Promise<Catalogo> };
   unidades: {
+    /** Todas as unidades com resumo (percorre as páginas). A tela usa `listarPagina`. */
     listar(): Promise<UnidadeResumo[]>;
+    /** Uma página (cursor), na ordem torre/número; `torre` filtra. Padrão de 50 por página. */
+    listarPagina(f?: FiltroUnidades): Promise<Pagina<UnidadeResumo>>;
     /** `id` aceita o uuid ou o código "T4-32". */
     detalhe(id: string): Promise<UnidadeDetalhe>;
     criar(i: NovaUnidadeInput): Promise<Unidade>;
@@ -291,6 +311,8 @@ export interface Api {
   veiculos: { criar(i: { unidadeId: string; placa: string; modelo: string; cor: string }): Promise<Veiculo> };
   vinculos: {
     listar(f?: { status?: StatusVinculo }): Promise<VinculoView[]>;
+    /** Quantos vínculos há no status (badge "Vínculos pendentes" do menu). */
+    contar(status: StatusVinculo): Promise<number>;
     criar(i: NovoVinculoInput): Promise<VinculoUnidade>;
     /** RF-05: registra (ou refaz, enquanto pendente/legado) a conferência do comprovante. Só síndico/administração. */
     registrarConferencia(id: string, i: ConferenciaInput): Promise<VinculoUnidade>;

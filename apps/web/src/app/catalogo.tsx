@@ -1,10 +1,12 @@
 // Catálogo de unidades e áreas comuns vindo da API (RF-01, RF-36). A unidade tem id uuid; a UI mostra o código
 // "T4-32" derivado de torre e número. Fica no Layout (exige sessão) e é recarregado depois do CRUD de unidades.
+// React Query (chave CHAVES.catalogo): o CRUD de unidades invalida, e o logout limpa o cache (AuthContext).
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../api';
 import type { AreaComum, Unidade } from '@portaria/domain/types';
 import { acharUnidadePorTexto, codigoUnidade, rotuloUnidade } from '@portaria/domain/units';
-import { useAsync } from './useAsync';
+import { CHAVES } from './consultas';
 
 interface CatalogoCtx {
   pronto: boolean;
@@ -29,9 +31,9 @@ const Ctx = createContext<CatalogoCtx | null>(null);
 
 export function CatalogoProvider({ children }: { children: ReactNode }) {
   const api = useApi();
-  const cat = useAsync(() => api.catalogo.obter(), [api]);
-  const { recarregar: rec } = cat;
-  const recarregar = useCallback(() => rec(), [rec]);
+  const qc = useQueryClient();
+  const cat = useQuery({ queryKey: CHAVES.catalogo, queryFn: () => api.catalogo.obter() });
+  const recarregar = useCallback(() => qc.invalidateQueries({ queryKey: CHAVES.catalogo }), [qc]);
   const valor = useMemo((): CatalogoCtx => {
     const unidades = cat.data?.unidades ?? [];
     const areasComuns = cat.data?.areasComuns ?? [];

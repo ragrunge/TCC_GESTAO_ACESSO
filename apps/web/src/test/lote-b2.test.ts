@@ -57,7 +57,7 @@ describe('Parte 1: mock alinhado ao schema', () => {
     const r = await api.restricoes.criar({ ...base, solicitadaPorPessoaId: id.ana });
     expect(r.solicitadaPorPessoaId).toBe(id.ana);
     const det = await api.unidades.detalhe(un('T4-32'));
-    expect(det.restricoes.find((x) => x.id === r.id)).toMatchObject({ solicitadaPorNome: 'Ana Ribeiro', cadastradaPorNome: 'João Lima (Porteiro)' });
+    expect(det.restricoes!.find((x) => x.id === r.id)).toMatchObject({ solicitadaPorNome: 'Ana Ribeiro', cadastradaPorNome: 'João Lima (Porteiro)' });
   });
 
   it('documentoBusca é HMAC-SHA256 (chave de demonstração) e o telefone é guardado só com dígitos', async () => {
@@ -145,7 +145,7 @@ describe('RF-01: CRUD de unidades', () => {
     expect((await esperaErro(api.vinculos.criar({ pessoaId: id.marcos, unidadeId: un('T4-32'), tipo: 'dependente', vigenciaInicio: brt(2026, 10, 9), vigenciaFim: null, solicitadoPor: '' }))).code).toBe('UNIDADE_INATIVA');
     const det = await api.unidades.detalhe(un('T4-32'));
     expect(det.unidade.ativo).toBe(false);
-    expect(det.eventos.length).toBeGreaterThan(0); // histórico preservado
+    expect(det.eventos!.length).toBeGreaterThan(0); // histórico preservado
     expect((await api.eventos.listar({ unidadeId: un('T4-32') })).length).toBeGreaterThan(0);
   });
 });

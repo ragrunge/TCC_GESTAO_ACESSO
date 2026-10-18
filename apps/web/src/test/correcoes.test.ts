@@ -395,11 +395,11 @@ describe('item 9: restrições vencidas no detalhe da unidade', () => {
     const api = novaApi();
     await entrarComo(api, 'paula.nogueira');
     const r = await api.restricoes.criar({ pessoaId: id.marcos, unidadeId: un('T4-32'), motivo: 'Teste vencida', validaAte: HOJE, solicitadaPorPessoaId: id.ana });
-    expect((await api.unidades.detalhe(un('T4-32'))).restricoes.some((x) => x.id === r.id)).toBe(true);
+    expect((await api.unidades.detalhe(un('T4-32'))).restricoes!.some((x) => x.id === r.id)).toBe(true);
     relogio.congelar(brt(2026, 10, 11, 10, 0));
     const d = await api.unidades.detalhe(un('T4-32'));
-    expect(d.restricoes.some((x) => x.id === r.id)).toBe(false);
-    expect(d.restricoes.some((x) => x.id === 'rs-bruno')).toBe(true); // a vigente continua
+    expect(d.restricoes!.some((x) => x.id === r.id)).toBe(false);
+    expect(d.restricoes!.some((x) => x.id === 'rs-bruno')).toBe(true); // a vigente continua
   });
 });
 
@@ -497,7 +497,7 @@ describe('item 10: trilha de alterações', () => {
     const e = await esperaErro(api.autorizacoes.revogar(ap.id));
     expect(e.status).toBe(409);
     const det = await api.unidades.detalhe(un('T4-32'));
-    expect(det.autorizacoes.some((a) => a.id === ap.id)).toBe(false); // revogada some das ativas
+    expect(det.autorizacoes!.some((a) => a.id === ap.id)).toBe(false); // revogada some das ativas
     const todas = await api.autorizacoes.hoje();
     expect(todas.some((a) => a.id === ap.id)).toBe(false);
     await entrarComo(api, 'luiza.campos');
@@ -628,7 +628,7 @@ describe('item 13: correção com valores e relatórios', () => {
     // listas, filtros, detalhe da unidade e presentes usam os valores efetivos
     expect((await api.eventos.listar({ unidadeId: un('T3-52') })).some((e) => e.id === 'e4814')).toBe(true);
     expect((await api.eventos.listar({ unidadeId: un('T3-51') })).some((e) => e.id === 'e4814')).toBe(false);
-    expect((await api.unidades.detalhe(un('T3-52'))).eventos.some((e) => e.id === 'e4814')).toBe(true);
+    expect((await api.unidades.detalhe(un('T3-52'))).eventos!.some((e) => e.id === 'e4814')).toBe(true);
     expect((await api.eventos.presentes()).find((e) => e.id === 'e4814')?.unidadeDestinoId).toBe(un('T3-52'));
     await entrarComo(api, 'luiza.campos');
     expect((await api.auditoria.verificarIntegridade()).valido).toBe(true);

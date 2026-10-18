@@ -349,6 +349,20 @@ export function createMockApi(opts: MockOptions = {}): Api {
     if (paraNovo && !a.ativo) throw new ApiError(422, 'AREA_COMUM_INATIVA', `A área comum ${a.nome} está desativada.`);
     return a;
   }
+  /** Resumo de cada unidade (lista e página de Unidades), na ordem recebida. */
+  function resumosUnidades(d: DbData, us: readonly Unidade[]): UnidadeResumo[] {
+    const n = agora();
+    return [...us].sort(compararUnidades).map((unidade) => {
+      const vs = d.vinculos.filter((v) => v.unidadeId === unidade.id);
+      return {
+        unidade,
+        moradoresValidos: vs.filter((v) => vinculoValido(v, n)).length,
+        pendentes: vs.filter((v) => v.status === 'pendente').length,
+        restricoes: d.restricoes.filter((r) => r.unidadeId === unidade.id && r.revogadaEm === null && n <= r.validaAte).length,
+        cadastroCompleto: vs.some((v) => v.status === 'aprovado' && vinculoValido(v, n)),
+      };
+    });
+  }
   /** Unidade referenciada por qualquer registro (não muda de número; e nunca é excluída). */
   const unidadeReferenciada = (d: DbData, id: string) =>
     d.vinculos.some((v) => v.unidadeId === id) || d.veiculos.some((v) => v.unidadeId === id)
@@ -616,7 +630,8 @@ export function createMockApi(opts: MockOptions = {}): Api {
         exigeLogado();
         return ler(async (d) => {
           const consulta = q.trim();
-          const pessoas = consulta.length >= 2 ? (await buscarPessoas(d, consulta, false)).slice(0, 6) : [];
+          const todas = consulta.length >= 2 ? await buscarPessoas(d, consulta, false) : [];
+          const pessoas = todas.slice(0, 6);
           const unidades: { id: string; motivo: string }[] = [];
           const u = acharUnidadePorTexto(d.unidades, consulta);
           if (u) unidades.push({ id: u.id, motivo: u.ativo ? 'Unidade' : 'Unidade (desativada)' });
@@ -627,7 +642,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
               if (unidades.length > 6) break;
             }
           }
-          return { pessoas, unidades };
+          return { pessoas, unidades, temMaisPessoas: todas.length > pessoas.length };
         });
       },
     },
@@ -709,18 +724,26 @@ export function createMockApi(opts: MockOptions = {}): Api {
     unidades: {
       async listar() {
         exige('unidade.ver');
-        return ler((d): UnidadeResumo[] => {
-          const n = agora();
-          return [...d.unidades].sort(compararUnidades).map((unidade) => {
-            const vs = d.vinculos.filter((v) => v.unidadeId === unidade.id);
-            return {
-              unidade,
-              moradoresValidos: vs.filter((v) => vinculoValido(v, n)).length,
-              pendentes: vs.filter((v) => v.status === 'pendente').length,
-              restricoes: d.restricoes.filter((r) => r.unidadeId === unidade.id && r.revogadaEm === null && n <= r.validaAte).length,
-              cadastroCompleto: vs.some((v) => v.status === 'aprovado' && vinculoValido(v, n)),
-            };
-          });
+        return ler((d) => resumosUnidades(d, d.unidades));
+      },
+      // Mesmo contrato da API real: keyset por (torre, número), cursor opaco, `torre` filtra.
+      async listarPagina(f = {}) {
+        exige('unidade.ver');
+        const limite = f.limite ?? 50;
+        let depois: { t: number; n: string } | null = null;
+        if (f.cursor) {
+          try { depois = JSON.parse(atob(f.cursor)) as { t: number; n: string }; } catch { depois = null; }
+          if (!depois || typeof depois.t !== 'number' || typeof depois.n !== 'string') throw new ApiError(400, 'CURSOR_INVALIDO', 'Cursor de paginação inválido.');
+        }
+        return ler((d) => {
+          const dep = depois;
+          const candidatas = [...d.unidades].sort(compararUnidades)
+            .filter((u) => f.torre === undefined || u.torre === f.torre)
+            .filter((u) => !dep || compararUnidades(u, { torre: dep.t, numero: dep.n }) > 0 || (compararUnidades(u, { torre: dep.t, numero: dep.n }) === 0 && u.numero > dep.n));
+          const pagina = candidatas.slice(0, limite);
+          const ultimo = pagina[pagina.length - 1];
+          const temMais = candidatas.length > limite;
+          return { itens: resumosUnidades(d, pagina), temMais, cursor: temMais && ultimo ? btoa(JSON.stringify({ t: ultimo.torre, n: ultimo.numero })) : null };
         });
       },
       async detalhe(id) {
@@ -867,6 +890,10 @@ export function createMockApi(opts: MockOptions = {}): Api {
           const ix = indices(d);
           return d.vinculos.filter((v) => !f?.status || v.status === f.status).sort((a, b) => b.solicitadoEm - a.solicitadoEm).map((v) => vinculoView(v, ix));
         });
+      },
+      async contar(status) {
+        exige('vinculo.ver');
+        return ler((d) => d.vinculos.filter((v) => v.status === status).length);
       },
       async criar(i) {
         const u = exige('vinculo.criar'); // RN-03: porteiro recebe 403
