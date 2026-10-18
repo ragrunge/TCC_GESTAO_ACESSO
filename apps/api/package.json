@@ -1,0 +1,39 @@
+{
+  "name": "@portaria/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Backend da Portaria Parque (NestJS + Drizzle + PostgreSQL). Esqueleto com /saude e a camada de banco (schema, migrações e testes).",
+  "scripts": {
+    "build": "npm run build --prefix ../../packages/domain && rm -rf dist && tsc -p tsconfig.build.json && node -e \"require('fs').writeFileSync('dist/package.json','{ \\\"type\\\": \\\"commonjs\\\" }\\n')\"",
+    "start": "node dist/main.js",
+    "prestart:dev": "npm run build",
+    "start:dev": "tsc-watch -p tsconfig.build.json --onSuccess \"node dist/main.js\"",
+    "db:generate": "drizzle-kit generate",
+    "db:custom": "drizzle-kit generate --custom",
+    "db:check": "drizzle-kit check",
+    "db:migrate": "drizzle-kit migrate",
+    "test": "vitest run",
+    "test:pg": "vitest run test/postgres-real",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.2.7",
+    "@nestjs/core": "^11.2.7",
+    "@nestjs/platform-express": "^11.2.7",
+    "@portaria/domain": "*",
+    "drizzle-orm": "0.45.4",
+    "pg": "^8.23.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.10",
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.15.6",
+    "drizzle-kit": "0.31.11",
+    "tsc-watch": "^7.2.1",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  }
+}

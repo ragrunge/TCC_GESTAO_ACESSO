@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node10",
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  // @portaria/domain entra pelo build CJS dele (dist/cjs, via typesVersions + exports "require"): rode antes
+  // `npm run build -w packages/domain` (o script de build da API já faz isso).
+  "include": ["src"]
+}
