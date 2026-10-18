@@ -2,6 +2,7 @@
 #   deps     todas as dependências do workspace apps/api (dev incluídas)
 #   build    tsc -> dist (CommonJS), antes o build CJS de @portaria/domain (packages/domain/dist/cjs)
 #   migrate  drizzle-kit + migrações + drizzle.config.ts (serviço "migrate": roda e termina)
+#   dev      build + tsc-watch: recompila e reinicia a API a cada mudança em src/ (docker compose watch)
 #   prod     só dependencies de produção
 #   runtime  imagem final da API, usuário não-root
 FROM node:22-alpine AS deps
@@ -21,6 +22,16 @@ COPY packages/domain/src packages/domain/src
 COPY apps/api/tsconfig.json apps/api/tsconfig.build.json apps/api/
 COPY apps/api/src apps/api/src
 RUN npm run build -w apps/api
+
+# Desenvolvimento com reload: parte do `build` (dependências de dev, domain compilado, dist/package.json CommonJS já
+# gravado) e deixa o tsc-watch recompilando src/ -> dist/ e reiniciando o node a cada sucesso. Os arquivos chegam
+# pelo `develop.watch` do compose (sync), não por bind mount: no macOS o bind mount perde eventos de arquivo e
+# misturaria o node_modules do host (darwin) com o do container (musl, binário do argon2).
+FROM build AS dev
+WORKDIR /app/apps/api
+ENV TZ=UTC
+EXPOSE 3000
+CMD ["npx", "tsc-watch", "-p", "tsconfig.build.json", "--noClear", "--onSuccess", "node dist/main.js"]
 
 FROM deps AS migrate
 WORKDIR /app/apps/api

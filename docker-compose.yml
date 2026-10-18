@@ -1,5 +1,10 @@
 # Ambiente de desenvolvimento da Portaria Parque: db -> migrate (roda e termina) -> api.
-# Uso: cp .env.example .env (preencher) && docker compose up -d --build   (ver apps/api/README.md e db/README.md)
+# Uso: cp .env.example .env (preencher) e então:
+#   docker compose up --build --watch     API com reload: salvar em apps/api/src recompila e reinicia (tsc-watch)
+#   docker compose up -d --build          sem reload (o watch também pode ser ligado depois: docker compose watch)
+#   API_TARGET=runtime docker compose up -d --build   a imagem de produção (sem tsc-watch, usuário node)
+# Mudou o schema/migração? docker compose run --rm migrate (o migrate não roda sozinho de novo).
+# Ver apps/api/README.md e db/README.md.
 # Docker Desktop no macOS: export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 name: portaria
 
@@ -47,14 +52,27 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-      target: runtime
-    image: portaria-api:dev
+      # dev (padrão): tsc-watch com reload. runtime: a imagem de produção, para conferir antes do deploy.
+      target: ${API_TARGET:-dev}
+    image: portaria-api:${API_TARGET:-dev}
     environment:
       NODE_ENV: production
       TZ: UTC
       PORT: "3000"
       # A API usa app_rw (sem DELETE, sem UPDATE nas trilhas, sem CREATE). Nunca app_migrator.
       DATABASE_URL: postgres://app_rw:${APP_RW_PASSWORD}@db:5432/portaria
+      # Cada variável repassada uma a uma (nunca env_file com o .env inteiro: a API não recebe senha de superusuário).
+      PORTARIA_AMBIENTE: ${PORTARIA_AMBIENTE:?defina PORTARIA_AMBIENTE (dev ou producao) no .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:?defina COOKIE_SECURE (true ou false) no .env}
+      TRUST_PROXY: ${TRUST_PROXY:?defina TRUST_PROXY (false ou número de proxies) no .env}
+      SESSAO_ABSOLUTA_MIN: ${SESSAO_ABSOLUTA_MIN:?defina SESSAO_ABSOLUTA_MIN no .env}
+      SESSAO_INATIVIDADE_MIN: ${SESSAO_INATIVIDADE_MIN:?defina SESSAO_INATIVIDADE_MIN no .env}
+      PORTARIA_HMAC_CPF_KEY: ${PORTARIA_HMAC_CPF_KEY:?defina PORTARIA_HMAC_CPF_KEY no .env}
+      PORTARIA_KEK: ${PORTARIA_KEK:?defina PORTARIA_KEK no .env}
+      PORTARIA_KEK_VERSAO: ${PORTARIA_KEK_VERSAO:?defina PORTARIA_KEK_VERSAO no .env}
+      # Vazios são válidos: sem CORS (mesma origem) e sem seed de dev (produção).
+      CORS_ORIGENS: ${CORS_ORIGENS:-}
+      SEED_SENHA_DEV: ${SEED_SENHA_DEV:-}
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
@@ -65,9 +83,28 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
-    mem_limit: 384m
+      # No target dev, a primeira compilação do tsc-watch leva alguns segundos antes de a API escutar.
+      start_period: 30s
+    # 384m cabem a API e 2 hashes argon2 simultâneos (64 MiB cada); o tsc-watch do dev pede mais.
+    mem_limit: ${API_MEM_LIMIT:-768m}
     restart: unless-stopped
+    # Reload (só com `up --watch` ou `docker compose watch`; ignorado no target runtime, que não tem tsc-watch).
+    develop:
+      watch:
+        # Código da API: copiado para dentro do container; o tsc-watch percebe, recompila e reinicia o node.
+        - action: sync
+          path: ./apps/api/src
+          target: /app/apps/api/src
+        # O domain é compilado no build da imagem (CJS em dist/): mudou, reconstrói.
+        - action: rebuild
+          path: ./packages/domain/src
+        # Dependências e config do TypeScript: reconstrói a imagem.
+        - action: rebuild
+          path: ./apps/api/package.json
+        - action: rebuild
+          path: ./package-lock.json
+        - action: rebuild
+          path: ./apps/api/tsconfig.build.json
 
 volumes:
   pgdata: {}
