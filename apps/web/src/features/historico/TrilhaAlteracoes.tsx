@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { useApi } from '../../api';
 import { Alert } from '../../components/Alert';
 import { Button } from '../../components/Button';
@@ -6,20 +7,31 @@ import { Gaveta } from '../../components/Modal';
 import { Cel, Lista, ListaCab, ListaLinha, Vazio } from '../../components/Table';
 import { ROTULO_PAPEL, type RegistroAlteracao } from '@portaria/domain/types';
 import { fmtDataHora } from '@portaria/domain/time';
-import { useAsync } from '../../app/useAsync';
+import { mensagemErro } from '../../app/useAsync';
+import { CHAVES } from '../../app/consultas';
 
 const COLUNAS = '150px minmax(0,1fr) 120px 190px minmax(0,1fr)';
-const LIMITE = 150;
+const POR_PAGINA = 50;
 
 /** Trilha de alterações do sistema (quem mudou o quê e quando), só leitura. Dados pessoais já vêm mascarados. */
 export function TrilhaAlteracoes() {
   const api = useApi();
   const [acao, setAcao] = useState('');
   const [aberto, setAberto] = useState<RegistroAlteracao | null>(null);
-  const lista = useAsync(() => api.auditoria.alteracoes(), []);
-  const dados = lista.data ?? [];
-  const acoes = useMemo(() => [...new Set(dados.map((r) => r.acao))].sort(), [dados]);
-  const filtrados = dados.filter((r) => !acao || r.acao === acao);
+  // Paginada no servidor (a trilha cresce sem parar); o filtro por ação também é aplicado lá
+  const lista = useInfiniteQuery({
+    queryKey: CHAVES.alteracoes(acao),
+    queryFn: ({ pageParam }) => api.auditoria.alteracoesPagina({ acao: acao || undefined, cursor: pageParam, limite: POR_PAGINA }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (p) => (p.temMais && p.cursor ? p.cursor : undefined),
+    staleTime: 0,
+  });
+  const filtrados = useMemo(() => (lista.data?.pages ?? []).flatMap((p) => p.itens), [lista.data]);
+  // Ações conhecidas: todas as já vistas nesta tela (o filtro não as esconde do select)
+  const vistas = useRef(new Set<string>());
+  for (const r of filtrados) vistas.current.add(r.acao);
+  if (acao) vistas.current.add(acao);
+  const acoes = [...vistas.current].sort();
 
   return (
     <div className="flex flex-col gap-4">
@@ -29,12 +41,12 @@ export function TrilhaAlteracoes() {
             <option value="">Todas</option>{acoes.map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
         </label>
-        <span className="pb-2 text-[14px] text-[#56616B]">{filtrados.length} {filtrados.length === 1 ? 'alteração' : 'alterações'} · mais recentes primeiro</span>
+        <span className="pb-2 text-[14px] text-[#56616B]">{filtrados.length} {filtrados.length === 1 ? 'alteração' : 'alterações'}{lista.hasNextPage ? ' carregadas' : ''} · mais recentes primeiro</span>
       </div>
-      {lista.error && <Alert tom="vermelho" role="alert">{lista.error}</Alert>}
+      {lista.error && <Alert tom="vermelho" role="alert">{mensagemErro(lista.error)}</Alert>}
       <Lista legenda="Trilha de alterações" colunas={COLUNAS}>
         <ListaCab padY={10} rotulos={['Data e hora', 'Usuário', 'Papel', 'Ação', 'Registro']} />
-        {filtrados.slice(0, LIMITE).map((r) => (
+        {filtrados.map((r) => (
           <ListaLinha key={r.id} minH={48} onClick={() => setAberto(r)} ariaLabel={`Abrir alteração ${r.seq}`}>
             <Cel className="font-mono text-[14px]">{fmtDataHora(r.em)}</Cel>
             <Cel className="truncate font-medium">{r.usuarioNome}</Cel>
@@ -44,8 +56,8 @@ export function TrilhaAlteracoes() {
           </ListaLinha>
         ))}
       </Lista>
-      {!lista.loading && filtrados.length === 0 && <Vazio>Nenhuma alteração registrada com este filtro.</Vazio>}
-      {filtrados.length > LIMITE && <p className="text-[#56616B]">Mostrando {LIMITE} de {filtrados.length}. Filtre por ação.</p>}
+      {!lista.isPending && filtrados.length === 0 && <Vazio>Nenhuma alteração registrada com este filtro.</Vazio>}
+      {lista.hasNextPage && <div><Button carregando={lista.isFetchingNextPage} onClick={() => void lista.fetchNextPage()}>Carregar mais</Button></div>}
       {aberto && (
         <Gaveta titulo={`Alteração ${aberto.seq}`} onClose={() => setAberto(null)}>
           <div className="flex items-start justify-between gap-3">

@@ -77,13 +77,24 @@ export interface OpcoesSaida {
 }
 
 export interface FiltroAlteracoes { de?: number; ate?: number; usuarioId?: string; acao?: string; entidade?: string }
+/** Uma página da trilha de alterações (mais recentes primeiro). */
+export interface FiltroAlteracoesPagina extends FiltroAlteracoes { cursor?: string | null; limite?: number }
 
 export interface FiltroEventos {
   /** RF-32: restringe a um único evento (exportação isolada). */
   eventoId?: string;
-  de?: number; ate?: number; unidadeId?: string; pessoa?: string; operadorId?: string;
+  de?: number; ate?: number; unidadeId?: string;
+  /** Texto do nome (sem acento, parcial). Pode identificar alguém: na API real vai no corpo de um POST, nunca na URL. */
+  pessoa?: string;
+  /** Pessoa exata (ficha), pelos valores efetivos (com correção). */
+  pessoaId?: string;
+  operadorId?: string;
   tipo?: TipoEvento; meio?: MeioAutorizacao; somenteExcecoes?: boolean; somenteRetroativos?: boolean;
+  /** Tipos a deixar de fora (painel: sem saídas; unidade: sem correções). */
+  excluirTipos?: TipoEvento[];
 }
+/** Uma página de eventos (mais recentes primeiro, por seq). */
+export interface FiltroEventosPagina extends FiltroEventos { cursor?: string | null; limite?: number }
 
 export interface NovoVinculoInput {
   pessoaId: string; unidadeId: string; tipo: TipoVinculo; vigenciaInicio: number; vigenciaFim: number | null;
@@ -365,7 +376,12 @@ export interface Api {
     registrarRecusa(i: NovaRecusaInput): Promise<EventoView>;
     registrarSaida(entradaId: string, opcoes?: OpcoesSaida): Promise<EventoView>;
     corrigir(id: string, i: { justificativa: string; observacao?: string; valores?: Partial<ValoresCorrecao> }): Promise<EventoView>;
+    /** Lista inteira (mock; no http percorre as páginas com teto). As telas usam `listarPagina`. */
     listar(f?: FiltroEventos): Promise<EventoView[]>;
+    /** Uma página (cursor), mais recentes primeiro (seq decrescente). Padrão de 50. */
+    listarPagina(f?: FiltroEventosPagina): Promise<Pagina<EventoView>>;
+    /** Correções registradas para o evento (linha do tempo da gaveta), da mais antiga para a mais nova. */
+    correcoesDe(id: string): Promise<EventoView[]>;
     obter(id: string): Promise<EventoView>;
     presentes(): Promise<EventoView[]>;
   };
@@ -392,6 +408,8 @@ export interface Api {
     verificarIntegridade(): Promise<ResultadoIntegridade>;
     /** Trilha de alterações do sistema (mais recentes primeiro). */
     alteracoes(f?: FiltroAlteracoes): Promise<RegistroAlteracao[]>;
+    /** Uma página da trilha de alterações (cursor). Padrão de 50. */
+    alteracoesPagina(f?: FiltroAlteracoesPagina): Promise<Pagina<RegistroAlteracao>>;
     exportar(f?: FiltroEventos): Promise<PacoteExportacao>;
   };
   usuarios: {

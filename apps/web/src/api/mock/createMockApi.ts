@@ -3,7 +3,7 @@
 // Alinhado ao schema do banco (apps/api/src/db/schema.ts): unidade com id uuid, entidades com ids de usuário
 // (nomes só nas views), hash da trilha com a serialização canônica v1 do domain (a mesma do trigger do banco).
 import type {
-  Api, Autorizador, AutorizacaoView, Catalogo, EncomendaView, FichaPessoa, FiltroEventos, FiltroRelatorio, FuncionarioView,
+  Api, Autorizador, AutorizacaoView, Catalogo, EncomendaView, FichaPessoa, FiltroAlteracoes, FiltroEventos, FiltroRelatorio, FuncionarioView,
   InconsistenciaImportacao, LinhaPlanilha, NovaPessoaInput, OcorrenciaView, Pagina, PessoaBusca, PessoaLista, RelatorioImportacao, RelatorioResumo,
   RestricaoView, UnidadeDetalhe, UnidadeResumo, VinculoView,
 } from '../types';
@@ -20,9 +20,10 @@ import {
   validarConferencia, validarDecisaoVinculo, validarEscala, vinculoValido, vinculosValidosDaUnidade,
 } from '@portaria/domain/rules';
 import {
-  CAMPOS_CANONICOS_V1, CHAVES_CORRECAO_V1, FORMATO_HASH, calcularHash, codigoEvento, hashGenese, paraExportado, sha256Hex,
-  verificarCadeiaEventos,
+  FORMATO_HASH, calcularHash, codigoEvento, hashGenese, paraExportado, sha256Hex, verificarCadeiaEventos,
 } from '@portaria/domain/hashChain';
+import { montarExportacaoJsonl } from '@portaria/domain/exportacao';
+import { csvRelatorio } from '@portaria/domain/relatorio';
 import { CHAVE_HMAC_DEMO, documentoBuscaCpf, mascararCpf, soDigitos } from '@portaria/domain/cpf';
 import { DIA, agora, fimDoDia, fmtData, fmtHora, inicioDoDia, partes, relogio } from '@portaria/domain/time';
 import {
@@ -468,6 +469,11 @@ export function createMockApi(opts: MockOptions = {}): Api {
     };
   }
 
+  function filtrarAlteracoes(d: DbData, f: FiltroAlteracoes = {}): RegistroAlteracao[] {
+    return d.auditLog.filter((r) => (f.de === undefined || r.em >= f.de) && (f.ate === undefined || r.em <= f.ate)
+      && (!f.usuarioId || r.usuarioId === f.usuarioId) && (!f.acao || r.acao === f.acao) && (!f.entidade || r.entidade === f.entidade));
+  }
+
   function filtrarEventos(d: DbData, f: FiltroEventos = {}): EventoAcesso[] {
     const ix = indices(d);
     const q = f.pessoa ? norm(f.pessoa) : '';
@@ -478,8 +484,10 @@ export function createMockApi(opts: MockOptions = {}): Api {
       if (f.de !== undefined && e.ocorridoEm < f.de) return false;
       if (f.ate !== undefined && e.ocorridoEm > f.ate) return false;
       if (f.unidadeId && e.unidadeDestinoId !== f.unidadeId) return false;
+      if (f.pessoaId && e.pessoaId !== f.pessoaId) return false;
       if (f.operadorId && e.operadorId !== f.operadorId) return false;
       if (f.tipo && e.tipo !== f.tipo) return false;
+      if (f.excluirTipos?.includes(e.tipo)) return false;
       if (f.meio && e.autorizadoPorTipo !== f.meio) return false;
       if (f.somenteExcecoes && !responsavelExcecao(d, e)) return false;
       if (f.somenteRetroativos && !e.retroativo) return false;
@@ -868,7 +876,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
 
     funcionarios: {
       async listar() {
-        exige('pessoa.ver');
+        exige('funcionario.ver'); // decisão do usuário: SI, AD e AU; o porteiro não vê a lista
         return ler((d) => d.funcionarios.map((f) => funcionarioView(d, f.pessoaId)).sort((a, b) => a.pessoa.nome.localeCompare(b.pessoa.nome, 'pt-BR')));
       },
       async criar(i) {
@@ -1039,6 +1047,8 @@ export function createMockApi(opts: MockOptions = {}): Api {
           if (decisao === 'aprovar' && !cadastroCompleto(pessoa)) {
             throw new ApiError(422, 'CADASTRO_INCOMPLETO', 'Para aprovar o vínculo a pessoa precisa ter CPF válido (não “sem CPF”) e telefone cadastrados.');
           }
+          // Aprovar é um novo uso da unidade: desativada, barra (422 UNIDADE_INATIVA). Rejeitar continua possível.
+          if (decisao === 'aprovar') unidadeOu404(d, v.unidadeId, true);
           const erro = validarDecisaoVinculo(decisao, justificativa, v.conferencia);
           if (erro) throw new ApiError(erro.status, erro.code, erro.message);
           const antes = clone(v);
@@ -1062,6 +1072,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
           if (!cadastroCompleto(pessoa)) {
             throw new ApiError(422, 'CADASTRO_INCOMPLETO', 'Para regularizar, complete o cadastro (CPF válido e telefone) pela ficha da pessoa.');
           }
+          unidadeOu404(d, v.unidadeId, true); // regularizar aprova: unidade desativada barra (UNIDADE_INATIVA)
           // RN-09 + RN-02: regularizar também exige o comprovante conferido (CHECK vinculo_aprovado_conferido_ck)
           if (!v.conferencia) throw new ApiError(422, 'CONFERENCIA_OBRIGATORIA', 'Registre a conferência do comprovante (RF-05) antes de regularizar.');
           const vigenciaFim = opcoes?.vigenciaFim !== undefined ? opcoes.vigenciaFim : v.vigenciaFim;
@@ -1442,6 +1453,21 @@ export function createMockApi(opts: MockOptions = {}): Api {
           return filtrarEventos(d, f).sort((a, b) => b.seq - a.seq).map((e) => view(e, ix));
         });
       },
+      async listarPagina(f = {}) {
+        exige('evento.ver');
+        return ler((d) => {
+          const ix = indices(d);
+          const p = paginarMemoria(filtrarEventos(d, f), (e) => [-e.seq], f);
+          return { ...p, itens: p.itens.map((e) => view(e, ix)) };
+        });
+      },
+      async correcoesDe(id) {
+        exige('evento.ver');
+        return ler((d) => {
+          const ix = indices(d);
+          return d.eventos.filter((e) => e.tipo === 'correcao' && e.corrigeEventoId === id).map((e) => view(e, ix));
+        });
+      },
       async obter(id) {
         exige('evento.ver');
         return ler((d) => {
@@ -1614,27 +1640,9 @@ export function createMockApi(opts: MockOptions = {}): Api {
         exige('relatorio.ver');
         const r = await ler((d) => calcularResumo(d, f));
         const d = await carregar();
-        const celula = (v: string | number) => {
-          let t = String(v);
-          if (/^[=+\-@]/.test(t)) t = `'${t}`; // evita interpretação como fórmula no Excel
-          return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
-        };
-        const linhas: (string | number)[][] = [['Seção', 'Item', 'Total']];
-        linhas.push(['Período', `${fmtData(r.periodo.de)} a ${fmtData(r.periodo.ate)}`, '']);
-        if (f?.unidadeId) { const un = d.unidades.find((x) => x.id === f.unidadeId); linhas.push(['Filtro', 'Unidade', un ? codigoUnidade(un) : f.unidadeId]); }
-        if (f?.categoria) linhas.push(['Filtro', 'Tipo de pessoa', ROTULO_CATEGORIA[f.categoria]]);
-        if (f?.meio) linhas.push(['Filtro', 'Meio de autorização', ROTULO_MEIO[f.meio]]);
-        for (const [k, v] of Object.entries(r.totais)) linhas.push(['Totais', k, v]);
-        for (const x of r.acessosPorDia) linhas.push(['Acessos por dia', fmtData(x.dia), x.entradas]);
-        for (const x of r.acessosPorMeio) linhas.push(['Acessos por meio', ROTULO_MEIO[x.meio], x.total]);
-        for (const x of r.excecoesPorPorteiro) linhas.push(['Exceções por responsável', x.operador, x.total]);
-        for (const x of r.encomendasPorIdade) linhas.push(['Encomendas pendentes por idade', x.faixa, x.total]);
-        const stamp = new Date(agora() - 3 * 3600 * 1000).toISOString().slice(0, 10);
-        return {
-          nomeArquivo: `relatorio-portaria-parque-${stamp}.csv`,
-          conteudo: '﻿' + linhas.map((l) => l.map(celula).join(';')).join('\r\n') + '\r\n',
-          quantidade: r.totais.entradas,
-        };
+        const un = f?.unidadeId ? d.unidades.find((x) => x.id === f.unidadeId) : undefined;
+        return csvRelatorio(r, { unidade: f?.unidadeId ? (un ? codigoUnidade(un) : f.unidadeId) : undefined, categoria: f?.categoria, meio: f?.meio },
+          new Date(agora() - 3 * 3600 * 1000).toISOString().slice(0, 10));
       },
     },
 
@@ -1648,10 +1656,11 @@ export function createMockApi(opts: MockOptions = {}): Api {
       },
       async alteracoes(f = {}) {
         exige('auditoria.verificar');
-        return ler((d) => d.auditLog
-          .filter((r) => (f.de === undefined || r.em >= f.de) && (f.ate === undefined || r.em <= f.ate)
-            && (!f.usuarioId || r.usuarioId === f.usuarioId) && (!f.acao || r.acao === f.acao) && (!f.entidade || r.entidade === f.entidade))
-          .sort((a, b) => b.seq - a.seq));
+        return ler((d) => filtrarAlteracoes(d, f).sort((a, b) => b.seq - a.seq));
+      },
+      async alteracoesPagina(f = {}) {
+        exige('auditoria.verificar');
+        return ler((d) => paginarMemoria(filtrarAlteracoes(d, f), (r) => [-r.seq], f));
       },
       // RF-32 / spec 4.7: JSONL com manifesto, cada evento no formato canônico (snake_case, ISO, v, hash_anterior, hash)
       // e os nomes resolvidos à parte ("exibicao"), que não entram no hash.
@@ -1660,51 +1669,23 @@ export function createMockApi(opts: MockOptions = {}): Api {
         await esperar();
         const d = await carregar();
         const ix = indices(d);
-        const evs = filtrarEventos(d, f).sort((a, b) => a.seq - b.seq);
+        const evs = filtrarEventos(d, f);
         const isolado = !!f?.eventoId;
         if (isolado && evs.length === 0) throw new ApiError(404, 'EVENTO_NAO_ENCONTRADO', 'Evento não encontrado.');
-        const g = await hashGenese();
-        const primeiro = evs[0];
-        // Âncora de início: seq e hash do evento imediatamente anterior ao primeiro exportado (gênese se for o seq 1)
-        const ancora = primeiro ? { seq: primeiro.seq - 1, hash: primeiro.hashAnterior } : { seq: 0, hash: g };
-        const consecutivos = evs.every((e, k) => k === 0 || e.seq === evs[k - 1].seq + 1);
-        const manifesto = {
-          tipo: 'manifesto', formato: 'portaria-parque/trilha-jsonl', versao: 2, formatoHash: FORMATO_HASH, sistema: 'Portaria Parque',
-          condominio: 'Condomínio Residencial do Parque', geradoPor: u.nome, geradoEm: `${isoSP(agora())} (horário simulado)`,
-          quantidade: evs.length, filtros: f ?? {}, modo: isolado ? 'evento_isolado' : 'trilha', consecutivos,
-          algoritmo: 'hash = hex(SHA-256(UTF-8(hash_anterior + canonico))). canonico = JSON compacto (sem espaços) de {"v":1, ...campos na ordem de ordemCampos}, com null explícito, instantes em ISO 8601 UTC com milissegundos (Date.toISOString) e correcao_valores como objeto só com as chaves presentes, na ordem de chavesCorrecao. É a mesma serialização do banco (evento_acesso_canonico).',
-          ordemCampos: ['v', ...CAMPOS_CANONICOS_V1], chavesCorrecao: CHAVES_CORRECAO_V1,
-          hashGenese: g, genese: 'SHA-256 da string "genesis"', ancora,
-          instrucoesVerificacao: isolado ? [
-            '1. Monte o JSON canônico da linha de tipo "evento" (campo "evento", sem hash_anterior e hash, na ordem de ordemCampos), calcule SHA-256(hash_anterior + canonico) e compare com "hash": isto confere que o conteúdo deste evento não foi alterado.',
-            '2. A verificação de um único evento confere apenas o hash dele. Ela não prova, sozinha, que o evento pertence à cadeia nem que nada foi removido antes ou depois.',
-            '3. A ligação com a cadeia se confere pelo "hash_anterior": ele deve ser igual ao "hash" do evento de seq anterior na trilha completa (ou ao hashGenese, se for o seq 1), ou ser comparado com a âncora recebida por fonte externa independente.',
-            'Qualquer divergência indica que o registro foi alterado depois de gravado.',
-          ] : [
-            '1. Para cada linha de tipo "evento", calcule SHA-256(hash_anterior + canonico) e compare com "hash".',
-            '2. Para eventos consecutivos (seq, seq+1), confirme que "hash_anterior" do seguinte é igual ao "hash" do anterior; o primeiro deve ter hash_anterior igual a ancora.hash.',
-            '3. Exportação filtrada (consecutivos = false) só permite conferir cada evento isoladamente (passo 1).',
-            '4. Compare o hash do último evento com a âncora recebida por fonte externa independente (e-mail ao síndico/conselho). Sem âncora externa o arquivo prova apenas consistência interna.',
-            'Qualquer divergência indica que o registro (ou um anterior) foi alterado depois de gravado.',
-          ],
+        const porId = new Map(evs.map((e) => [e.id, e]));
+        return montarExportacaoJsonl({
+          eventos: evs.map(paraExportado), filtros: { ...(f ?? {}) }, isolado,
+          exibicao: (x) => {
+            const e = porId.get(x.id ?? '')!;
+            return {
+              pessoa: ix.pessoas.get(e.pessoaId)?.nome ?? null, unidade: ix.codigoUn(e.unidadeDestinoId),
+              areaComum: e.areaComumId ? ix.areas.get(e.areaComumId)?.nome ?? null : null, operador: ix.usuarios.get(e.operadorId)?.nome ?? null,
+            };
+          },
+          geradoPor: u.nome, geradoEm: `${isoSP(agora())} (horário simulado)`,
+          carimbo: new Date(agora() - 3 * 3600 * 1000).toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-'),
           observacao: 'Arquivo de hashes para verificação. Este protótipo gera o arquivo no navegador; não há assinatura digital nem âncora externa.',
-        };
-        const linhas = [JSON.stringify(manifesto)];
-        for (const e of evs) {
-          linhas.push(JSON.stringify({
-            tipo: 'evento', seq: e.seq, evento: paraExportado(e),
-            exibicao: {
-              codigo: codigoEvento(e.seq), pessoa: ix.pessoas.get(e.pessoaId)?.nome ?? null,
-              unidade: ix.codigoUn(e.unidadeDestinoId), areaComum: e.areaComumId ? ix.areas.get(e.areaComumId)?.nome ?? null : null,
-              operador: ix.usuarios.get(e.operadorId)?.nome ?? null,
-            },
-          }));
-        }
-        const ultimo = evs[evs.length - 1];
-        linhas.push(JSON.stringify({ tipo: 'resumo', quantidade: evs.length, ultimoSeq: ultimo?.seq ?? null, ultimoHash: ultimo?.hash ?? null }));
-        const p = new Date(agora() - 3 * 3600 * 1000).toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
-        const nomeArquivo = isolado ? `evento-${codigoEvento(evs[0].seq)}-${p}.jsonl` : `trilha-portaria-parque-${p}.jsonl`;
-        return { nomeArquivo, conteudo: linhas.join('\n') + '\n', quantidade: evs.length };
+        });
       },
     },
 

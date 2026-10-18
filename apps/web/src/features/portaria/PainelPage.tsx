@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { useApi } from '../../api';
 import { useAuth, useCan } from '../../auth/AuthContext';
@@ -11,7 +12,8 @@ import { useToast } from '../../components/Toast';
 import { ROTULO_CATEGORIA, ROTULO_PAPEL, type EventoView } from '@portaria/domain/types';
 import { descreverJanela, encomendaAtrasada } from '@portaria/domain/rules';
 import { fmtHora, partes } from '@portaria/domain/time';
-import { mensagemErro, useAgora, useAsync } from '../../app/useAsync';
+import { mensagemErro, useAgora } from '../../app/useAsync';
+import { CHAVES, useInvalidar } from '../../app/consultas';
 import { AutorizacaoEvento, destaqueEvento, quandoCurto } from '../common/evento';
 import { EventoGaveta } from '../historico/EventoGaveta';
 
@@ -31,17 +33,24 @@ export function PainelPage() {
   const [previasAbertas, setPreviasAbertas] = useState(false);
   const [evento, setEvento] = useState<EventoView | null>(null);
 
-  const resumo = useAsync(() => api.turno.resumo(), []);
-  const eventos = useAsync(() => api.eventos.listar().then((e) => e.filter((x) => x.tipo !== 'saida').slice(0, 10)), []);
-  const previas = useAsync(() => api.autorizacoes.hoje(), []);
-  const encs = useAsync(() => api.encomendas.listar({ status: 'aguardando' }), []);
-  const pendentes = useAsync(() => api.restricoes.pendentes(), []);
+  const invalidar = useInvalidar();
+  const suporta = (op: string) => api.suporta?.(op) ?? true;
+  // React Query: registrar entrada, saída ou correção em outra tela invalida estas chaves (APOS_EVENTO)
+  const resumo = useQuery({ queryKey: CHAVES.turno, queryFn: () => api.turno.resumo(), staleTime: 0 });
+  const eventos = useQuery({
+    queryKey: CHAVES.eventosUltimos, staleTime: 0,
+    queryFn: async () => (await api.eventos.listarPagina({ limite: 10, excluirTipos: ['saida'] })).itens,
+  });
+  const previas = useQuery({ queryKey: CHAVES.autorizacoesHoje, queryFn: () => api.autorizacoes.hoje(), staleTime: 0 });
+  // Encomendas ainda sem API real: sem chamada (nada de 501 em loop); o cartão mostra só o total do turno
+  const encs = useQuery({ queryKey: ['encomendas', 'aguardando'], queryFn: () => api.encomendas.listar({ status: 'aguardando' }), enabled: suporta('encomendas.listar') });
+  const pendentes = useQuery({ queryKey: CHAVES.restricoesPendentes, queryFn: () => api.restricoes.pendentes(), staleTime: 0 });
 
   async function aprovar(id: string) {
     try {
       await api.restricoes.aprovar(id);
       avisar({ texto: 'Restrição para todo o condomínio aprovada.' });
-      void pendentes.recarregar(); void resumo.recarregar();
+      void invalidar([CHAVES.restricoes, CHAVES.turno, CHAVES.unidades]);
     } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
   }
 
@@ -114,7 +123,7 @@ export function PainelPage() {
           <h2 className="text-[17px] font-semibold">Últimas movimentações</h2>
           <span className="text-[13px] text-[#56616B]">Clique em uma linha para ver o registro completo</span>
         </div>
-        {eventos.error && <div className="p-4"><Alert tom="vermelho">{eventos.error}</Alert></div>}
+        {eventos.error && <div className="p-4"><Alert tom="vermelho">{mensagemErro(eventos.error)}</Alert></div>}
         <Lista legenda="Últimas movimentações de acesso" colunas={COLUNAS} className="!rounded-none !border-0">
           <ListaCab padY={10} rotulos={['Hora', 'Nome', 'Unidade', 'Tipo', 'Autorização', 'Registrado por']} />
           {(eventos.data ?? []).map((e) => (
@@ -140,7 +149,7 @@ export function PainelPage() {
             {(previas.data ?? []).map((a) => (
               <div key={a.id} className="grid grid-cols-[minmax(0,1fr)_80px_150px_100px] items-center gap-3 border-b border-[#EEF1F3] py-[10px]">
                 <span className="flex flex-col"><span className="font-medium">{a.pessoaNome}</span><span className="text-[13px] text-[#56616B]">Autorizado por {a.solicitadaPorNome}</span></span>
-                <span className="font-mono font-semibold">{a.unidadeId}</span>
+                <span className="font-mono font-semibold">{a.unidadeRotulo}</span>
                 <span className="text-[14px]">{descreverJanela(a)}</span>
                 <span className={`text-[13px] font-semibold ${a.utilizadaEm ? 'text-[#05603A]' : a.estado === 'valida' ? 'text-[#0B4450]' : 'text-[#93370D]'}`}>
                   {a.utilizadaEm ? `Utilizada ${fmtHora(a.utilizadaEm)}` : a.estado === 'valida' ? 'Vale agora' : 'Aguardando'}

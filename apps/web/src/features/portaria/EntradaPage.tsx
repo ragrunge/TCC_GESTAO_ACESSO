@@ -23,6 +23,7 @@ import {
 import { fmtData, fmtHora, fromInput, toInputDate, toInputTime } from '@portaria/domain/time';
 import { mensagemErro, useAgora } from '../../app/useAsync';
 import { useCatalogo } from '../../app/catalogo';
+import { APOS_EVENTO, useInvalidar } from '../../app/consultas';
 import { garantirNegado } from './negado';
 
 const SUGESTOES_EXCECAO = ['Morador não atende o interfone', 'Emergência médica', 'Serviço público (luz, água, gás)'];
@@ -46,6 +47,8 @@ export function EntradaPage() {
   const agoraRef = useRef(agora);
   agoraRef.current = agora;
   const catalogo = useCatalogo();
+  // Registrar entrada, recusa ou negado atualiza presentes, turno e histórico (e a unidade, a ficha e a busca)
+  const invalidar = useInvalidar();
 
   // --- Passo 1: pessoa
   const [query, setQuery] = useState('');
@@ -241,6 +244,7 @@ export function EntradaPage() {
         titulo: retroativo ? 'Lançamento retroativo registrado' : 'Entrada registrada',
         texto: `${retroativo ? `Acesso de ${fmtData(ev.ocorridoEm)} ${fmtHora(ev.ocorridoEm)}, lançado` : 'Entrada registrada'} às ${fmtHora(ev.registradoEm)} por ${ROTULO_PAPEL[usuario!.papel]} ${usuario!.nome} — ${quem}${via} (${ev.codigo}).`,
       });
+      void invalidar(APOS_EVENTO);
       nav('/painel');
     } catch (e) {
       if (ehApiError(e) && e.code === 'PESSOA_EM_RESTRICAO') {
@@ -248,6 +252,7 @@ export function EntradaPage() {
         const det = e.detalhes as { restricoes: RestricaoView[]; eventoId: string; codigo: string };
         setNegadoGravado({ eventoId: det.eventoId, codigo: det.codigo });
         setRestricao(det.restricoes);
+        void invalidar(APOS_EVENTO); // o negado já está na trilha
       } else setErro(mensagemErro(e));
       setEnviando(false);
     }
@@ -314,6 +319,7 @@ export function EntradaPage() {
         }
       }));
     } catch (e) { setErro(mensagemErro(e)); setRestricao(null); return; }
+    void invalidar(APOS_EVENTO);
     const nome = pessoa.nome;
     const onde = codUnidade ? `na ${codUnidade}` : areaAtual ? `na área comum ${catalogo.areaNome(areaAtual)}` : 'no condomínio';
     setRestricao(null); setNegadoGravado(null);
@@ -340,6 +346,7 @@ export function EntradaPage() {
         ocorridoEm: retroativo ? quando : null, formularioContingencia: retroativo ? formulario.trim() : null,
       });
       avisar({ tom: 'ambar', titulo: 'Recusa registrada', texto: `${ev.autorizadoPorNome} recusou a visita de ${pessoa.nome} à ${codUnidade} (${ev.codigo}). Nenhuma entrada foi registrada.` });
+      void invalidar(APOS_EVENTO);
       limpar();
     } catch (e) { setErro(mensagemErro(e)); } finally { setRecusando(false); }
   }

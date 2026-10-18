@@ -23,6 +23,17 @@ function transporte(rota: Rota) {
 const USUARIO = { id: 'u-1', nome: 'Roberto Faria', login: 'roberto.faria', papel: 'sindico', ativo: true, ultimoAcesso: null, deveTrocarSenha: false };
 const SESSAO = { expiraEm: '2026-10-18T15:00:00.000Z', inatividadeMin: 30 };
 const erro401 = { status: 401, data: { code: 'SESSAO_INVALIDA', message: 'Sua sessão expirou. Entre novamente.' } };
+/** EventoView como a API devolve (instantes em epoch ms). */
+const EV = {
+  id: 'ev1', seq: 7, formatoHash: 1, tipo: 'entrada', categoriaPessoa: 'visitante', pessoaId: 'p1', unidadeDestinoId: 'u-432', areaComumId: null,
+  pontoAcessoId: 'pa1', autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: 'p2', autorizacaoPreviaId: null, justificativa: null, restricaoId: null,
+  operadorId: 'u-1', operadorPapel: 'porteiro', ocorridoEm: 1_760_000_000_000, registradoEm: 1_760_000_000_000, retroativo: false,
+  refereEventoId: null, corrigeEventoId: null, observacao: null, formularioContingencia: null, correcaoValores: null, empresa: null, servico: null,
+  hashAnterior: 'a'.repeat(64), hash: 'b'.repeat(64), codigo: 'EV-000007', pessoaNome: 'Marcos', operadorNome: 'João', unidadeRotulo: 'T4-32',
+  areaComumNome: null, pontoAcessoNome: 'Portaria social', autorizadoPorNome: 'Ana', saida: null, dentro: true, entradaCodigo: null,
+  valoresOriginais: null, correcao: null, valoresCorrigidos: null, pessoaNomeOriginal: null, pessoaNomeCorrigida: null,
+  autorizadoPorNomeOriginal: null, autorizadoPorNomeCorrigido: null, autorizacaoSemSolicitante: false,
+};
 
 function montar(rota: Rota) {
   const adapter = transporte(rota);
@@ -170,15 +181,18 @@ describe('adaptador HTTP (axios)', () => {
 
   it('módulo sem API real: 501 local com mensagem amigável, sem ir à rede', async () => {
     const { api, adapter } = montar(() => ({ status: 200 }));
-    const e = await esperaErro(api.eventos.listar());
+    const e = await esperaErro(api.encomendas.listar());
     expect(e).toMatchObject({ status: 501, code: 'MODULO_INDISPONIVEL', message: MENSAGEM_MODULO_INDISPONIVEL });
+    expect(await esperaErro(api.ocorrencias.listar())).toMatchObject({ status: 501 });
     expect(adapter).not.toHaveBeenCalled();
     expect(api.modo).toBe('http');
-    expect(api.rotasDisponiveis).toEqual(['usuarios', 'unidades', 'cadastro', 'vinculos', 'funcionarios', 'importar']);
-    expect(api.suporta!('unidades.criar')).toBe(true);
-    expect(api.suporta!('veiculos.criar')).toBe(true);
-    expect(api.suporta!('autorizacoes.criar')).toBe(false);
-    expect(await esperaErro(api.encomendas.listar())).toMatchObject({ status: 501 });
+    expect(api.rotasDisponiveis).toEqual(['painel', 'entrada', 'pessoas', 'historico', 'relatorios', 'usuarios', 'unidades', 'cadastro', 'vinculos', 'funcionarios', 'importar']);
+    expect(api.rotasDisponiveis).not.toContain('encomendas');
+    expect(api.rotasDisponiveis).not.toContain('ocorrencias');
+    for (const op of ['unidades.criar', 'veiculos.criar', 'autorizacoes.criar', 'restricoes.aprovar', 'eventos.criar', 'auditoria.exportar', 'relatorios.exportarCsv']) {
+      expect(api.suporta!(op), op).toBe(true);
+    }
+    expect(api.suporta!('encomendas.listar')).toBe(false);
   });
 });
 
@@ -205,12 +219,20 @@ describe('adaptador HTTP: catálogo, unidades, busca e contagem', () => {
     expect(await esperaErro(ruim.api.unidades.listarPagina())).toMatchObject({ code: 'RESPOSTA_INVALIDA' });
   });
 
-  it('detalhe: código legível na URL codificado; seções sem módulo na API chegam como null', async () => {
-    const { api, adapter } = montar(() => ({ status: 200, data: { data: { unidade: UN, veiculos: [{ id: 'v1', unidadeId: 'u-432', placa: 'FKR2C41', modelo: 'Honda Fit', cor: 'prata' }] } } }));
+  it('detalhe: código legível na URL codificado; autorizações, restrições e acessos vêm dos módulos, pelo uuid', async () => {
+    const { api, adapter } = montar((c) => (c.url === '/unidades/T4-32'
+      ? { status: 200, data: { data: { unidade: UN, veiculos: [{ id: 'v1', unidadeId: 'u-432', placa: 'FKR2C41', modelo: 'Honda Fit', cor: 'prata' }] } } }
+      : c.url === '/eventos-acesso' ? { status: 200, data: { data: [EV], pagination: { cursor: null, hasNextPage: false } } }
+        : { status: 200, data: { data: [] } }));
     const d = await api.unidades.detalhe('T4-32');
     expect(adapter.mock.calls[0]![0].url).toBe('/unidades/T4-32');
-    expect(d).toMatchObject({ unidade: UN, vinculos: null, autorizacoes: null, restricoes: null, eventos: null });
+    expect(d).toMatchObject({ unidade: UN, vinculos: null, autorizacoes: [], restricoes: [], eventos: [{ id: 'ev1' }] });
     expect(d.veiculos).toEqual([{ id: 'v1', unidadeId: 'u-432', placa: 'FKR-2C41', modelo: 'Honda Fit', cor: 'prata' }]);
+    const urls = adapter.mock.calls.slice(1).map((c) => [c[0].url, c[0].params]);
+    expect(urls).toEqual(expect.arrayContaining([
+      ['/autorizacoes-previas', { unidadeId: 'u-432' }], ['/restricoes', { unidadeId: 'u-432' }],
+      ['/eventos-acesso', { unidadeId: 'u-432', excluirTipos: 'correcao', limite: 12 }],
+    ]));
   });
 
   it('CRUD de unidade: POST, PATCH e verbos de transição; erro de regra chega com o código da API', async () => {
@@ -351,18 +373,22 @@ describe('adaptador HTTP: pessoas, funcionários, veículos, vínculos e importa
     expect(adapter.mock.calls[0]![0]).toMatchObject({ url: '/pessoas', params: { limite: 50, categoria: 'morador', cursor: 'c1' } });
   });
 
-  it('ficha: vínculos com datas convertidas, funcionário sem a pessoa, eventos null (módulo ainda sem API)', async () => {
-    const { api } = montar(() => ({ status: 200, data: { data: { pessoa: { ...PESSOA, telefone: '11987650001' }, funcionario: null, vinculos: [VINCULO], eventos: null } } }));
+  it('ficha: vínculos com datas convertidas, funcionário sem a pessoa, últimos acessos pelo módulo de eventos', async () => {
+    const { api, adapter } = montar((c) => (c.url === '/eventos-acesso'
+      ? { status: 200, data: { data: [], pagination: { cursor: null, hasNextPage: false } } }
+      : { status: 200, data: { data: { pessoa: { ...PESSOA, telefone: '11987650001' }, funcionario: null, vinculos: [VINCULO], eventos: null } } }));
     const f = await api.pessoas.ficha('p1');
-    expect(f.eventos).toBeNull();
+    expect(f.eventos).toEqual([]);
+    expect(adapter.mock.calls[1]![0]).toMatchObject({ url: '/eventos-acesso', params: { pessoaId: 'p1', excluirTipos: 'correcao', limite: 10 } });
     expect(f.funcionario).toBeUndefined();
     expect(f.pessoa.telefone).toBe('11987650001');
     expect(f.vinculos[0]).toMatchObject({ vigenciaInicio: brt(2026, 10, 1), vigenciaFim: brt(2027, 7, 31), prazoRegularizacao: null, conferencia: { data: brt(2026, 10, 17) } });
   });
 
   it('pessoas.funcionario: 404 vira null (não é funcionário); outro erro propaga', async () => {
-    const { api } = montar((c) => (c.url === '/funcionarios/p1' ? { status: 404, data: { code: 'FUNCIONARIO_NAO_ENCONTRADO', message: 'x' } }
-      : c.url === '/funcionarios/p9' ? { status: 200, data: { data: FUNC } } : { status: 500, data: {} }));
+    // Só a escala da pessoa (o porteiro não lê a lista nem a ficha do funcionário)
+    const { api } = montar((c) => (c.url === '/funcionarios/p1/escala' ? { status: 404, data: { code: 'FUNCIONARIO_NAO_ENCONTRADO', message: 'x' } }
+      : c.url === '/funcionarios/p9/escala' ? { status: 200, data: { data: FUNC } } : { status: 500, data: {} }));
     expect(await api.pessoas.funcionario('p1')).toBeNull();
     expect(await api.pessoas.funcionario('p9')).toEqual({ pessoaId: 'p9', funcao: 'Vigia', escala: ESCALA, ativo: true });
     expect((await esperaErro(api.pessoas.funcionario('p2'))).status).toBe(500);
@@ -429,11 +455,12 @@ describe('adaptador HTTP: pessoas, funcionários, veículos, vínculos e importa
 
   it('detalhe da unidade: vínculos vêm da API (datas convertidas)', async () => {
     const UN = { id: 'u-432', torre: 4, numero: '32', ativo: true };
-    const { api } = montar(() => ({ status: 200, data: { data: { unidade: UN, veiculos: [], vinculos: [VINCULO] } } }));
+    const { api } = montar((c) => (c.url === '/unidades/u-432' ? { status: 200, data: { data: { unidade: UN, veiculos: [], vinculos: [VINCULO] } } }
+      : c.url === '/eventos-acesso' ? { status: 200, data: { data: [], pagination: { cursor: null, hasNextPage: false } } } : { status: 200, data: { data: [] } }));
     const d = await api.unidades.detalhe('u-432');
     expect(d.vinculos).toHaveLength(1);
     expect(d.vinculos![0]!.vigenciaInicio).toBe(brt(2026, 10, 1));
-    expect(d.autorizacoes).toBeNull();
+    expect(d.autorizacoes).toEqual([]);
   });
 
   it('importação: confirmar reenvia as linhas do analisar (a API não as guarda); sem análise nesta aba é 404 local', async () => {
@@ -510,5 +537,102 @@ describe('mock: operações novas do lote de pessoas e vínculos (mesmo contrato
     expect(ids).toContain(a!.id);
     expect(ids).not.toContain(b!.id);
     expect((await api.veiculos.editar({ id: a!.id, placa: b!.placa })).placa).toBe(b!.placa);
+  });
+});
+
+
+describe('adaptador HTTP: registro de acesso, autorizações, restrições, auditoria e relatórios', () => {
+  const corpo = (c: InternalAxiosRequestConfig) => (c.data ? JSON.parse(c.data as string) : undefined);
+  const pagina = (itens: unknown[], cursor: string | null = null) => ({ status: 200, data: { data: itens, pagination: { cursor, hasNextPage: cursor !== null } } });
+
+  it('entrada: POST /eventos-acesso só com o que foi informado; retroativo leva ocorridoEm e formulário; o 422 do negado traz os detalhes', async () => {
+    const { api, adapter } = montar((c) => (corpo(c)?.pessoaId === 'p-restrita'
+      ? { status: 422, data: { code: 'PESSOA_EM_RESTRICAO', message: 'Entrada não permitida', details: { eventoId: 'ev9', codigo: 'EV-000009', restricoes: [] } } }
+      : { status: 201, data: { data: EV } }));
+    const ev = await api.eventos.criar({ pessoaId: 'p1', unidadeDestinoId: 'u-432', autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: 'p2', retroativo: false, ocorridoEm: null, justificativa: null });
+    expect(ev).toMatchObject({ id: 'ev1', codigo: 'EV-000007' });
+    expect(adapter.mock.calls[0]![0]).toMatchObject({ method: 'post', url: '/eventos-acesso' });
+    expect(corpo(adapter.mock.calls[0]![0])).toEqual({ pessoaId: 'p1', unidadeDestinoId: 'u-432', autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: 'p2' });
+    await api.eventos.criar({ pessoaId: 'p1', unidadeDestinoId: 'u-432', autorizadoPorTipo: 'excecao_porteiro', justificativa: 'x'.repeat(20), retroativo: true, ocorridoEm: 1_700_000_000_000.7, formularioContingencia: 'F-1' });
+    expect(corpo(adapter.mock.calls[1]![0])).toMatchObject({ retroativo: true, ocorridoEm: 1_700_000_000_000, formularioContingencia: 'F-1' });
+    const e = await esperaErro(api.eventos.criar({ pessoaId: 'p-restrita', unidadeDestinoId: 'u-432', autorizadoPorTipo: null }));
+    expect(e).toMatchObject({ status: 422, code: 'PESSOA_EM_RESTRICAO', detalhes: { eventoId: 'ev9', codigo: 'EV-000009' } });
+    expect(corpo(adapter.mock.calls[2]![0])).toEqual({ pessoaId: 'p-restrita', unidadeDestinoId: 'u-432', autorizadoPorTipo: null });
+  });
+
+  it('recusa, saída (retroativa) e correção: rotas e corpos', async () => {
+    const { api, adapter } = montar(() => ({ status: 201, data: { data: EV } }));
+    await api.eventos.registrarRecusa({ pessoaId: 'p1', unidadeDestinoId: 'u-432', meio: 'interfone', moradorPessoaId: 'p2' });
+    expect(adapter.mock.calls[0]![0].url).toBe('/eventos-acesso/recusas');
+    await api.eventos.registrarSaida('ev1');
+    expect(adapter.mock.calls[1]![0]).toMatchObject({ url: '/eventos-acesso/ev1/saida' });
+    expect(corpo(adapter.mock.calls[1]![0])).toEqual({});
+    await api.eventos.registrarSaida('ev1', { retroativo: true, ocorridoEm: 1_700_000_000_000, formularioContingencia: 'F-2', observacao: ' ' });
+    expect(corpo(adapter.mock.calls[2]![0])).toEqual({ retroativo: true, ocorridoEm: 1_700_000_000_000, formularioContingencia: 'F-2' });
+    await api.eventos.corrigir('ev1', { justificativa: 'Unidade digitada errada', valores: { unidadeDestinoId: 'u-711' } });
+    expect(adapter.mock.calls[3]![0].url).toBe('/eventos-acesso/ev1/correcoes');
+    expect(corpo(adapter.mock.calls[3]![0])).toEqual({ justificativa: 'Unidade digitada errada', valores: { unidadeDestinoId: 'u-711' } });
+    await api.eventos.corrigir('ev1', { justificativa: 'Só anotação, sem valores', valores: {} });
+    expect(corpo(adapter.mock.calls[4]![0])).toEqual({ justificativa: 'Só anotação, sem valores' });
+  });
+
+  it('listagem: filtros por id e data na query; o NOME vai no corpo do POST /busca (nunca na URL); presentes percorre e ordena', async () => {
+    const { api, adapter } = montar((c) => (c.url === '/acessos/presentes'
+      ? (c.params?.cursor ? pagina([{ ...EV, id: 'ev2', ocorridoEm: 5 }]) : pagina([{ ...EV, id: 'ev3', ocorridoEm: 9 }], 'c2'))
+      : pagina([EV], 'prox')));
+    const p = await api.eventos.listarPagina({ unidadeId: 'u-432', tipo: 'entrada', somenteExcecoes: true, excluirTipos: ['saida'], de: 10.5, limite: 20 });
+    expect(p).toMatchObject({ cursor: 'prox', temMais: true, itens: [{ id: 'ev1' }] });
+    expect(adapter.mock.calls[0]![0]).toMatchObject({ method: 'get', url: '/eventos-acesso',
+      params: { unidadeId: 'u-432', tipo: 'entrada', somenteExcecoes: 'true', excluirTipos: 'saida', de: 10, limite: 20 } });
+    await api.eventos.listarPagina({ pessoa: 'Ana Ribeiro', cursor: 'c1' });
+    const busca = adapter.mock.calls[1]![0];
+    expect(busca).toMatchObject({ method: 'post', url: '/eventos-acesso/busca' });
+    expect(busca.params).toBeUndefined();
+    expect(corpo(busca)).toEqual({ pessoa: 'Ana Ribeiro', limite: 50, cursor: 'c1' });
+    const presentes = await api.eventos.presentes();
+    expect(presentes.map((e) => e.id)).toEqual(['ev3', 'ev2']);
+    const ruim = montar(() => pagina([{ id: 'x' }]));
+    expect(await esperaErro(ruim.api.eventos.listarPagina())).toMatchObject({ code: 'RESPOSTA_INVALIDA' });
+  });
+
+  it('autorização prévia e restrição: datas de calendário (AAAA-MM-DD), verbos e listas', async () => {
+    const { api, adapter } = montar((c) => (c.url?.endsWith('/revogar') ? { status: 204 }
+      : c.url === '/restricoes/verificar' ? { status: 200, data: { data: { restrita: true, alertas: [{ id: 'r1' }] } } }
+        : c.method === 'post' ? { status: 201, data: { data: { id: 'x1' } } } : { status: 200, data: { data: [] } }));
+    await api.autorizacoes.criar({ unidadeId: 'u-432', pessoaId: 'p1', validaAte: brt(2026, 10, 20), diasSemana: [6], horaInicio: '08:00', horaFim: '10:00', solicitadaPorPessoaId: null, justificativa: 'Sem morador, combinado com a administração' });
+    expect(corpo(adapter.mock.calls[0]![0])).toEqual({ unidadeId: 'u-432', pessoaId: 'p1', validaAte: '2026-10-20', diasSemana: [6], horaInicio: '08:00', horaFim: '10:00',
+      solicitadaPorPessoaId: null, justificativa: 'Sem morador, combinado com a administração' });
+    await api.autorizacoes.revogar('a1');
+    expect(adapter.mock.calls[1]![0]).toMatchObject({ method: 'post', url: '/autorizacoes-previas/a1/revogar' });
+    await api.autorizacoes.vigentes('p1', 'area1', { areaComum: true });
+    expect(adapter.mock.calls[2]![0].params).toEqual({ pessoaId: 'p1', areaComumId: 'area1' });
+    expect(await api.restricoes.verificar('p1', null)).toMatchObject({ restrita: true });
+    expect(adapter.mock.calls[3]![0].params).toEqual({ pessoaId: 'p1' });
+    await api.restricoes.criar({ pessoaId: 'p1', unidadeId: 'u-432', motivo: 'Não autoriza', validaAte: brt(2026, 12, 31), solicitadaPorPessoaId: 'p2', paraTodoCondominio: false });
+    expect(corpo(adapter.mock.calls[4]![0])).toEqual({ pessoaId: 'p1', unidadeId: 'u-432', motivo: 'Não autoriza', validaAte: '2026-12-31', solicitadaPorPessoaId: 'p2' });
+    await api.restricoes.aprovar('r1');
+    expect(adapter.mock.calls[5]![0].url).toBe('/restricoes/r1/aprovar');
+    expect(await api.restricoes.pendentes()).toEqual([]);
+  });
+
+  it('auditoria: exportação com os filtros no corpo; trilha de alterações paginada; integridade; relatórios por dia', async () => {
+    const { api, adapter } = montar((c) => {
+      if (c.url === '/auditoria/exportacoes') return { status: 200, data: { data: { nomeArquivo: 'evento-EV-000007.jsonl', conteudo: '{}\n', quantidade: 1 } } };
+      if (c.url === '/auditoria/alteracoes') return pagina([{ id: 'al1', seq: 3 }], 'c9');
+      if (c.url === '/auditoria/integridade') return { status: 200, data: { data: { valido: true, verificados: 7, ultimoSeq: 7, ultimoHash: 'b'.repeat(64) } } };
+      if (c.url === '/relatorios/resumo/csv') return { status: 200, data: { data: { nomeArquivo: 'r.csv', conteudo: 'x', quantidade: 0 } } };
+      return { status: 200, data: { data: { periodo: { de: 0, ate: 1 }, acessosPorDia: [] } } };
+    });
+    expect((await api.auditoria.exportar({ eventoId: 'ev1' })).nomeArquivo).toBe('evento-EV-000007.jsonl');
+    expect(corpo(adapter.mock.calls[0]![0])).toEqual({ eventoId: 'ev1' });
+    await api.auditoria.exportar({ pessoa: 'Ana', de: 5 });
+    expect(corpo(adapter.mock.calls[1]![0])).toEqual({ pessoa: 'Ana', de: 5 });
+    expect(adapter.mock.calls[1]![0].params).toBeUndefined();
+    expect(await api.auditoria.alteracoesPagina({ acao: 'autorizacao.criar', limite: 10 })).toMatchObject({ cursor: 'c9', temMais: true });
+    expect(adapter.mock.calls[2]![0].params).toEqual({ acao: 'autorizacao.criar', limite: 10 });
+    expect(await api.auditoria.verificarIntegridade()).toMatchObject({ valido: true, verificados: 7 });
+    await api.relatorios.resumo({ de: brt(2026, 10, 1), ate: brt(2026, 10, 17, 23, 59), unidadeId: 'u-432', meio: 'escala' });
+    expect(adapter.mock.calls[4]![0].params).toEqual({ de: '2026-10-01', ate: '2026-10-17', unidadeId: 'u-432', meio: 'escala' });
+    expect((await api.relatorios.exportarCsv({})).nomeArquivo).toBe('r.csv');
   });
 });

@@ -16,7 +16,7 @@ import { DIAS_SEMANA_ABREV, fmtData, fromInput, toInputDate, agora } from '@port
 import { acharUnidadePorTexto } from '@portaria/domain/units';
 import { mensagemErro, useAsync } from '../../app/useAsync';
 import { useCatalogo } from '../../app/catalogo';
-import { APOS_VEICULO, APOS_VINCULO, useInvalidar } from '../../app/consultas';
+import { APOS_AUTORIZACAO, APOS_VEICULO, useInvalidar } from '../../app/consultas';
 import { useAcoesUnidade, useUnidadeDetalhe } from './useUnidades';
 import { chipDoEvento, quandoCurto, textoAutorizacao } from '../common/evento';
 import { EventoGaveta } from '../historico/EventoGaveta';
@@ -53,8 +53,8 @@ export function UnidadeDetalhe({ id }: { id: string }) {
   const podeVeiculo = useCan('veiculo.cadastrar');
   const podeEditarUnidade = useCan('unidade.editar');
   const det = useUnidadeDetalhe(id);
-  /** Vínculo, autorização ou restrição novos mudam o detalhe, o resumo da torre, a fila de vínculos e a pessoa. */
-  const recarregar = () => invalidar(APOS_VINCULO);
+  /** Vínculo, autorização ou restrição novos mudam o detalhe, o resumo da torre, a fila de vínculos, a pessoa e o turno. */
+  const recarregar = () => invalidar(APOS_AUTORIZACAO);
 
   if (det.error) return <Alert tom="vermelho" role="alert">{mensagemErro(det.error)} <Link className="underline" to="/unidades">Voltar às unidades</Link></Alert>;
   // Dado anterior (placeholder) só vale se for a MESMA unidade (troca de "T4-32" para o uuid). De outra unidade, não:

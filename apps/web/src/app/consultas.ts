@@ -26,6 +26,21 @@ export const CHAVES = {
   /** Prefixo da busca do topo. */
   busca: ['busca'] as const,
   buscaGlobal: (q: string) => ['busca', 'global', q] as const,
+  /** Prefixo de tudo que é trilha de acesso: histórico, últimas movimentações, presentes e correções. */
+  eventos: ['eventos'] as const,
+  eventosLista: (filtro: string) => ['eventos', 'lista', filtro] as const,
+  eventosUltimos: ['eventos', 'ultimos'] as const,
+  presentes: ['eventos', 'presentes'] as const,
+  correcoes: (id: string) => ['eventos', 'correcoes', id] as const,
+  operadores: ['eventos', 'operadores'] as const,
+  turno: ['turno'] as const,
+  autorizacoes: ['autorizacoes'] as const,
+  autorizacoesHoje: ['autorizacoes', 'hoje'] as const,
+  restricoes: ['restricoes'] as const,
+  restricoesPendentes: ['restricoes', 'pendentes'] as const,
+  /** Verificação da cadeia inteira: cara na API real; a gaveta reaproveita o resultado por alguns segundos. */
+  integridade: ['auditoria', 'integridade'] as const,
+  alteracoes: (acao: string) => ['auditoria', 'alteracoes', acao] as const,
 };
 
 /** Escritas que mudam vínculo: a fila, o badge, a unidade (moradores e resumo), a pessoa (ficha, categoria) e a busca. */
@@ -35,6 +50,13 @@ export const APOS_PESSOA = [CHAVES.pessoas, CHAVES.busca, CHAVES.vinculos, CHAVE
 /** Escritas de veículo: o detalhe da unidade e a busca por placa. */
 export const APOS_VEICULO = [CHAVES.unidades, CHAVES.busca] as const;
 export const APOS_FUNCIONARIO = [CHAVES.funcionarios, CHAVES.pessoas, CHAVES.busca] as const;
+/**
+ * Registro de acesso (entrada, recusa, negado, saída, correção): presentes, turno e histórico; e também o detalhe da
+ * unidade e a ficha (últimos acessos), a busca ("último acesso"), o uso das autorizações de hoje e a integridade.
+ */
+export const APOS_EVENTO = [CHAVES.eventos, CHAVES.turno, CHAVES.unidades, CHAVES.pessoas, CHAVES.busca, CHAVES.autorizacoes, CHAVES.integridade, ['auditoria', 'alteracoes']] as const;
+/** Autorização prévia e restrição: o detalhe da unidade, o turno (contagens), as listas de hoje e as pendências. */
+export const APOS_AUTORIZACAO = [...APOS_VINCULO, CHAVES.turno, CHAVES.autorizacoes, CHAVES.restricoes] as const;
 
 /** Invalida os prefixos dados (resolve quando as consultas ativas recarregaram). */
 export function useInvalidar() {

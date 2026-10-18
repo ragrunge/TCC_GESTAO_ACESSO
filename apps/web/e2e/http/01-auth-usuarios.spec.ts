@@ -68,7 +68,11 @@ test.describe.serial('API real: login, sessão e usuários', () => {
   test('síndico entra, vê módulo sem API como "em breve", lista e cria usuário (senha temporária uma vez)', async ({ page }) => {
     await entrar(page, 'roberto.faria', SENHA!);
     await expect(page).toHaveURL(/\/painel$/);
+    // O painel já tem API (turno e movimentações); encomendas ainda não
+    await expect(page.getByRole('heading', { name: 'Últimas movimentações' })).toBeVisible();
+    await page.goto('/encomendas');
     await expect(page.getByText('Disponível em breve na API real')).toBeVisible();
+    await page.goto('/painel');
 
     // sessão sobrevive ao reload (cookie HttpOnly + /auth/me)
     await page.reload();

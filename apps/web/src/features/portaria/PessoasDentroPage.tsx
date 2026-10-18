@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { TriangleAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useApi } from '../../api';
@@ -13,7 +14,8 @@ import { useToast } from '../../components/Toast';
 import { ROTULO_CATEGORIA, type EventoView } from '@portaria/domain/types';
 import { permanenciaExcedida } from '@portaria/domain/rules';
 import { agora as agoraSim, fmtDataHora, fmtHora, fromInput, toInputDate } from '@portaria/domain/time';
-import { mensagemErro, useAgora, useAsync } from '../../app/useAsync';
+import { mensagemErro, useAgora } from '../../app/useAsync';
+import { APOS_EVENTO, CHAVES, useInvalidar } from '../../app/consultas';
 import { chipDoEvento, textoAutorizacao } from '../common/evento';
 
 const COLUNAS = 'minmax(0,1.4fr) 110px 80px 80px 150px minmax(0,1.3fr) 290px';
@@ -25,15 +27,16 @@ export function PessoasDentroPage() {
   const podeRegistrar = useCan('evento.registrar');
   const podeRetroativo = useCan('evento.retroativo');
   const [retro, setRetro] = useState<EventoView | null>(null);
-  const lista = useAsync(() => api.eventos.presentes(), []);
+  const invalidar = useInvalidar();
+  const lista = useQuery({ queryKey: CHAVES.presentes, queryFn: () => api.eventos.presentes(), staleTime: 0 });
 
   async function saida(id: string, nome: string) {
     try {
       // A saída é um NOVO evento ligado à entrada; a entrada original não é alterada (RN-04)
       const ev = await api.eventos.registrarSaida(id);
       avisar({ texto: `Saída de ${nome} registrada às ${fmtHora(ev.ocorridoEm)} (${ev.codigo}, ligada à entrada ${ev.entradaCodigo}).` });
-      void lista.recarregar();
-    } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
+      void invalidar(APOS_EVENTO);
+    } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); void invalidar([CHAVES.presentes]); }
   }
 
   const dados = lista.data ?? [];
@@ -42,7 +45,7 @@ export function PessoasDentroPage() {
       <PageHeader titulo="Pessoas no condomínio"
         descricao={`${dados.length} ${dados.length === 1 ? 'pessoa entrou' : 'pessoas entraram'} e ainda não ${dados.length === 1 ? 'teve' : 'tiveram'} a saída registrada.`}
         acoes={podeRegistrar && <Link to="/entrada" className="inline-flex h-11 items-center gap-[10px] rounded-lg bg-[#0B5563] px-[18px] font-semibold !text-white hover:bg-[#08434E]">Nova entrada <kbd className="rounded-[5px] border border-white/50 px-[7px] py-0.5 font-mono text-[13px]">F2</kbd></Link>} />
-      {lista.error && <Alert tom="vermelho" role="alert">{lista.error}</Alert>}
+      {lista.error && <Alert tom="vermelho" role="alert">{mensagemErro(lista.error)}</Alert>}
       <Lista legenda="Pessoas atualmente no condomínio" colunas={COLUNAS}>
         <ListaCab rotulos={['Nome', 'Tipo', 'Unidade', 'Entrada', 'Permanência', 'Autorizado por', '']} />
         {dados.map((e) => {
@@ -70,10 +73,10 @@ export function PessoasDentroPage() {
             </ListaLinha>
           );
         })}
-        {!lista.loading && dados.length === 0 && <Vazio>Ninguém no condomínio no momento.</Vazio>}
+        {!lista.isPending && dados.length === 0 && <Vazio>Ninguém no condomínio no momento.</Vazio>}
       </Lista>
       {retro && <SaidaRetroativaModal entrada={retro} onClose={() => setRetro(null)}
-        onFeito={(ev) => { setRetro(null); avisar({ texto: `Saída retroativa de ${retro.pessoaNome} registrada: hora real ${fmtDataHora(ev.ocorridoEm)} (${ev.codigo}).` }); void lista.recarregar(); }} />}
+        onFeito={(ev) => { setRetro(null); avisar({ texto: `Saída retroativa de ${retro.pessoaNome} registrada: hora real ${fmtDataHora(ev.ocorridoEm)} (${ev.codigo}).` }); void invalidar(APOS_EVENTO); }} />}
     </div>
   );
 }

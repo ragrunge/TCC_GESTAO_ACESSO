@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Check, ShieldCheck } from 'lucide-react';
 import { useApi, type FiltroEventos } from '../../api';
 import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
@@ -13,13 +14,15 @@ import { useToast } from '../../components/Toast';
 import { ROTULO_MEIO, ROTULO_CATEGORIA, type EventoView, type MeioAutorizacao } from '@portaria/domain/types';
 import { DIA, agora, fimDoDia, fromInput, inicioDoDia, toInputDate } from '@portaria/domain/time';
 import { useCatalogo } from '../../app/catalogo';
-import { mensagemErro, useAsync } from '../../app/useAsync';
+import { mensagemErro } from '../../app/useAsync';
+import { APOS_EVENTO, CHAVES, useInvalidar } from '../../app/consultas';
 import { AutorizacaoEvento, destaqueEvento, quandoCurto } from '../common/evento';
 import { EventoGaveta } from './EventoGaveta';
 import { baixarArquivo } from './download';
 import { TrilhaAlteracoes } from './TrilhaAlteracoes';
 
-const LIMITE = 150;
+/** Eventos por página (a lista cresce com "Carregar mais"; a trilha inteira não vem de uma vez). */
+const POR_PAGINA = 50;
 const COLUNAS = '110px minmax(0,1.2fr) 80px 100px minmax(0,1.9fr) 120px 140px';
 
 export function HistoricoPage() {
@@ -36,7 +39,6 @@ export function HistoricoPage() {
   const [meio, setMeio] = useState('');
   const [exc, setExc] = useState(false);
   const [retro, setRetro] = useState(false);
-  const [mais, setMais] = useState(false);
   const [aba, setAba] = useState<'acessos' | 'alteracoes'>('acessos');
   const [aberto, setAberto] = useState<EventoView | null>(null);
   const [integ, setInteg] = useState<ResultadoIntegridade | null>(null);
@@ -51,17 +53,29 @@ export function HistoricoPage() {
     somenteExcecoes: exc || undefined, somenteRetroativos: retro || undefined,
   }), [de, ate, un, pessoa, operadorId, tipo, meio, exc, retro]);
 
-  const lista = useAsync(() => api.eventos.listar(filtro), [JSON.stringify(filtro)]);
-  const operadores = useAsync(async () => {
-    const todos = await api.eventos.listar({ de: inicioDoDia(agora()) - 40 * DIA });
-    return [...new Map(todos.map((e) => [e.operadorId, e.operadorNome])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
-  }, []);
+  const invalidar = useInvalidar();
+  const lista = useInfiniteQuery({
+    queryKey: CHAVES.eventosLista(JSON.stringify(filtro)),
+    queryFn: ({ pageParam }) => api.eventos.listarPagina({ ...filtro, cursor: pageParam, limite: POR_PAGINA }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (p) => (p.temMais && p.cursor ? p.cursor : undefined),
+    staleTime: 0,
+  });
+  // Porteiros para o filtro: quem registrou nos últimos 40 dias (uma página de até 100 eventos basta para a lista)
+  const operadores = useQuery({
+    queryKey: CHAVES.operadores,
+    queryFn: async () => {
+      const p = await api.eventos.listarPagina({ de: inicioDoDia(agora()) - 40 * DIA, limite: 100 });
+      return [...new Map(p.itens.map((e) => [e.operadorId, e.operadorNome])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    },
+  });
 
   async function verificar() {
     setVerificando(true);
     try {
       const r = await api.auditoria.verificarIntegridade();
       setInteg(r);
+      void invalidar([CHAVES.integridade]);
       if (r.valido) avisar({ titulo: 'Trilha íntegra', texto: `${r.verificados} registros verificados; a cadeia de hashes está consistente.` });
       else avisar({ tom: 'vermelho', titulo: 'Adulteração detectada', texto: `Primeiro registro divergente: seq ${r.primeiroSeqInvalido}.` });
     } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); } finally { setVerificando(false); }
@@ -75,7 +89,7 @@ export function HistoricoPage() {
     } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
   }
 
-  const dados = lista.data ?? [];
+  const dados = useMemo(() => (lista.data?.pages ?? []).flatMap((p) => p.itens), [lista.data]);
   const invalidoSeq = integ && !integ.valido ? integ.primeiroSeqInvalido : undefined;
   const limpar = () => { setDe(toInputDate(agora() - 7 * DIA)); setAte(toInputDate(agora())); setUnidade(''); setPessoa(''); setOperadorId(''); setTipo(''); setMeio(''); setExc(false); setRetro(false); };
   const campo = 'flex flex-col gap-1 text-[13px] font-medium';
@@ -101,7 +115,7 @@ export function HistoricoPage() {
             <span>Integridade verificada: {integ.verificados} registros em ordem de sequência. Último registro: seq {integ.ultimoSeq}, hash <span className="font-mono text-[13px]">{integ.ultimoHash.slice(0, 16)}…</span></span>
           </div>
         : <Alert tom="vermelho" role="alert" titulo="ADULTERAÇÃO DETECTADA NA TRILHA">
-            O primeiro registro inconsistente é o de sequência <strong>{integ.primeiroSeqInvalido}</strong> ({integ.motivo === 'hash_divergente' ? 'o conteúdo não bate com o hash gravado' : integ.motivo === 'hash_anterior_incoerente' ? 'o encadeamento com o registro anterior está quebrado' : 'há lacuna na sequência'}). Os {integ.verificados} registros anteriores estão íntegros. Preserve o arquivo exportado e acione o síndico.
+            O primeiro registro inconsistente é o de sequência <strong>{integ.primeiroSeqInvalido}</strong> ({integ.motivo === 'hash_divergente' ? 'o conteúdo não bate com o hash gravado' : integ.motivo === 'hash_anterior_incoerente' ? 'o encadeamento com o registro anterior está quebrado' : integ.motivo === 'selo_divergente' ? 'a cadeia não bate com o selo diário: foi recalculada depois de alterada' : 'há lacuna na sequência'}). Os {integ.verificados} registros anteriores estão íntegros. Preserve o arquivo exportado e acione o síndico.
           </Alert>)}
 
       <form className="grid grid-cols-4 items-end gap-x-4 gap-y-3 rounded-[10px] border border-[#DCE1E5] bg-white px-5 py-4" onSubmit={(e) => e.preventDefault()} aria-label="Filtros">
@@ -132,12 +146,14 @@ export function HistoricoPage() {
         </div>
       </form>
 
-      {lista.error && <Alert tom="vermelho" role="alert">{lista.error}</Alert>}
+      {lista.error && <Alert tom="vermelho" role="alert">{mensagemErro(lista.error)}</Alert>}
       <div className="overflow-hidden rounded-[10px] border border-[#DCE1E5] bg-white">
-        <div className="border-b border-[#E6EAED] px-5 py-3 text-[14px] text-[#56616B]">{dados.length} {dados.length === 1 ? 'evento' : 'eventos'} nos filtros escolhidos</div>
+        <div className="border-b border-[#E6EAED] px-5 py-3 text-[14px] text-[#56616B]">
+          {dados.length} {dados.length === 1 ? 'evento' : 'eventos'} nos filtros escolhidos{lista.hasNextPage ? ' (há mais: carregue abaixo)' : ''}
+        </div>
         <Lista legenda="Eventos de acesso" colunas={COLUNAS} className="!rounded-none !border-0">
           <ListaCab padY={10} rotulos={['Data e hora', 'Pessoa', 'Unidade', 'Tipo', 'Autorização', 'Registrado por', 'Código']} />
-          {dados.slice(0, mais ? undefined : LIMITE).map((e) => {
+          {dados.map((e) => {
             const ruim = invalidoSeq !== undefined && e.seq === invalidoSeq;
             return (
               <ListaLinha key={e.id} minH={50} destaque={ruim ? 'vermelho' : destaqueEvento(e) ?? (e.retroativo ? 'novo' : undefined)} onClick={() => setAberto(e)} ariaLabel={`Abrir evento ${e.codigo}`}>
@@ -154,13 +170,13 @@ export function HistoricoPage() {
             );
           })}
         </Lista>
-        {!lista.loading && dados.length === 0 && <Vazio>Nenhum evento com estes filtros.</Vazio>}
+        {!lista.isPending && dados.length === 0 && <Vazio>Nenhum evento com estes filtros.</Vazio>}
       </div>
-      {dados.length > LIMITE && !mais && <div><Button onClick={() => setMais(true)}>Mostrar todos os {dados.length} registros</Button></div>}
+      {lista.hasNextPage && <div><Button carregando={lista.isFetchingNextPage} onClick={() => void lista.fetchNextPage()}>Carregar mais</Button></div>}
 
       </>}
 
-      {aberto && <EventoGaveta ev={aberto} onClose={() => setAberto(null)} onCorrigido={() => { setAberto(null); void lista.recarregar(); }} />}
+      {aberto && <EventoGaveta ev={aberto} onClose={() => setAberto(null)} onCorrigido={() => { setAberto(null); void invalidar(APOS_EVENTO); }} />}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useApi, type PessoaBusca } from '../../api';
 import { useCan } from '../../auth/AuthContext';
@@ -11,7 +12,8 @@ import { useToast } from '../../components/Toast';
 import { ROTULO_CATEGORIA, type EventoView, type ValoresCorrecao } from '@portaria/domain/types';
 import { MIN_JUSTIFICATIVA, justificativaValida } from '@portaria/domain/rules';
 import { fmtData, fmtDataHora, fmtHora, fromInput } from '@portaria/domain/time';
-import { mensagemErro, useAsync } from '../../app/useAsync';
+import { mensagemErro } from '../../app/useAsync';
+import { APOS_EVENTO, CHAVES, useInvalidar } from '../../app/consultas';
 import { useCatalogo } from '../../app/catalogo';
 import { textoAutorizacao, textoMeioLongo } from '../common/evento';
 import { baixarArquivo } from './download';
@@ -35,8 +37,10 @@ export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onC
   const [vPessoa, setVPessoa] = useState<PessoaBusca | null>(null);
   const [vAutorizador, setVAutorizador] = useState<PessoaBusca | null>(null);
   // Selo por registro: íntegro se a cadeia está válida ou se o primeiro registro inválido vem depois dele
-  const integ = useAsync(() => api.auditoria.verificarIntegridade().catch(() => null), [ev.id]);
-  const todos = useAsync(() => api.eventos.listar(), []);
+  const invalidar = useInvalidar();
+  // A verificação percorre a cadeia inteira: na API real, o resultado vale por 30 s para as próximas gavetas
+  const integ = useQuery({ queryKey: CHAVES.integridade, queryFn: () => api.auditoria.verificarIntegridade().catch(() => null), staleTime: 30_000 });
+  const correcoes = useQuery({ queryKey: CHAVES.correcoes(ev.id), queryFn: () => api.eventos.correcoesDe(ev.id), enabled: ev.tipo !== 'correcao' });
   const r = integ.data;
   const ok = r ? r.valido || (r.primeiroSeqInvalido ?? 0) > ev.seq : null;
 
@@ -46,7 +50,7 @@ export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onC
   else passos.push({ quando: ev.ocorridoEm, texto: ev.tipo === 'entrada' ? 'Entrada registrada' : ev.tipo === 'saida' ? 'Saída registrada' : ev.tipo === 'negado' ? 'Entrada negada por restrição' : ev.tipo === 'recusado' ? 'Visita recusada pelo morador' : 'Correção registrada' });
   if (ev.retroativo) passos.push({ quando: ev.registradoEm, texto: 'Lançamento retroativo gravado na trilha' });
   if (ev.saida) passos.push({ quando: ev.saida.em, texto: `Saída registrada (${ev.saida.codigo}), ligada a esta entrada` });
-  for (const c of (todos.data ?? []).filter((x) => x.corrigeEventoId === ev.id)) passos.push({ quando: c.ocorridoEm, texto: `Correção por ${c.operadorNome}: ${c.justificativa} (${c.codigo})` });
+  for (const c of correcoes.data ?? []) passos.push({ quando: c.ocorridoEm, texto: `Correção por ${c.operadorNome}: ${c.justificativa} (${c.codigo})` });
   if (ev.entradaCodigo) passos.push({ quando: ev.ocorridoEm, texto: `Vinculado à entrada ${ev.entradaCodigo}` });
   passos.sort((a, b) => a.quando - b.quando);
 
@@ -76,6 +80,7 @@ export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onC
       if (vAutorizador) valores.autorizadoPorPessoaId = vAutorizador.id; // autorizador é pessoa (id), não nome livre
       const novo = await api.eventos.corrigir(ev.id, { justificativa: just, observacao: obs, valores: Object.keys(valores).length ? valores : undefined });
       avisar({ texto: `Correção ${novo.codigo} registrada. O registro original permanece inalterado.` });
+      void invalidar(APOS_EVENTO);
       onCorrigido?.(); onClose();
     } catch (e) { setErro(mensagemErro(e)); }
   }

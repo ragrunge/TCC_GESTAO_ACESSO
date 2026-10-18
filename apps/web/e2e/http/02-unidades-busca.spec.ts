@@ -56,7 +56,7 @@ test.describe.serial('API real: catálogo, badge, busca e unidades', () => {
     await expect(page.getByRole('group', { name: 'Unidades da torre 4' }).getByRole('button', { name: 'Apartamento 32' })).toBeVisible();
   });
 
-  test('busca do topo por nome abre a ficha; por unidade leva ao detalhe com as seções sem API "em breve"', async ({ page }) => {
+  test('busca do topo por nome abre a ficha; por unidade leva ao detalhe com todas as seções vindas da API', async ({ page }) => {
     await entrar(page, 'roberto.faria', SENHA!);
     await expect(page).toHaveURL(/\/painel$/);
     const busca = page.getByLabel('Buscar por nome, documento, unidade ou placa');
@@ -79,12 +79,12 @@ test.describe.serial('API real: catálogo, badge, busca e unidades', () => {
     await expect(page).toHaveURL(/\/unidades\/[0-9a-f-]{36}$/);
     await expect(page.getByRole('heading', { name: 'Torre 4 · Apartamento 32' })).toBeVisible();
     await expect(page.getByText('FKR-2C41')).toBeVisible(); // veículos vêm da API (exibidos com hífen, como no mock)
-    await expect(page.getByText('Ana Ribeiro', { exact: true })).toBeVisible(); // moradores (vínculos) vêm da API
-    await expect(page.getByRole('note', { name: 'Restrições: disponível em breve' })).toBeVisible();
-    await expect(page.getByRole('note', { name: 'Histórico recente de acessos: disponível em breve' })).toBeVisible();
-    // ações de módulos sem API não aparecem (não dariam 501); vínculo já tem API
+    await expect(page.getByText('Ana Ribeiro', { exact: true }).first()).toBeVisible(); // moradores (vínculos) vêm da API
+    // Autorizações, restrições e acessos já têm API (lote de registro de acesso): nenhuma seção "em breve"
+    await expect(page.getByRole('note', { name: /disponível em breve/ })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Solicitar vínculo' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Nova restrição' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Nova restrição' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Nova autorização prévia' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Desativar unidade' })).toBeVisible();
   });
 

@@ -1,23 +1,31 @@
 // Implementação HTTP da interface Api contra o backend NestJS (spec §5.1 e §6). Hoje cobre autenticação, sessão,
-// usuários, unidades, catálogo, busca, pessoas, funcionários, veículos, vínculos e importação; os demais módulos lançam
-// 501 até a API real tê-los (a UI mostra "disponível em breve").
+// usuários, unidades, catálogo, busca, pessoas, funcionários, veículos, vínculos, importação, registro de acesso
+// (eventos, presentes, turno), autorizações prévias, restrições, auditoria e relatórios. Encomendas, ocorrências e LGPD
+// lançam 501 até a API real tê-los (a UI mostra "disponível em breve").
 // Formatos que o adaptador converte para o domínio: data de calendário 'YYYY-MM-DD' (dia BRT) <-> número do início do
 // dia BRT; placa 'ABC1D23' -> 'ABC-1D23' (como o mock exibe).
 // Formato REST (skill rest-api): todo 2xx com corpo vem em { data }; listas paginadas em
 // { data: [...], pagination: { cursor, hasNextPage } }; 204 sem corpo.
 import type { AxiosRequestConfig } from 'axios';
-import type { AreaComum, ConferenciaComprovante, Funcionario, Pessoa, Unidade, UsuarioSistema, Veiculo, VinculoUnidade } from '@portaria/domain/types';
+import type {
+  AreaComum, AutorizacaoPrevia, ConferenciaComprovante, EventoView, Funcionario, Pessoa, RegistroAlteracao, Restricao, Unidade, UsuarioSistema, Veiculo,
+  VinculoUnidade,
+} from '@portaria/domain/types';
+import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
 import type { Rota } from '@portaria/domain/rbac';
 import { brt, toInputDate } from '@portaria/domain/time';
 import type {
-  Api, Autorizador, FichaPessoa, FuncionarioView, LinhaPlanilha, Pagina, PessoaBusca, PessoaLista, RelatorioImportacao, ResultadoBuscaGlobal,
-  ResultadoImportacao, UnidadeDetalhe, UnidadeResumo, UsuarioComSenhaTemporaria, UsuarioSessao, VinculoView,
+  Api, AutorizacaoView, Autorizador, FichaPessoa, FiltroAlteracoesPagina, FiltroEventos, FiltroEventosPagina, FiltroRelatorio, FuncionarioView,
+  LinhaPlanilha, Pagina, PacoteExportacao, PessoaBusca, PessoaLista, RelatorioImportacao, RelatorioResumo, RestricaoView, ResultadoBuscaGlobal,
+  ResultadoImportacao, ResultadoRestricao, ResumoTurno, UnidadeDetalhe, UnidadeResumo, UsuarioComSenhaTemporaria, UsuarioSessao, VinculoView,
 } from '../types';
 import { ApiError } from '../types';
 import { criarCliente } from './cliente';
 
 /** Rotas da UI com backend pronto. Atualizar a cada módulo novo implementado na API. */
-export const ROTAS_HTTP: readonly Rota[] = ['usuarios', 'unidades', 'cadastro', 'vinculos', 'funcionarios', 'importar'];
+export const ROTAS_HTTP: readonly Rota[] = [
+  'painel', 'entrada', 'pessoas', 'historico', 'relatorios', 'usuarios', 'unidades', 'cadastro', 'vinculos', 'funcionarios', 'importar',
+];
 
 /** Operações com backend pronto, para a UI esconder as ações que dariam 501 (`api.suporta`). */
 export const OPERACOES_HTTP: ReadonlySet<string> = new Set([
@@ -29,6 +37,12 @@ export const OPERACOES_HTTP: ReadonlySet<string> = new Set([
   'vinculos.listar', 'vinculos.listarPagina', 'vinculos.criar', 'vinculos.registrarConferencia', 'vinculos.decidir',
   'vinculos.regularizar', 'vinculos.encerrar', 'vinculos.autorizadores', 'importacao.analisar', 'importacao.confirmar',
   'unidades.listar', 'unidades.listarPagina', 'unidades.detalhe', 'unidades.criar', 'unidades.editar', 'unidades.desativar', 'unidades.reativar',
+  'eventos.criar', 'eventos.registrarRecusa', 'eventos.registrarSaida', 'eventos.corrigir', 'eventos.listar', 'eventos.listarPagina',
+  'eventos.correcoesDe', 'eventos.obter', 'eventos.presentes', 'turno.resumo',
+  'autorizacoes.criar', 'autorizacoes.revogar', 'autorizacoes.vigentes', 'autorizacoes.hoje',
+  'restricoes.verificar', 'restricoes.criar', 'restricoes.aprovar', 'restricoes.revogar', 'restricoes.pendentes',
+  'relatorios.resumo', 'relatorios.exportarCsv',
+  'auditoria.verificarIntegridade', 'auditoria.alteracoes', 'auditoria.alteracoesPagina', 'auditoria.exportar',
 ]);
 
 export const MENSAGEM_MODULO_INDISPONIVEL = 'Módulo ainda não disponível na API real';
@@ -108,6 +122,65 @@ const semIndefinidos = <T extends object>(o: T) => Object.fromEntries(Object.ent
 /** Limite de páginas por listagem completa: a UI de usuários ainda não pagina; isto só impede laço infinito. */
 const MAX_PAGINAS = 20;
 
+// ----- Registro de acesso: filtros -> query (ids e datas) ou corpo (com o nome) -------------------------------------
+
+/** Filtros de evento sem o texto do nome: vão na query string (só ids, instantes e marcações). */
+function filtroQuery(f: FiltroEventosPagina): Record<string, string | number> {
+  const q: Record<string, string | number> = {};
+  if (f.eventoId) q.eventoId = f.eventoId;
+  if (f.de !== undefined) q.de = Math.trunc(f.de);
+  if (f.ate !== undefined) q.ate = Math.trunc(f.ate);
+  if (f.unidadeId) q.unidadeId = f.unidadeId;
+  if (f.pessoaId) q.pessoaId = f.pessoaId;
+  if (f.operadorId) q.operadorId = f.operadorId;
+  if (f.tipo) q.tipo = f.tipo;
+  if (f.meio) q.meio = f.meio;
+  if (f.somenteExcecoes) q.somenteExcecoes = 'true';
+  if (f.somenteRetroativos) q.somenteRetroativos = 'true';
+  if (f.excluirTipos?.length) q.excluirTipos = f.excluirTipos.join(',');
+  if (f.limite !== undefined) q.limite = f.limite;
+  if (f.cursor) q.cursor = f.cursor;
+  return q;
+}
+/** Mesmos filtros como corpo (POST /eventos-acesso/busca e /auditoria/exportacoes): o nome pode identificar alguém. */
+function filtroCorpo(f: FiltroEventos): Record<string, unknown> {
+  return semIndefinidos({
+    eventoId: f.eventoId, de: f.de !== undefined ? Math.trunc(f.de) : undefined, ate: f.ate !== undefined ? Math.trunc(f.ate) : undefined,
+    unidadeId: f.unidadeId, pessoaId: f.pessoaId, pessoa: f.pessoa?.trim() || undefined, operadorId: f.operadorId, tipo: f.tipo, meio: f.meio,
+    somenteExcecoes: f.somenteExcecoes || undefined, somenteRetroativos: f.somenteRetroativos || undefined,
+    excluirTipos: f.excluirTipos?.length ? f.excluirTipos : undefined,
+  });
+}
+
+/** O evento vem pronto da API (mesma EventoView do mock, instantes em epoch ms); aqui só se confere o formato. */
+function eventoDe(e: EventoView): EventoView {
+  if (!e || typeof e.id !== 'string' || typeof e.seq !== 'number' || typeof e.ocorridoEm !== 'number') throw respostaInvalida();
+  return e;
+}
+const listaDe = <T>(corpo: unknown, f: (x: T) => T = (x) => x): T[] => {
+  const d = dados<T[]>(corpo);
+  if (!Array.isArray(d)) throw respostaInvalida();
+  return d.map(f);
+};
+
+/** Filtro de relatório: instantes -> dias de calendário BRT. */
+function filtroRelatorio(f?: number | FiltroRelatorio): Record<string, string> {
+  if (typeof f === 'number') return { de: toInputDate(Date.now() - (f - 1) * 86_400_000) };
+  const q: Record<string, string> = {};
+  if (f?.de !== undefined) q.de = toInputDate(f.de);
+  if (f?.ate !== undefined) q.ate = toInputDate(f.ate);
+  if (f?.unidadeId) q.unidadeId = f.unidadeId;
+  if (f?.categoria) q.categoria = f.categoria;
+  if (f?.meio) q.meio = f.meio;
+  return q;
+}
+
+function pacoteDe(corpo: unknown): PacoteExportacao {
+  const p = dados<PacoteExportacao>(corpo);
+  if (!p || typeof p.nomeArquivo !== 'string' || typeof p.conteudo !== 'string') throw respostaInvalida();
+  return p;
+}
+
 /** `{ usuario, sessao }` de login/me e `{ usuario }` de trocar-senha (dentro de `data`) -> o usuário. */
 function usuarioDe(corpo: unknown): UsuarioSessao {
   const u = dados<{ usuario?: UsuarioSessao } | null>(corpo)?.usuario;
@@ -139,6 +212,16 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
       cursor = p.cursor;
     }
     throw new ApiError(502, 'PAGINACAO_EXCEDIDA', 'A listagem tem mais páginas do que esta tela consegue mostrar.');
+  }
+
+  /** Uma página de eventos. Com o nome (texto), pelo corpo de um POST; sem ele, GET com ids e datas na query. */
+  async function eventosPagina(f: FiltroEventosPagina = {}): Promise<Pagina<EventoView>> {
+    const base = { ...f, limite: f.limite ?? 50 };
+    const corpo = f.pessoa?.trim()
+      ? (await http.post('/eventos-acesso/busca', { ...filtroCorpo(f), limite: base.limite, ...(f.cursor ? { cursor: f.cursor } : {}) })).data
+      : (await http.get('/eventos-acesso', { params: filtroQuery(base) })).data;
+    const p = paginaDe<EventoView>(corpo);
+    return { ...p, itens: p.itens.map(eventoDe) };
   }
 
   /** Linhas da planilha entre analisar e confirmar: só na memória desta aba (têm CPF em claro; a API não as guarda). */
@@ -216,10 +299,16 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
       async detalhe(ref) {
         const d = dados<{ unidade: Unidade; veiculos: Veiculo[]; vinculos?: VinculoApi[] }>((await http.get(`/unidades/${id(ref)}`)).data);
         if (!d?.unidade || !Array.isArray(d.veiculos)) throw respostaInvalida();
-        // Autorizações, restrições e eventos ainda não têm módulo na API: seção indisponível.
+        // As seções do registro de acesso vêm dos módulos próprios (a rota da unidade não depende deles).
+        const uid = d.unidade.id;
+        const [autorizacoes, restricoes, eventos] = await Promise.all([
+          http.get('/autorizacoes-previas', { params: { unidadeId: uid } }).then((r) => listaDe<AutorizacaoView>(r.data)),
+          http.get('/restricoes', { params: { unidadeId: uid } }).then((r) => listaDe<RestricaoView>(r.data)),
+          http.get('/eventos-acesso', { params: { unidadeId: uid, excluirTipos: 'correcao', limite: 12 } }).then((r) => paginaDe<EventoView>(r.data).itens.map(eventoDe)),
+        ]);
         const det: UnidadeDetalhe = {
           unidade: unidadeDe(d.unidade), veiculos: d.veiculos.map(veiculoDe),
-          vinculos: Array.isArray(d.vinculos) ? d.vinculos.map(vinculoDe) : null, autorizacoes: null, restricoes: null, eventos: null,
+          vinculos: Array.isArray(d.vinculos) ? d.vinculos.map(vinculoDe) : null, autorizacoes, restricoes, eventos,
         };
         return det;
       },
@@ -246,10 +335,12 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
       async ficha(pid) {
         const f = dados<{ pessoa: PessoaApi; funcionario: FuncionarioApi | null; vinculos: VinculoApi[]; eventos: unknown[] | null }>((await http.get(`/pessoas/${id(pid)}`)).data);
         if (!f?.pessoa || !Array.isArray(f.vinculos)) throw respostaInvalida();
+        // Últimos 10 acessos (valores efetivos: inclui o que foi corrigido para esta pessoa), sem as correções
+        const eventos = paginaDe<EventoView>((await http.get('/eventos-acesso', { params: { pessoaId: pid, excluirTipos: 'correcao', limite: 10 } })).data).itens.map(eventoDe);
         const ficha: FichaPessoa = {
           pessoa: pessoaDe(f.pessoa), vinculos: f.vinculos.map(vinculoDe),
           ...(f.funcionario ? { funcionario: funcionarioBase(f.funcionario) } : {}),
-          eventos: null, // módulo de eventos ainda não existe na API: a ficha mostra "disponível em breve"
+          eventos,
         };
         return ficha;
       },
@@ -265,9 +356,10 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
       async editar({ id: pid, ...resto }) {
         return pessoaDe(dados<PessoaApi>((await http.patch(`/pessoas/${id(pid)}`, semIndefinidos(resto))).data));
       },
+      // Tela de entrada: só a escala da pessoa sendo registrada (a lista de funcionários não é do porteiro).
       async funcionario(pid) {
         try {
-          return funcionarioBase(dados<FuncionarioApi>((await http.get(`/funcionarios/${id(pid)}`)).data));
+          return funcionarioBase(dados<FuncionarioApi>((await http.get(`/funcionarios/${id(pid)}/escala`)).data));
         } catch (e) {
           if (e instanceof ApiError && e.status === 404) return null; // não é funcionário
           throw e;
@@ -341,14 +433,136 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
         return r.map((a): Autorizador => ({ pessoa: pessoaDe(a.pessoa), vinculo: vinculoDe(a.vinculo) as VinculoUnidade }));
       },
     },
-    autorizacoes: { criar: n(), revogar: n(), vigentes: n(), hoje: n() },
-    restricoes: { verificar: n(), criar: n(), aprovar: n(), revogar: n(), pendentes: n() },
-    eventos: { criar: n(), registrarRecusa: n(), registrarSaida: n(), corrigir: n(), listar: n(), obter: n(), presentes: n() },
+    autorizacoes: {
+      async criar(i) {
+        return dados<AutorizacaoPrevia>((await http.post('/autorizacoes-previas', semIndefinidos({
+          unidadeId: i.unidadeId, areaComumId: i.areaComumId ?? undefined, pessoaId: i.pessoaId,
+          validaDe: i.validaDe !== undefined ? msParaDia(i.validaDe) : undefined, validaAte: msParaDia(i.validaAte),
+          diasSemana: i.diasSemana, horaInicio: i.horaInicio, horaFim: i.horaFim, solicitadaPorPessoaId: i.solicitadaPorPessoaId,
+          justificativa: i.justificativa ?? undefined,
+        }))).data);
+      },
+      async revogar(aid) { await http.post(`/autorizacoes-previas/${id(aid)}/revogar`); },
+      async vigentes(pessoaId, destinoId, o) {
+        const params = o?.areaComum ? { pessoaId, areaComumId: destinoId } : { pessoaId, unidadeId: destinoId };
+        return listaDe<AutorizacaoView>((await http.get('/autorizacoes-previas/vigentes', { params })).data);
+      },
+      async hoje() { return listaDe<AutorizacaoView>((await http.get('/autorizacoes-previas/hoje')).data); },
+    },
+    restricoes: {
+      async verificar(pessoaId, unidadeId) {
+        const r = dados<ResultadoRestricao>((await http.get('/restricoes/verificar', { params: unidadeId ? { pessoaId, unidadeId } : { pessoaId } })).data);
+        if (!r || typeof r.restrita !== 'boolean' || !Array.isArray(r.alertas)) throw respostaInvalida();
+        return r;
+      },
+      async criar(i) {
+        return dados<Restricao>((await http.post('/restricoes', semIndefinidos({
+          pessoaId: i.pessoaId, unidadeId: i.unidadeId, motivo: i.motivo, validaAte: msParaDia(i.validaAte),
+          solicitadaPorPessoaId: i.solicitadaPorPessoaId, paraTodoCondominio: i.paraTodoCondominio || undefined,
+        }))).data);
+      },
+      async aprovar(rid) { return dados<Restricao>((await http.post(`/restricoes/${id(rid)}/aprovar`)).data); },
+      async revogar(rid) { await http.post(`/restricoes/${id(rid)}/revogar`); },
+      async pendentes() { return listaDe<RestricaoView>((await http.get('/restricoes/pendentes')).data); },
+    },
+    eventos: {
+      async criar(i) {
+        return eventoDe(dados<EventoView>((await http.post('/eventos-acesso', semIndefinidos({
+          pessoaId: i.pessoaId, unidadeDestinoId: i.unidadeDestinoId, areaComumId: i.areaComumId ?? undefined,
+          autorizadoPorTipo: i.autorizadoPorTipo ?? null, autorizadoPorPessoaId: i.autorizadoPorPessoaId ?? undefined,
+          autorizacaoPreviaId: i.autorizacaoPreviaId ?? undefined, justificativa: i.justificativa ?? undefined, retroativo: i.retroativo || undefined,
+          ocorridoEm: i.retroativo && i.ocorridoEm ? Math.trunc(i.ocorridoEm) : undefined, observacao: i.observacao ?? undefined,
+          formularioContingencia: i.retroativo ? i.formularioContingencia ?? undefined : undefined,
+        }))).data));
+      },
+      async registrarRecusa(i) {
+        return eventoDe(dados<EventoView>((await http.post('/eventos-acesso/recusas', semIndefinidos({
+          pessoaId: i.pessoaId, unidadeDestinoId: i.unidadeDestinoId, meio: i.meio, moradorPessoaId: i.moradorPessoaId,
+          observacao: i.observacao ?? undefined, retroativo: i.retroativo || undefined,
+          ocorridoEm: i.retroativo && i.ocorridoEm ? Math.trunc(i.ocorridoEm) : undefined,
+          formularioContingencia: i.retroativo ? i.formularioContingencia ?? undefined : undefined,
+        }))).data));
+      },
+      async registrarSaida(entradaId, o = {}) {
+        return eventoDe(dados<EventoView>((await http.post(`/eventos-acesso/${id(entradaId)}/saida`, semIndefinidos({
+          observacao: o.observacao?.trim() || undefined, retroativo: o.retroativo || undefined,
+          ocorridoEm: o.retroativo && o.ocorridoEm ? Math.trunc(o.ocorridoEm) : undefined,
+          formularioContingencia: o.retroativo ? o.formularioContingencia ?? undefined : undefined,
+        }))).data));
+      },
+      async corrigir(eid, i) {
+        const v = i.valores;
+        const valores = v ? semIndefinidos({
+          unidadeDestinoId: v.unidadeDestinoId, ocorridoEm: v.ocorridoEm !== undefined ? Math.trunc(v.ocorridoEm) : undefined,
+          pessoaId: v.pessoaId, autorizadoPorPessoaId: v.autorizadoPorPessoaId,
+        }) : undefined;
+        return eventoDe(dados<EventoView>((await http.post(`/eventos-acesso/${id(eid)}/correcoes`, semIndefinidos({
+          justificativa: i.justificativa, observacao: i.observacao?.trim() || undefined, valores: valores && Object.keys(valores).length ? valores : undefined,
+        }))).data));
+      },
+      listarPagina: eventosPagina,
+      async listar(f = {}) {
+        const itens: EventoView[] = [];
+        let cursor: string | null = null;
+        for (let i = 0; i < MAX_PAGINAS; i++) {
+          const p = await eventosPagina({ ...f, limite: 100, cursor });
+          itens.push(...p.itens);
+          if (!p.temMais || !p.cursor) return itens;
+          cursor = p.cursor;
+        }
+        throw new ApiError(502, 'PAGINACAO_EXCEDIDA', 'A listagem tem mais páginas do que esta tela consegue mostrar. Use filtros.');
+      },
+      async correcoesDe(eid) { return listaDe<EventoView>((await http.get(`/eventos-acesso/${id(eid)}/correcoes`)).data, eventoDe); },
+      async obter(eid) { return eventoDe(dados<EventoView>((await http.get(`/eventos-acesso/${id(eid)}`)).data)); },
+      // Todas as páginas; a ordem final é pela hora efetiva, como no mock (a API pagina por seq).
+      async presentes() {
+        return (await todasAsPaginas<EventoView>('/acessos/presentes')).map(eventoDe).sort((a, b) => b.ocorridoEm - a.ocorridoEm);
+      },
+    },
     encomendas: { listar: n(), receber: n(), entregar: n(), autorizarRetirada: n() },
     ocorrencias: { listar: n(), criar: n(), alterarStatus: n() },
-    turno: { resumo: n() },
-    relatorios: { resumo: n(), exportarCsv: n() },
-    auditoria: { verificarIntegridade: n(), alteracoes: n(), exportar: n() },
+    turno: {
+      async resumo() {
+        const r = dados<ResumoTurno>((await http.get('/turnos/resumo')).data);
+        if (typeof r?.pessoasDentro !== 'number') throw respostaInvalida();
+        return r;
+      },
+    },
+    relatorios: {
+      async resumo(f) {
+        const r = dados<RelatorioResumo>((await http.get('/relatorios/resumo', { params: filtroRelatorio(f) })).data);
+        if (!r?.periodo || !Array.isArray(r.acessosPorDia)) throw respostaInvalida();
+        return r;
+      },
+      async exportarCsv(f) { return pacoteDe((await http.get('/relatorios/resumo/csv', { params: filtroRelatorio(f) })).data); },
+    },
+    auditoria: {
+      async verificarIntegridade() {
+        const r = dados<ResultadoIntegridade>((await http.get('/auditoria/integridade')).data);
+        if (typeof r?.valido !== 'boolean') throw respostaInvalida();
+        return r;
+      },
+      async alteracoesPagina(f: FiltroAlteracoesPagina = {}) {
+        const params: Record<string, string | number> = { limite: f.limite ?? 50 };
+        if (f.de !== undefined) params.de = Math.trunc(f.de);
+        if (f.ate !== undefined) params.ate = Math.trunc(f.ate);
+        if (f.usuarioId) params.usuarioId = f.usuarioId;
+        if (f.acao) params.acao = f.acao;
+        if (f.entidade) params.entidade = f.entidade;
+        if (f.cursor) params.cursor = f.cursor;
+        return paginaDe<RegistroAlteracao>((await http.get('/auditoria/alteracoes', { params })).data);
+      },
+      async alteracoes(f = {}) {
+        const extra: Record<string, string> = {};
+        if (f.acao) extra.acao = f.acao;
+        if (f.entidade) extra.entidade = f.entidade;
+        if (f.usuarioId) extra.usuarioId = f.usuarioId;
+        if (f.de !== undefined) extra.de = String(Math.trunc(f.de));
+        if (f.ate !== undefined) extra.ate = String(Math.trunc(f.ate));
+        return todasAsPaginas<RegistroAlteracao>('/auditoria/alteracoes', extra);
+      },
+      async exportar(f = {}) { return pacoteDe((await http.post('/auditoria/exportacoes', filtroCorpo(f))).data); },
+    },
     lgpd: { exportarPessoa: n(), anonimizar: n(), aplicarRetencao: n() },
     importacao: {
       async analisar({ arquivo, linhas }) {

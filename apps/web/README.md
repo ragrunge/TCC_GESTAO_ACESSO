@@ -64,8 +64,11 @@ A base é sempre relativa (`/api/v1`, mesma origem): em dev o `server.proxy` do 
   emite "sessão expirada" uma vez por sessão (401 fora de login/me/logout) e "troca obrigatória" (403
   `TROCA_DE_SENHA_OBRIGATORIA`), e põe o tempo do `Retry-After` na mensagem do 429. O interceptor não navega: o
   `AuthContext` zera o usuário e os guards redirecionam.
-- `src/api/http/createHttpApi.ts`: `auth.*` e `usuarios.*` reais; os demais módulos lançam 501 local
-  ("Módulo ainda não disponível na API real") e as rotas deles mostram "Disponível em breve" (`ROTAS_HTTP`).
+- `src/api/http/createHttpApi.ts`: auth, usuários, unidades, pessoas, vínculos, funcionários, veículos, importação e o
+  registro de acesso (eventos, presentes, turno, autorizações, restrições, auditoria e relatórios) reais. Encomendas,
+  ocorrências e LGPD lançam 501 local ("Módulo ainda não disponível na API real") e as rotas deles mostram "Disponível em
+  breve" (`ROTAS_HTTP`; ações sem backend somem por `api.suporta`). No modo http o relógio da tela é o real
+  (`relogio.definir(Date.now())` em `criarApi`), não o simulado do mock.
 - React Query (v5) só em login, troca de senha e usuários; as outras telas seguem com `useAsync`. A senha temporária
   (criar/redefinir) aparece uma vez num modal e não passa pelo cache.
 
