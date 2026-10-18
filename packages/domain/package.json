@@ -1,0 +1,84 @@
+{
+  "name": "@portaria/domain",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./cpf": {
+      "require": {
+        "types": "./dist/cjs/cpf.d.ts",
+        "default": "./dist/cjs/cpf.js"
+      },
+      "types": "./src/cpf.ts",
+      "default": "./src/cpf.ts"
+    },
+    "./hashChain": {
+      "require": {
+        "types": "./dist/cjs/hashChain.d.ts",
+        "default": "./dist/cjs/hashChain.js"
+      },
+      "types": "./src/hashChain.ts",
+      "default": "./src/hashChain.ts"
+    },
+    "./rbac": {
+      "require": {
+        "types": "./dist/cjs/rbac.d.ts",
+        "default": "./dist/cjs/rbac.js"
+      },
+      "types": "./src/rbac.ts",
+      "default": "./src/rbac.ts"
+    },
+    "./rules": {
+      "require": {
+        "types": "./dist/cjs/rules.d.ts",
+        "default": "./dist/cjs/rules.js"
+      },
+      "types": "./src/rules.ts",
+      "default": "./src/rules.ts"
+    },
+    "./time": {
+      "require": {
+        "types": "./dist/cjs/time.d.ts",
+        "default": "./dist/cjs/time.js"
+      },
+      "types": "./src/time.ts",
+      "default": "./src/time.ts"
+    },
+    "./types": {
+      "require": {
+        "types": "./dist/cjs/types.d.ts",
+        "default": "./dist/cjs/types.js"
+      },
+      "types": "./src/types.ts",
+      "default": "./src/types.ts"
+    },
+    "./units": {
+      "require": {
+        "types": "./dist/cjs/units.d.ts",
+        "default": "./dist/cjs/units.js"
+      },
+      "types": "./src/units.ts",
+      "default": "./src/units.ts"
+    }
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node -e \"require('fs').writeFileSync('dist/cjs/package.json','{ \\\"type\\\": \\\"commonjs\\\" }\\n')\"",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  },
+  "typesVersions": {
+    "*": {
+      "*": [
+        "dist/cjs/*.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "src",
+    "dist"
+  ]
+}

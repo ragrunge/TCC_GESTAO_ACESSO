@@ -1,0 +1,351 @@
+// Contrato da API. Os métodos espelham os endpoints da especificação técnica (seção 6).
+// A UI só conhece esta interface; mock (em memória) e http (fetch) são trocáveis em src/api/index.ts.
+import type {
+  AreaComum, AutorizacaoPrevia, AutorizacaoRetirada, CategoriaPessoa, Encomenda, Escala, EventoView, MeioAutorizacao, Ocorrencia,
+  Papel, Pessoa, RegistroAlteracao, Restricao, StatusOcorrencia, StatusVinculo, TipoEvento, TipoOcorrencia, TipoVinculo, Unidade,
+  UsuarioSistema, ValoresCorrecao, VinculoUnidade, Veiculo, TipoComprovante, Funcionario, MudancaStatusOcorrencia,
+} from '@portaria/domain/types';
+import type { EstadoAutorizacao } from '@portaria/domain/rules';
+import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
+
+/** Erro de API no formato da spec: status HTTP + código estável + mensagem para o operador. */
+export class ApiError extends Error {
+  constructor(public status: number, public code: string, message: string, public detalhes?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+export const ehApiError = (e: unknown): e is ApiError => e instanceof ApiError;
+
+// ----- Entradas -------------------------------------------------------------------------------
+export interface LoginInput { login: string; senha: string }
+
+export interface NovaPessoaInput {
+  nome: string;
+  /** CPF (só ele é aceito). Dispensado quando `semCpf`. */
+  documento?: string;
+  telefone: string;
+  categoria: CategoriaPessoa; empresa?: string; servico?: string;
+  /** Exceção "sem CPF": a pessoa só entra por exceção do porteiro. */
+  semCpf?: boolean;
+}
+
+/** RN-09/art. 18: completar ou corrigir o cadastro. Campos ausentes não mudam. CPF informado tira a pessoa de "sem CPF". */
+export interface EditarPessoaInput {
+  id: string; nome?: string; telefone?: string; documento?: string; empresa?: string | null; servico?: string | null;
+}
+
+export interface NovoEventoInput {
+  pessoaId: string;
+  /** Destino: unidade OU área comum (área comum só para prestador, RF-36). */
+  unidadeDestinoId: string | null;
+  areaComumId?: string | null;
+  autorizadoPorTipo?: MeioAutorizacao | null;
+  autorizadoPorPessoaId?: string | null;
+  autorizacaoPreviaId?: string | null;
+  justificativa?: string | null;
+  retroativo?: boolean;
+  /** Obrigatório no retroativo: data/hora reais do acesso. O servidor define registradoEm. */
+  ocorridoEm?: number | null;
+  observacao?: string | null;
+  /** Nº do formulário de papel: obrigatório quando `retroativo`. */
+  formularioContingencia?: string | null;
+}
+
+/** UC02 A4: o morador recusou a visita (interfone ou morador presente). */
+export interface NovaRecusaInput {
+  pessoaId: string;
+  unidadeDestinoId: string;
+  meio: 'interfone' | 'morador_presente';
+  moradorPessoaId: string;
+  observacao?: string | null;
+  retroativo?: boolean;
+  ocorridoEm?: number | null;
+  formularioContingencia?: string | null;
+}
+
+export interface OpcoesSaida {
+  observacao?: string;
+  retroativo?: boolean;
+  /** Retroativo: hora real da saída (≥ entrada e < agora). */
+  ocorridoEm?: number | null;
+  formularioContingencia?: string | null;
+}
+
+export interface FiltroAlteracoes { de?: number; ate?: number; usuarioId?: string; acao?: string; entidade?: string }
+
+export interface FiltroEventos {
+  /** RF-32: restringe a um único evento (exportação isolada). */
+  eventoId?: string;
+  de?: number; ate?: number; unidadeId?: string; pessoa?: string; operadorId?: string;
+  tipo?: TipoEvento; meio?: MeioAutorizacao; somenteExcecoes?: boolean; somenteRetroativos?: boolean;
+}
+
+export interface NovoVinculoInput {
+  pessoaId: string; unidadeId: string; tipo: TipoVinculo; vigenciaInicio: number; vigenciaFim: number | null;
+  /** O comprovante não é anexado: a administração registra a conferência depois (RF-05, `vinculos.registrarConferencia`). */
+  solicitadoPor: string;
+}
+
+/** RF-05: o conferente é o usuário autenticado; `data` (início do dia BRT) é hoje se omitida. Sem arquivo. */
+export interface ConferenciaInput { tipo: TipoComprovante; descricao?: string; observacao?: string; data?: number }
+
+export interface NovaAutorizacaoInput {
+  /** Destino: unidade OU área comum. Área comum só síndico/administração (autorizacao.area_comum), sem solicitante. */
+  unidadeId: string | null; areaComumId?: string | null;
+  pessoaId: string; validaAte: number | null; validaDe?: number;
+  diasSemana: number[] | null; horaInicio: string | null; horaFim: string | null;
+  /** Morador que pediu. Sem ele, `justificativa` (≥ 15 caracteres) é obrigatória. */
+  solicitadaPorPessoaId: string | null;
+  justificativa?: string | null;
+}
+
+export interface NovaRestricaoInput {
+  pessoaId: string; unidadeId: string | null; motivo: string; validaAte: number | null;
+  /** Morador que pediu: obrigatório (com vínculo válido) no escopo unidade; opcional no condomínio. */
+  solicitadaPorPessoaId: string | null; paraTodoCondominio?: boolean;
+}
+
+export interface NovaEncomendaInput {
+  unidadeId: string; destinatario: string; transportadora: string; codigoRastreio: string; unidadeConfirmada: boolean;
+}
+
+export interface NovaOcorrenciaInput {
+  tipo: TipoOcorrencia; descricao: string; unidadeId: string | null; envolvidos: string;
+  anexos?: string[]; eventoIds?: string[];
+}
+
+export interface NovoUsuarioInput { nome: string; login: string; papel: Papel }
+
+export interface NovaUnidadeInput { torre: number; numero: string }
+
+/** RF-09: funcionário do condomínio = pessoa (mesmas regras de CPF e telefone) + função e escala. */
+export interface NovoFuncionarioInput { nome: string; documento: string; telefone: string; funcao: string; escala: Escala; ativo?: boolean }
+export interface EditarFuncionarioInput { pessoaId: string; funcao?: string; escala?: Escala; ativo?: boolean }
+export interface FuncionarioView extends Funcionario { pessoa: Pessoa; emEscalaAgora: boolean }
+
+export interface AutorizarRetiradaInput { encomendaId: string; pessoaId: string; solicitadaPorPessoaId: string }
+
+export interface LinhaPlanilha { linha: number; torre: string; unidade: string; nome: string; documento: string; telefone: string; tipo?: string }
+
+// ----- Saídas ---------------------------------------------------------------------------------
+export interface PessoaBusca extends Pessoa {
+  ultimoAcesso: string;
+  /** Ids das unidades com vínculo válido, e os códigos correspondentes ("T4-32") na mesma ordem. */
+  unidadesVinculadas: string[]; unidadesVinculadasCodigos: string[];
+}
+
+export interface VinculoView extends VinculoUnidade {
+  pessoaNome: string; pessoaDocumento: string;
+  /** Pessoa tem CPF e telefone (pré-requisito para aprovar o vínculo). */
+  pessoaCadastroCompleto: boolean;
+  unidadeCodigo: string;
+  decididoPorNome: string | null;
+  registradoPorNome: string | null;
+  conferidoPorNome: string | null;
+  /** Legado com prazo de regularização vencido (RN-09). */
+  legadoVencido: boolean;
+}
+
+export interface AutorizacaoView extends AutorizacaoPrevia {
+  pessoaNome: string; estado: EstadoAutorizacao;
+  /** Código da unidade ou nome da área comum. */
+  unidadeRotulo: string; utilizadaEm: number | null;
+  /** "Paula Nogueira (Administração)". */
+  cadastradaPorNome: string;
+  solicitadaPorNome: string | null;
+  revogadaPorNome: string | null;
+}
+export interface RestricaoView extends Restricao {
+  pessoaNome: string; pendente: boolean; unidadeCodigo: string | null;
+  cadastradaPorNome: string; solicitadaPorNome: string | null; aprovadaPorNome: string | null; revogadaPorNome: string | null;
+}
+
+export interface EncomendaView extends Encomenda {
+  unidadeCodigo: string;
+  recebidaPorNome: string;
+  /** "Lúcia Ribeiro (dependente)" ou "Fulano (autorizado por Ana Ribeiro)". */
+  retiradaPorNome: string | null;
+  retiradaRegistradaPorNome: string | null;
+  autorizacoes: (AutorizacaoRetirada & { pessoaNome: string; solicitanteNome: string })[];
+}
+
+export interface OcorrenciaView extends Ocorrencia {
+  abertaPorNome: string;
+  historicoStatus: (MudancaStatusOcorrencia & { porNome: string })[];
+}
+
+/** Catálogo leve para a UI: todas as unidades (inclusive inativas, para o histórico) e áreas comuns. */
+export interface Catalogo { unidades: Unidade[]; areasComuns: AreaComum[] }
+
+/** LGPD art. 18 (spec 9.3). */
+export interface ResultadoAnonimizacao { pessoaId: string; registrosRedigidos: number; retido: string[] }
+export interface ResultadoRetencao {
+  visitantesPrestadores: number; moradores: number; registrosRedigidos: number; pessoaIds: string[];
+}
+
+export interface UnidadeResumo {
+  unidade: Unidade; moradoresValidos: number; pendentes: number; restricoes: number; cadastroCompleto: boolean;
+}
+export interface UnidadeDetalhe {
+  unidade: Unidade;
+  vinculos: VinculoView[];
+  veiculos: Veiculo[];
+  autorizacoes: AutorizacaoView[];
+  restricoes: RestricaoView[];
+  eventos: EventoView[];
+}
+export interface Autorizador { pessoa: Pessoa; vinculo: VinculoUnidade }
+
+export interface FichaPessoa { pessoa: Pessoa; funcionario?: Funcionario; vinculos: VinculoView[]; eventos: EventoView[] }
+
+export interface ResumoTurno {
+  pessoasDentro: number; encomendasPendentes: number; ocorrenciasAbertas: number; autorizacoesHoje: number;
+  excecoesHoje: number; restricoesPendentes: number;
+}
+
+export interface ResultadoRestricao { restrita: boolean; alertas: RestricaoView[] }
+
+export interface PacoteExportacao { nomeArquivo: string; conteudo: string; quantidade: number }
+
+/** Filtros dos relatórios (RF-30/RF-31). Sem `de`/`ate`: últimos 30 dias até hoje. `de`/`ate` são instantes; o servidor usa o dia inteiro. */
+export interface FiltroRelatorio { de?: number; ate?: number; unidadeId?: string; categoria?: CategoriaPessoa; meio?: MeioAutorizacao }
+
+export interface RelatorioResumo {
+  /** Período efetivamente aplicado (início do primeiro dia, fim do último). */
+  periodo: { de: number; ate: number };
+  acessosPorDia: { dia: number; entradas: number }[];
+  acessosPorMeio: { meio: MeioAutorizacao; total: number }[];
+  /** Agrupado por operadorId (autorização sem solicitante conta para quem a cadastrou). */
+  excecoesPorPorteiro: { operadorId: string; operador: string; total: number }[];
+  encomendasPorIdade: { faixa: string; total: number }[];
+  cadastroCompleto: { unidadesCompletas: number; total: number };
+  totais: { entradas: number; negados: number; recusados: number; retroativos: number; excecoes: number };
+}
+
+export interface InconsistenciaImportacao { linha: number; codigo: string; mensagem: string; tipo: 'erro' | 'aviso' }
+export interface RelatorioImportacao {
+  id: string; arquivo: string; status: 'analisada' | 'confirmada' | 'cancelada'; lidas: number; importaveis: number; rejeitadas: number; avisos: number;
+  inconsistencias: InconsistenciaImportacao[]; amostra: LinhaPlanilha[]; prazoRegularizacao: number;
+}
+export interface ResultadoImportacao { importados: number; reaproveitados: number; prazoRegularizacao: number }
+
+export interface Api {
+  auth: {
+    // 2FA fica para a fase de segurança (pós-MVP).
+    login(i: LoginInput): Promise<UsuarioSistema>;
+    logout(): Promise<void>;
+    me(): Promise<UsuarioSistema | null>;
+  };
+  busca: { global(q: string): Promise<{ pessoas: PessoaBusca[]; unidades: { id: string; motivo: string }[] }> };
+  pessoas: {
+    /** `limite`: máximo de resultados (padrão 8). A portaria pede 9 para saber se há mais que 8. */
+    buscar(q: string, opts?: { semMoradores?: boolean; limite?: number }): Promise<PessoaBusca[]>;
+    listar(): Promise<PessoaBusca[]>;
+    ficha(id: string): Promise<FichaPessoa>;
+    criar(i: NovaPessoaInput): Promise<Pessoa>;
+    /** pessoa.editar (SI/AD): completa ou corrige o cadastro, com antes/depois na trilha. */
+    editar(i: EditarPessoaInput): Promise<Pessoa>;
+    funcionario(pessoaId: string): Promise<Funcionario | null>;
+  };
+  catalogo: { obter(): Promise<Catalogo> };
+  unidades: {
+    listar(): Promise<UnidadeResumo[]>;
+    /** `id` aceita o uuid ou o código "T4-32". */
+    detalhe(id: string): Promise<UnidadeDetalhe>;
+    criar(i: NovaUnidadeInput): Promise<Unidade>;
+    /** Só torre/número; unidade já referenciada (vínculo, evento etc.) não muda de número (422 UNIDADE_REFERENCIADA). */
+    editar(i: NovaUnidadeInput & { id: string }): Promise<Unidade>;
+    desativar(id: string): Promise<Unidade>;
+    reativar(id: string): Promise<Unidade>;
+  };
+  funcionarios: {
+    listar(): Promise<FuncionarioView[]>;
+    criar(i: NovoFuncionarioInput): Promise<FuncionarioView>;
+    editar(i: EditarFuncionarioInput): Promise<FuncionarioView>;
+  };
+  veiculos: { criar(i: { unidadeId: string; placa: string; modelo: string; cor: string }): Promise<Veiculo> };
+  vinculos: {
+    listar(f?: { status?: StatusVinculo }): Promise<VinculoView[]>;
+    criar(i: NovoVinculoInput): Promise<VinculoUnidade>;
+    /** RF-05: registra (ou refaz, enquanto pendente/legado) a conferência do comprovante. Só síndico/administração. */
+    registrarConferencia(id: string, i: ConferenciaInput): Promise<VinculoUnidade>;
+    /** Aprovar exige conferência registrada (422 CONFERENCIA_OBRIGATORIA) e cadastro completo (422 CADASTRO_INCOMPLETO). */
+    decidir(i: { id: string; decisao: 'aprovar' | 'rejeitar'; justificativa?: string }): Promise<VinculoUnidade>;
+    /** RN-09: legado -> aprovado, com conferência registrada e cadastro completo. */
+    regularizar(id: string, opcoes?: { vigenciaFim?: number | null }): Promise<VinculoUnidade>;
+    autorizadores(unidadeId: string): Promise<Autorizador[]>;
+  };
+  autorizacoes: {
+    criar(i: NovaAutorizacaoInput): Promise<AutorizacaoPrevia>;
+    revogar(id: string): Promise<void>;
+    /** Destino: id da unidade ou, com `areaComum`, id da área comum. */
+    vigentes(pessoaId: string, destinoId: string, opcoes?: { areaComum?: boolean }): Promise<AutorizacaoView[]>;
+    hoje(): Promise<AutorizacaoView[]>;
+  };
+  restricoes: {
+    /** `unidadeId` null: só restrições de escopo condomínio (funcionário sem unidade de destino). */
+    verificar(pessoaId: string, unidadeId: string | null): Promise<ResultadoRestricao>;
+    criar(i: NovaRestricaoInput): Promise<Restricao>;
+    aprovar(id: string): Promise<Restricao>;
+    revogar(id: string): Promise<void>;
+    pendentes(): Promise<RestricaoView[]>;
+  };
+  eventos: {
+    criar(i: NovoEventoInput): Promise<EventoView>;
+    registrarRecusa(i: NovaRecusaInput): Promise<EventoView>;
+    registrarSaida(entradaId: string, opcoes?: OpcoesSaida): Promise<EventoView>;
+    corrigir(id: string, i: { justificativa: string; observacao?: string; valores?: Partial<ValoresCorrecao> }): Promise<EventoView>;
+    listar(f?: FiltroEventos): Promise<EventoView[]>;
+    obter(id: string): Promise<EventoView>;
+    presentes(): Promise<EventoView[]>;
+  };
+  encomendas: {
+    listar(f?: { status?: 'aguardando' | 'entregue' }): Promise<EncomendaView[]>;
+    receber(i: NovaEncomendaInput): Promise<Encomenda>;
+    /** RN-08: quem tem vínculo válido na unidade, ou quem foi autorizado (autorizarRetirada). */
+    entregar(i: { id: string; pessoaId: string }): Promise<Encomenda>;
+    autorizarRetirada(i: AutorizarRetiradaInput): Promise<AutorizacaoRetirada>;
+  };
+  ocorrencias: {
+    listar(): Promise<OcorrenciaView[]>;
+    criar(i: NovaOcorrenciaInput): Promise<Ocorrencia>;
+    alterarStatus(id: string, status: StatusOcorrencia): Promise<Ocorrencia>;
+  };
+  turno: { resumo(): Promise<ResumoTurno> };
+  relatorios: {
+    /** Número = últimos N dias (atalho); objeto = filtros completos. */
+    resumo(f?: number | FiltroRelatorio): Promise<RelatorioResumo>;
+    /** Mesmo conteúdo do resumo, em CSV (UTF-8 com BOM, separador ;). */
+    exportarCsv(f?: FiltroRelatorio): Promise<PacoteExportacao>;
+  };
+  auditoria: {
+    verificarIntegridade(): Promise<ResultadoIntegridade>;
+    /** Trilha de alterações do sistema (mais recentes primeiro). */
+    alteracoes(f?: FiltroAlteracoes): Promise<RegistroAlteracao[]>;
+    exportar(f?: FiltroEventos): Promise<PacoteExportacao>;
+  };
+  usuarios: {
+    listar(): Promise<UsuarioSistema[]>;
+    criar(i: NovoUsuarioInput): Promise<UsuarioSistema>;
+    desativar(id: string): Promise<UsuarioSistema>;
+    reativar(id: string): Promise<UsuarioSistema>;
+    redefinirAcesso(id: string): Promise<UsuarioSistema>;
+    /** Ninguém altera o próprio papel; envolver síndico exige usuario.gerenciar_sindico. */
+    alterarPapel(id: string, papel: Papel): Promise<UsuarioSistema>;
+  };
+  lgpd: {
+    /** spec 9.3: JSON com cadastro mascarado, vínculos, veículos, eventos e encomendas. SI/AD. */
+    exportarPessoa(pessoaId: string): Promise<PacoteExportacao>;
+    /** Eliminação a pedido (SI): só sem vínculo válido; informa o que fica retido. */
+    anonimizar(pessoaId: string): Promise<ResultadoAnonimizacao>;
+    /** RNF-09 (SI): anonimiza quem passou do prazo de 3 anos. Eventos não são apagados. */
+    aplicarRetencao(): Promise<ResultadoRetencao>;
+  };
+  importacao: {
+    analisar(i: { arquivo: string; linhas: LinhaPlanilha[] }): Promise<RelatorioImportacao>;
+    confirmar(id: string): Promise<ResultadoImportacao>;
+  };
+  /** Disponível apenas no mock. */
+  demo?: { restaurar(): Promise<void> };
+}

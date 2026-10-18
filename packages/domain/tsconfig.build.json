@@ -1,0 +1,15 @@
+{
+  // Build para o Node (API NestJS, CommonJS). Vite e vitest continuam lendo src/ (condição "default" dos exports);
+  // o require() do Node usa dist/cjs (condição "require"). Ver README do pacote.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node10",
+    "noEmit": false,
+    "declaration": true,
+    "outDir": "dist/cjs",
+    "rootDir": "src"
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
+}
