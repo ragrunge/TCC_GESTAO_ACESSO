@@ -108,7 +108,12 @@ export interface ResultadoVerificacao {
   ultimoHash: string;
   primeiroSeqInvalido?: number;
   primeiroEventoIdInvalido?: string;
-  motivo?: 'lacuna_de_seq' | 'hash_anterior_incoerente' | 'hash_divergente';
+  /**
+   * lacuna_de_seq: falta evento (inclusive no fim, contra a cabeça da cadeia); hash_anterior_incoerente: encadeamento
+   * quebrado; hash_divergente: conteúdo alterado; selo_divergente: a cadeia é coerente por dentro, mas não bate com o
+   * selo diário (recalculada inteira depois de adulterada).
+   */
+  motivo?: 'lacuna_de_seq' | 'hash_anterior_incoerente' | 'hash_divergente' | 'selo_divergente';
 }
 /** Nome usado pela UI. */
 export type ResultadoIntegridade = ResultadoVerificacao;

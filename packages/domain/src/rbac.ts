@@ -14,7 +14,7 @@ export type Acao =
   | 'auditoria.verificar' | 'auditoria.exportar'
   | 'usuario.gerenciar' | 'usuario.gerenciar_sindico'
   | 'veiculo.cadastrar'
-  | 'funcionario.gerenciar' | 'pessoa.editar'
+  | 'funcionario.gerenciar' | 'funcionario.ver' | 'pessoa.editar'
   | 'autorizacao.area_comum' | 'encomenda.autorizar_retirada'
   | 'lgpd.exportar' | 'lgpd.anonimizar' | 'lgpd.retencao';
 
@@ -49,6 +49,9 @@ export const MATRIZ: Record<Acao, Papel[]> = {
   'usuario.gerenciar_sindico': [SI], // criar, editar, desativar ou promover a síndico: só o síndico
   'veiculo.cadastrar': [SI, AD],
   'funcionario.gerenciar': [SI, AD], // RF-09
+  // Listagem e ficha de funcionário (decisão do usuário, 2026-10-18): síndico, administração e auditor; o porteiro NÃO.
+  // A escala na entrada é consultada pela própria API (validação de `escala`) e, na tela, só a da pessoa sendo registrada.
+  'funcionario.ver': [SI, AD, AU],
   'pessoa.editar': [SI, AD], // correção de cadastro (LGPD art. 18) e regularização (RN-09)
   'autorizacao.area_comum': [SI, AD], // RF-36: área comum é autorizada pela administração
   'encomenda.autorizar_retirada': [SI, AD, PO], // RN-08, a pedido de morador com vínculo válido
@@ -80,7 +83,7 @@ export const ROTAS: Record<Rota, Papel[]> = {
   historico: [SI, AD, PO, AU],
   relatorios: [SI, AD, AU],
   usuarios: [SI, AD],
-  funcionarios: [SI, AD],
+  funcionarios: [SI, AD, AU], // AU só lê (funcionario.ver); criar e editar exigem funcionario.gerenciar
 };
 
 export const rotaInicial = (papel: Papel): Rota =>

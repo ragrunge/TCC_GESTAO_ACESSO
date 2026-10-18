@@ -12,6 +12,14 @@
       "types": "./src/cpf.ts",
       "default": "./src/cpf.ts"
     },
+    "./exportacao": {
+      "require": {
+        "types": "./dist/cjs/exportacao.d.ts",
+        "default": "./dist/cjs/exportacao.js"
+      },
+      "types": "./src/exportacao.ts",
+      "default": "./src/exportacao.ts"
+    },
     "./hashChain": {
       "require": {
         "types": "./dist/cjs/hashChain.d.ts",
@@ -27,6 +35,14 @@
       },
       "types": "./src/rbac.ts",
       "default": "./src/rbac.ts"
+    },
+    "./relatorio": {
+      "require": {
+        "types": "./dist/cjs/relatorio.d.ts",
+        "default": "./dist/cjs/relatorio.js"
+      },
+      "types": "./src/relatorio.ts",
+      "default": "./src/relatorio.ts"
     },
     "./rules": {
       "require": {
