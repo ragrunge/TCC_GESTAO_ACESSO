@@ -8,10 +8,13 @@ import { FiltroExcecao } from './comum/filtro-excecao';
 import { ConfigModule } from './config/config.module';
 import { DatabaseModule } from './database/database.module';
 import { SaudeController } from './saude/saude.controller';
+import { PessoasModule } from './pessoas/pessoas.module';
+import { UnidadesModule } from './unidades/unidades.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
+import { VinculosModule } from './vinculos/vinculos.controller';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, AuditoriaModule, AuthModule, UsuariosModule],
+  imports: [ConfigModule, DatabaseModule, AuditoriaModule, AuthModule, UsuariosModule, UnidadesModule, PessoasModule, VinculosModule],
   controllers: [SaudeController],
   providers: [
     // Ordem importa: autenticação antes de autorização. Os dois respeitam @Publico() (o /saude continua aberto).

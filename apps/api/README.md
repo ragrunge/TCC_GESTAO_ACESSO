@@ -1,8 +1,9 @@
 # apps/api
 
 Backend NestJS 11 + Drizzle ORM + PostgreSQL. Hoje: `GET /api/v1/saude`, autenticação por sessão (login, logout, me,
-troca de senha), autorização pela matriz RBAC do domain, gestão de usuários, trilha `audit_log` e a camada de banco
-(schema, migrações, verificador da cadeia de hash, testes). Os módulos de negócio (pessoas, vínculos, eventos...) ainda não existem.
+troca de senha), autorização pela matriz RBAC do domain, gestão de usuários, unidades (CRUD e resumo paginado), catálogo,
+busca de pessoas e busca global (leitura), contagem de vínculos, trilha `audit_log` e a camada de banco (schema, migrações,
+verificador da cadeia de hash, testes). CRUD de pessoas, vínculos completos, autorizações, restrições e eventos ainda não existem.
 
 ```
 src/main.ts              bootstrap: lê a config e chama configurarApp; 0.0.0.0:3000
@@ -13,7 +14,10 @@ src/comum/               envelope { data } (interceptor), paginação por cursor
 src/auditoria/           AuditoriaService.registrar(tx, ...) e o snapshot (snake_case, sem segredo, CPF/telefone mascarados)
 src/auth/                login/logout/me/trocar-senha, sessão, limite de login, senha (argon2id), guards e decorators
 src/usuarios/            gestão de usuários (usuario.gerenciar / usuario.gerenciar_sindico)
-src/cli/seed-dev.ts      seed de dev: estrutura + 4 usuários (um por papel), senha de SEED_SENHA_DEV
+src/unidades/            GET /catalogo, GET/POST/PATCH /unidades, /unidades/:id/desativar|reativar; paraNovoUso (unidade inativa barra novo uso)
+src/pessoas/             POST /pessoas/busca e POST /busca (termo no corpo: pode ser CPF); nome sem acento, CPF por HMAC, unidade, placa
+src/vinculos/            GET /vinculos/contagem?status= e a regra "vínculo válido" em SQL (mesma do domain)
+src/cli/seed-dev.ts      seed de dev: estrutura + 4 usuários (um por papel), senha de SEED_SENHA_DEV; com PORTARIA_AMBIENTE=dev, pessoas fictícias
 src/database/            DatabaseModule global: Pool do pg + Drizzle (node-postgres), DATABASE_URL, fecha o pool no shutdown
 src/saude/               GET /api/v1/saude: select 1 + ultimo_seq da cadeia; 503 se o banco cair
 src/db/schema.ts         schema Drizzle (fonte das migrações geradas)
@@ -21,6 +25,7 @@ src/db/cadeia.ts         serialização canônica v1 e verificador independente 
 src/db/cpf.ts            máscara e HMAC do CPF
 src/db/seed.ts           165 unidades + portaria social + áreas comuns (idempotente)
 src/db/seed-usuarios.ts  usuários de dev (mesmos nomes do mock), idempotente
+src/db/seed-pessoas-dev.ts pessoas, vínculos e veículos fictícios (mesmos nomes do mock), CPF válido só como máscara + HMAC, idempotente
 drizzle/                 0000_init.sql (gerada), 0001_regras_imutabilidade.sql (manual), 0002_conferencia_comprovante.sql (gerada + trigger manual),
                          0003_autenticacao_sessao.sql (gerada: sessao, login_limite, deve_trocar_senha + GRANT manual)
 test/                    vitest + PGlite com as migrações reais; postgres-real/ só com PG_TEST_URL
@@ -156,10 +161,12 @@ loga só SQLSTATE e constraint (a mensagem do `DrizzleQueryError` traz SQL e par
 | `CORS_ORIGENS` | origens exatas, vírgula | vazio = CORS desligado (produção, mesma origem) |
 | `SESSAO_ABSOLUTA_MIN`, `SESSAO_INATIVIDADE_MIN` | 720, 30 | minutos |
 | `PORTARIA_HMAC_CPF_KEY` | base64, 32+ bytes | também origem (HKDF) da chave do `login_limite` |
-| `SEED_SENHA_DEV` | 12+ caracteres | só o seed usa; vazio em produção |
+| `SEED_SENHA_DEV` | 12+ caracteres | só o seed usa (e o seed de pessoas fictícias); vazio em produção |
+| `LOGIN_MAX_FALHAS_LOGIN`, `LOGIN_MAX_FALHAS_IP` | 10 (3 a 50), 30 (3 a 500) | falhas na janela que bloqueiam; vazio = padrão (spec §14, nº 27) |
+| `LOGIN_JANELA_MIN`, `LOGIN_BLOQUEIO_MIN` | 15, 15 | minutos; vazio = padrão |
 
-Limites de login e parâmetros do argon2 são constantes da spec em `src/config/config.ts` (`PADROES_LOGIN`, `PADROES_ARGON2`),
-não variáveis: mudam com revisão de código, não com uma variável esquecida.
+Os padrões do limite de login ficam em `PADROES_LOGIN` (`src/config/config.ts`); valor fora da faixa derruba o boot.
+O atraso crescente e os parâmetros do argon2 (`PADROES_ARGON2`) continuam constantes: mudam com revisão de código.
 
 ### Dev do front contra a API
 
