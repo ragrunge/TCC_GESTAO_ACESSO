@@ -5,10 +5,14 @@ import { createHttpApi } from './http/createHttpApi';
 
 export * from './types';
 
-/** Escolhe a implementação por VITE_API_MODE (mock | http). Padrão: mock. */
+/**
+ * Escolhe a implementação por VITE_API_MODE (mock | http). Padrão: mock.
+ * Base padrão relativa '/api/v1' (mesma origem): proxy do Vite em dev, rewrite da Vercel em produção. Base
+ * absoluta em outra origem quebraria o cookie SameSite=Strict e exigiria CORS: evitar.
+ */
 export function criarApi(): Api {
   const modo = import.meta.env.VITE_API_MODE ?? 'mock';
-  if (modo === 'http') return createHttpApi(import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1');
+  if (modo === 'http') return createHttpApi(import.meta.env.VITE_API_URL || '/api/v1');
   return createMockApi();
 }
 

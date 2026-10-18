@@ -1,36 +1,84 @@
-// Sessão (mock) e guarda de rota por papel, conforme a matriz RBAC (spec seção 5.2).
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+// Sessão e guarda de rota por papel, conforme a matriz RBAC (spec seção 5.2). No modo http a sessão é o cookie
+// HttpOnly da API: aqui fica só o usuário em memória (nada em storage), reconstruído por /auth/me ao recarregar.
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useApi } from '../api';
-import type { UsuarioSistema } from '@portaria/domain/types';
+import { useQueryClient } from '@tanstack/react-query';
+import { useApi, type TrocarSenhaInput, type UsuarioSessao } from '../api';
+import { useToast } from '../components/Toast';
+import { ModuloIndisponivel } from '../components/ModuloIndisponivel';
 import { pode, ROTAS, rotaInicial, type Acao, type Rota } from '@portaria/domain/rbac';
 
 interface AuthCtx {
-  usuario: UsuarioSistema | null;
+  usuario: UsuarioSessao | null;
   pronto: boolean;
   // 2FA fica para a fase de segurança (pós-MVP): login é só usuário + senha.
-  entrar: (login: string, senha: string) => Promise<void>;
+  entrar: (login: string, senha: string) => Promise<UsuarioSessao>;
   sair: () => Promise<void>;
+  trocarSenha: (i: TrocarSenhaInput) => Promise<UsuarioSessao>;
 }
 const Ctx = createContext<AuthCtx | null>(null);
 
+/** Destino depois de entrar (ou de qualquer guarda): a troca obrigatória vem antes de tudo. */
+export const destinoDe = (u: UsuarioSessao) => (u.deveTrocarSenha ? '/trocar-senha' : `/${rotaInicial(u.papel)}`);
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const api = useApi();
-  const [usuario, setUsuario] = useState<UsuarioSistema | null>(null);
+  const qc = useQueryClient();
+  const { avisar } = useToast();
+  const avisarRef = useRef(avisar);
+  avisarRef.current = avisar;
+  const [usuario, setUsuario] = useState<UsuarioSessao | null>(null);
   const [pronto, setPronto] = useState(false);
+  const usuarioRef = useRef(usuario);
+  usuarioRef.current = usuario;
 
   useEffect(() => {
     let vivo = true;
-    api.auth.me().then((u) => { if (vivo) { setUsuario(u); setPronto(true); } }).catch(() => vivo && setPronto(true));
+    api.auth.me().then((u) => { if (vivo) { setUsuario(u); setPronto(true); } }).catch(() => { if (vivo) setPronto(true); });
     return () => { vivo = false; };
   }, [api]);
 
-  const entrar = useCallback(async (login: string, senha: string) => {
-    setUsuario(await api.auth.login({ login, senha }));
-  }, [api]);
-  const sair = useCallback(async () => { await api.auth.logout(); setUsuario(null); }, [api]);
+  // Avisos da camada HTTP. A navegação é consequência do estado (os guards abaixo), então N avisos não geram N
+  // navegações; e o cliente já emite no máximo um "expirada" por sessão.
+  useEffect(() => api.aoEventoSessao?.((e) => {
+    if (e === 'expirada') {
+      // Fora do updater do setState: o StrictMode chama updaters duas vezes (seria toast em dobro).
+      if (usuarioRef.current) avisarRef.current({ tom: 'ambar', texto: 'Sua sessão expirou. Entre novamente.' });
+      setUsuario(null);
+      qc.removeQueries(); // dado pessoal do usuário anterior não fica em cache
+    } else if (usuarioRef.current) {
+      setUsuario((atual) => (atual ? { ...atual, deveTrocarSenha: true } : atual));
+    } else {
+      // 403 de troca sem usuário em memória: a sessão existe, então o /auth/me traz o usuário (com a marca).
+      api.auth.me().then(setUsuario).catch(() => undefined);
+    }
+  }), [api, qc]);
 
-  const valor = useMemo(() => ({ usuario, pronto, entrar, sair }), [usuario, pronto, entrar, sair]);
+  const entrar = useCallback(async (login: string, senha: string) => {
+    const u = await api.auth.login({ login, senha });
+    qc.removeQueries();
+    setUsuario(u);
+    return u;
+  }, [api, qc]);
+
+  const sair = useCallback(async () => {
+    try {
+      await api.auth.logout();
+    } catch {
+      avisarRef.current({ tom: 'vermelho', texto: 'Não foi possível encerrar a sessão no servidor. Feche o navegador antes de sair do posto.' });
+    } finally {
+      qc.removeQueries();
+      setUsuario(null);
+    }
+  }, [api, qc]);
+
+  const trocarSenha = useCallback(async (i: TrocarSenhaInput) => {
+    const u = await api.auth.trocarSenha(i);
+    setUsuario(u);
+    return u;
+  }, [api]);
+
+  const valor = useMemo(() => ({ usuario, pronto, entrar, sair, trocarSenha }), [usuario, pronto, entrar, sair, trocarSenha]);
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>;
 }
 
@@ -46,19 +94,24 @@ export function useCan(acao: Acao): boolean {
   return pode(usuario?.papel, acao);
 }
 
-/** Guarda de rota: sem sessão -> login; sem papel -> página inicial do perfil. */
+/** Guarda de rota: sem sessão -> login; troca pendente -> troca; sem papel -> página inicial do perfil. */
 export function RequireRole({ rota, children }: { rota: Rota; children: ReactNode }) {
+  const api = useApi();
   const { usuario, pronto } = useAuth();
   if (!pronto) return <p className="p-8">Carregando…</p>;
   if (!usuario) return <Navigate to="/login" replace />;
+  if (usuario.deveTrocarSenha) return <Navigate to="/trocar-senha" replace />;
   if (!ROTAS[rota].includes(usuario.papel)) return <Navigate to={`/${rotaInicial(usuario.papel)}`} replace />;
+  // Modo http: módulo sem API real não monta a tela (nenhuma chamada, nenhum erro em loop).
+  if (api.rotasDisponiveis && !api.rotasDisponiveis.includes(rota)) return <ModuloIndisponivel />;
   return <>{children}</>;
 }
 
-/** Guarda de sessão: sem sessão -> login. Usada no layout (cada rota aplica seu próprio papel). */
+/** Guarda de sessão: sem sessão -> login; troca pendente -> /trocar-senha. Usada no layout. */
 export function RequireSession({ children }: { children: ReactNode }) {
   const { usuario, pronto } = useAuth();
   if (!pronto) return <p className="p-8">Carregando…</p>;
   if (!usuario) return <Navigate to="/login" replace />;
+  if (usuario.deveTrocarSenha) return <Navigate to="/trocar-senha" replace />;
   return <>{children}</>;
 }

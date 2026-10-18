@@ -451,7 +451,7 @@ describe('item 10: trilha de alterações', () => {
     await api.encomendas.entregar({ id: enc.id, pessoaId: id.carla });
     const oc = await api.ocorrencias.criar({ tipo: 'outro', descricao: 'Teste', unidadeId: null, envolvidos: '' });
     await api.ocorrencias.alterarStatus(oc.id, 'em_andamento');
-    const u = await api.usuarios.criar({ nome: 'Novo Porteiro', login: 'novo.porteiro', papel: 'porteiro' });
+    const { usuario: u } = await api.usuarios.criar({ nome: 'Novo Porteiro', login: 'novo.porteiro', papel: 'porteiro' });
     await api.usuarios.desativar(u.id);
     await api.usuarios.reativar(u.id);
     await api.usuarios.redefinirAcesso(u.id);
@@ -562,7 +562,7 @@ describe('item 11: sem 2FA no MVP', () => {
     const api = novaApi();
     const u = await api.auth.login({ login: 'roberto.faria', senha: 'x' });
     expect('totpAtivo' in u).toBe(false);
-    const novo = await api.usuarios.criar({ nome: 'Aud', login: 'aud.novo', papel: 'auditor' });
+    const { usuario: novo } = await api.usuarios.criar({ nome: 'Aud', login: 'aud.novo', papel: 'auditor' });
     expect('totpAtivo' in novo).toBe(false);
   });
 });

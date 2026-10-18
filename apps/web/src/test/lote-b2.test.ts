@@ -237,7 +237,7 @@ describe('RF-33 e RNF-04: usuários e trilha de acesso negado', () => {
   it('administração gerencia usuários, mas não síndico; ninguém altera o próprio papel', async () => {
     const api = novaApi();
     await entrarComo(api, 'paula.nogueira');
-    const novo = await api.usuarios.criar({ nome: 'Nova Portaria', login: 'nova.portaria', papel: 'porteiro' });
+    const { usuario: novo } = await api.usuarios.criar({ nome: 'Nova Portaria', login: 'nova.portaria', papel: 'porteiro' });
     expect((await api.usuarios.alterarPapel(novo.id, 'auditor')).papel).toBe('auditor');
     expect((await esperaErro(api.usuarios.alterarPapel(novo.id, 'sindico'))).status).toBe(403); // promover a síndico
     expect((await esperaErro(api.usuarios.alterarPapel('u5', 'porteiro'))).status).toBe(403); // rebaixar o síndico

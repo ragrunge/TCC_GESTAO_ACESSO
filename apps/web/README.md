@@ -14,6 +14,7 @@ npm run dev      # http://localhost:5173 (delega a apps/web)
 npm test         # Vitest em todos os workspaces (web + domain)
 npm run build    # tsc (strict) + vite build do web
 npm run test:e2e -w apps/web   # Playwright (sobe o vite na porta 5180; na 1ª vez: npx playwright install chromium)
+npm run test:e2e:http -w apps/web   # e2e contra a API real do Docker (vite http na 5182); pula sozinho sem API
 
 # ou dentro de apps/web: npm run dev | test | build
 ```
@@ -37,7 +38,7 @@ packages/domain/src/   (pacote `@portaria/domain`, importado como `@portaria/dom
   geração das 165 unidades (units.ts), tempo e relógio simulado (time.ts). Sem React.
 
 apps/web/src/
-  api/      types.ts (interface Api, ApiError), mock/ (servidor em memória + seed), http/ (esqueleto fetch), index.tsx (escolha + useApi)
+  api/      types.ts (interface Api, ApiError), mock/ (servidor em memória + seed), http/ (axios: auth + usuários), index.tsx (escolha + useApi)
   auth/     sessão e guardas de rota por papel
   components/  Button, Badge/Selo, Card, Modal (foco preso, Esc), Toast, Table, Tabs, TowerUnitPicker, PessoaPicker, PageHeader...
   features/ portaria (painel, entrada, pessoas), encomendas, ocorrencias, unidades, vinculos, cadastro, importacao, historico,
@@ -51,13 +52,22 @@ para decidir de verdade (e responder 403/422 com os códigos da spec).
 ### Trocar o mock pela API HTTP
 
 ```bash
-cp .env.example .env
-# VITE_API_MODE=http
-# VITE_API_URL=http://localhost:3000/api/v1
+# API no Docker (raiz do monorepo): docker compose up --build --watch
+VITE_API_MODE=http npm run dev -w apps/web -- --port 5181   # proxy /api -> http://127.0.0.1:3000
 ```
 
-`src/api/http/createHttpApi.ts` é só um esqueleto: cada método lança `NAO_IMPLEMENTADO` e traz comentado o endpoint da spec
-(seção 6). Já existe o helper `requisitar()` (cookie de sessão, mapeamento do erro `{ codigo, mensagem }` para `ApiError`).
+A base é sempre relativa (`/api/v1`, mesma origem): em dev o `server.proxy` do `vite.config.ts` repassa à API
+(alvo trocável por `API_PROXY_ALVO`); em produção, o rewrite da Vercel. Mesma origem é o que faz o cookie de sessão
+(`HttpOnly; SameSite=Strict`) funcionar sem CORS. O front nunca lê nem guarda token.
+
+- `src/api/http/cliente.ts`: instância axios (`withCredentials`) e interceptor que converte todo erro em `ApiError`,
+  emite "sessão expirada" uma vez por sessão (401 fora de login/me/logout) e "troca obrigatória" (403
+  `TROCA_DE_SENHA_OBRIGATORIA`), e põe o tempo do `Retry-After` na mensagem do 429. O interceptor não navega: o
+  `AuthContext` zera o usuário e os guards redirecionam.
+- `src/api/http/createHttpApi.ts`: `auth.*` e `usuarios.*` reais; os demais módulos lançam 501 local
+  ("Módulo ainda não disponível na API real") e as rotas deles mostram "Disponível em breve" (`ROTAS_HTTP`).
+- React Query (v5) só em login, troca de senha e usuários; as outras telas seguem com `useAsync`. A senha temporária
+  (criar/redefinir) aparece uma vez num modal e não passa pelo cache.
 
 ## Rastreabilidade (RF/UC → arquivo/tela)
 

@@ -1,0 +1,140 @@
+// E2E contra a API real (Docker local). Fluxo: login do síndico, listar usuários, criar um usuário de teste (senha
+// temporária mostrada uma vez), login dele com troca obrigatória, logout, 401 depois do logout e sessão expirada.
+// Não toca na senha dos usuários do seed: a troca obrigatória é exercida num usuário criado aqui, desativado no fim.
+// A senha do seed vem de SEED_SENHA_DEV (ambiente ou .env da raiz) e nunca é impressa.
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { randomBytes } from 'node:crypto';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+
+const API = 'http://127.0.0.1:3000/api/v1';
+
+function senhaSeed(): string | undefined {
+  if (process.env.SEED_SENHA_DEV) return process.env.SEED_SENHA_DEV;
+  try {
+    const env = readFileSync(resolve(process.cwd(), '../../.env'), 'utf8');
+    const m = /^SEED_SENHA_DEV=(.*)$/m.exec(env);
+    return m?.[1]?.trim().replace(/^['"]|['"]$/g, '') || undefined;
+  } catch { return undefined; }
+}
+
+async function apiDePe(request: APIRequestContext) {
+  try { return (await request.get(`${API}/saude`, { timeout: 3_000 })).ok(); } catch { return false; }
+}
+
+async function entrar(page: Page, login: string, senha: string) {
+  await page.goto('/login');
+  await page.getByLabel('Usuário').fill(login);
+  await page.getByLabel('Senha').fill(senha);
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+}
+
+const SENHA = senhaSeed();
+const sufixo = `${Date.now().toString(36)}${randomBytes(2).toString('hex')}`;
+const LOGIN_TESTE = `e2e.${sufixo}`;
+const NOME_TESTE = `Teste E2E ${sufixo}`;
+
+test.describe.serial('API real: login, sessão e usuários', () => {
+  let idTeste: string | null = null;
+
+  test.beforeAll(async ({ request }) => {
+    test.skip(!(await apiDePe(request)), 'API local fora do ar (docker compose up)');
+    test.skip(!SENHA, 'SEED_SENHA_DEV ausente');
+  });
+
+  test.afterAll(async ({ playwright }) => {
+    // Limpeza: desativa o usuário de teste (não há exclusão; o histórico fica na trilha).
+    if (!idTeste || !SENHA) return;
+    const ctx = await playwright.request.newContext();
+    const r = await ctx.post(`${API}/auth/login`, { data: { login: 'roberto.faria', senha: SENHA } });
+    if (r.ok()) {
+      await ctx.post(`${API}/usuarios/${idTeste}/desativar`);
+      await ctx.post(`${API}/auth/logout`);
+    }
+    await ctx.dispose();
+  });
+
+  test('tela de login do modo http não tem atalhos de demonstração; credencial errada dá mensagem única', async ({ page }) => {
+    await page.goto('/login');
+    await expect(page.getByLabel('Usuário')).toHaveValue('');
+    await expect(page.getByText('Perfil de demonstração')).toHaveCount(0);
+    await expect(page.getByText(/qualquer senha/i)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Porteiro', exact: true })).toHaveCount(0);
+    await entrar(page, 'fulano.inexistente', 'senha-qualquer-errada');
+    await expect(page.getByRole('alert')).toHaveText('Usuário ou senha inválidos.');
+    await expect(page).toHaveURL(/\/login$/);
+  });
+
+  test('síndico entra, vê módulo sem API como "em breve", lista e cria usuário (senha temporária uma vez)', async ({ page }) => {
+    await entrar(page, 'roberto.faria', SENHA!);
+    await expect(page).toHaveURL(/\/painel$/);
+    await expect(page.getByText('Disponível em breve na API real')).toBeVisible();
+
+    // sessão sobrevive ao reload (cookie HttpOnly + /auth/me)
+    await page.reload();
+    await expect(page).toHaveURL(/\/painel$/);
+
+    await page.getByRole('link', { name: 'Usuários' }).click();
+    await expect(page).toHaveURL(/\/usuarios$/);
+    await expect(page.getByText('paula.nogueira', { exact: true })).toBeVisible();
+    await expect(page.getByText('joao.lima', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Novo usuário' }).click();
+    const modal = page.getByRole('dialog', { name: 'Novo usuário' });
+    await modal.getByLabel('Nome completo').fill(NOME_TESTE);
+    await modal.getByLabel('Login').fill(LOGIN_TESTE);
+    await modal.getByRole('radio', { name: 'Porteiro' }).click();
+    const resposta = page.waitForResponse((r) => r.url().endsWith('/api/v1/usuarios') && r.request().method() === 'POST');
+    await modal.getByRole('button', { name: 'Criar usuário' }).click();
+    idTeste = ((await (await resposta).json()) as { data: { usuario: { id: string } } }).data.usuario.id;
+
+    const aviso = page.getByRole('dialog', { name: `Usuário ${NOME_TESTE} criado` });
+    await expect(aviso.getByText('Copie agora.')).toBeVisible();
+    const temporaria = (await aviso.locator('output').textContent())?.trim() ?? '';
+    expect(temporaria.length).toBeGreaterThanOrEqual(12);
+    await aviso.getByRole('button', { name: 'Já copiei, fechar' }).click();
+    await expect(aviso).toHaveCount(0);
+    await expect(page.getByText(temporaria)).toHaveCount(0); // some ao fechar
+    await expect(page.getByText(LOGIN_TESTE, { exact: true })).toBeVisible(); // lista invalidada
+
+    await page.getByRole('button', { name: 'Sair', exact: true }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    // depois do logout o cookie não vale mais
+    expect((await page.request.get('/api/v1/auth/me')).status()).toBe(401);
+
+    // usuário novo: troca obrigatória antes de qualquer rota
+    await entrar(page, LOGIN_TESTE, temporaria);
+    await expect(page).toHaveURL(/\/trocar-senha$/);
+    await expect(page.getByText('Troca obrigatória')).toBeVisible();
+    await page.goto('/usuarios');
+    await expect(page).toHaveURL(/\/trocar-senha$/);
+    await page.goto('/painel');
+    await expect(page).toHaveURL(/\/trocar-senha$/);
+
+    const nova = `Nova-${randomBytes(9).toString('base64url')}`;
+    await page.getByLabel('Senha atual').fill(temporaria);
+    await page.getByLabel('Nova senha', { exact: true }).fill('curta');
+    await page.getByLabel('Confirmar nova senha').fill('curta');
+    await page.getByRole('button', { name: 'Trocar senha' }).click();
+    await expect(page.getByRole('alert')).toContainText('pelo menos 12');
+
+    await page.getByLabel('Nova senha', { exact: true }).fill(nova);
+    await page.getByLabel('Confirmar nova senha').fill(nova);
+    await page.getByRole('button', { name: 'Trocar senha' }).click();
+    await expect(page).toHaveURL(/\/painel$/);
+    await expect(page.getByText(NOME_TESTE, { exact: true }).first()).toBeVisible();
+
+    await page.getByRole('button', { name: 'Sair', exact: true }).click();
+    await expect(page).toHaveURL(/\/login$/);
+  });
+
+  test('sessão encerrada por fora: o próximo 401 leva ao login com aviso, uma vez só', async ({ page }) => {
+    await entrar(page, 'roberto.faria', SENHA!);
+    await expect(page).toHaveURL(/\/painel$/);
+    // encerra a sessão do mesmo cookie sem passar pela UI (como expiração ou revogação no servidor)
+    expect((await page.request.post('/api/v1/auth/logout')).status()).toBe(204);
+    await page.getByRole('link', { name: 'Usuários' }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByText('Sua sessão expirou. Entre novamente.')).toHaveCount(1);
+  });
+});

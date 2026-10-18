@@ -7,9 +7,12 @@ import type {
 } from '@portaria/domain/types';
 import type { EstadoAutorizacao } from '@portaria/domain/rules';
 import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
+import type { Rota } from '@portaria/domain/rbac';
 
 /** Erro de API no formato da spec: status HTTP + código estável + mensagem para o operador. */
 export class ApiError extends Error {
+  /** 429: segundos até poder tentar de novo (cabeçalho Retry-After), quando a API informa. */
+  public retryAfterSegundos?: number;
   constructor(public status: number, public code: string, message: string, public detalhes?: unknown) {
     super(message);
     this.name = 'ApiError';
@@ -19,6 +22,7 @@ export const ehApiError = (e: unknown): e is ApiError => e instanceof ApiError;
 
 // ----- Entradas -------------------------------------------------------------------------------
 export interface LoginInput { login: string; senha: string }
+export interface TrocarSenhaInput { senhaAtual: string; novaSenha: string }
 
 export interface NovaPessoaInput {
   nome: string;
@@ -129,6 +133,18 @@ export interface AutorizarRetiradaInput { encomendaId: string; pessoaId: string;
 export interface LinhaPlanilha { linha: number; torre: string; unidade: string; nome: string; documento: string; telefone: string; tipo?: string }
 
 // ----- Saídas ---------------------------------------------------------------------------------
+/** Usuário da sessão: o de sistema + a marca de troca obrigatória (senha temporária). */
+export interface UsuarioSessao extends UsuarioSistema { deveTrocarSenha: boolean }
+
+/**
+ * Criação e redefinição devolvem a senha temporária UMA vez. Quem recebe mostra e descarta: não vai para estado
+ * global, cache do React Query nem storage.
+ */
+export interface UsuarioComSenhaTemporaria { usuario: UsuarioSistema; senhaTemporaria: string }
+
+/** Avisos de sessão que a camada HTTP emite para o AuthContext (o mock não emite). */
+export type EventoSessao = 'expirada' | 'troca_obrigatoria';
+
 export interface PessoaBusca extends Pessoa {
   ultimoAcesso: string;
   /** Ids das unidades com vínculo válido, e os códigos correspondentes ("T4-32") na mesma ordem. */
@@ -231,11 +247,19 @@ export interface RelatorioImportacao {
 export interface ResultadoImportacao { importados: number; reaproveitados: number; prazoRegularizacao: number }
 
 export interface Api {
+  /** Implementação ativa. Atalhos de demonstração só existem em `mock`. */
+  modo: 'mock' | 'http';
+  /** Rotas com backend disponível. Ausente = todas (mock). As demais mostram "disponível em breve". */
+  rotasDisponiveis?: readonly Rota[];
+  /** Assina avisos de sessão (401 fora do login, 403 TROCA_DE_SENHA_OBRIGATORIA). Devolve o cancelamento. */
+  aoEventoSessao?(cb: (e: EventoSessao) => void): () => void;
   auth: {
     // 2FA fica para a fase de segurança (pós-MVP).
-    login(i: LoginInput): Promise<UsuarioSistema>;
+    login(i: LoginInput): Promise<UsuarioSessao>;
     logout(): Promise<void>;
-    me(): Promise<UsuarioSistema | null>;
+    me(): Promise<UsuarioSessao | null>;
+    /** Troca a própria senha (mínimo de 12). Libera quem estava com troca obrigatória. */
+    trocarSenha(i: TrocarSenhaInput): Promise<UsuarioSessao>;
   };
   busca: { global(q: string): Promise<{ pessoas: PessoaBusca[]; unidades: { id: string; motivo: string }[] }> };
   pessoas: {
@@ -327,10 +351,11 @@ export interface Api {
   };
   usuarios: {
     listar(): Promise<UsuarioSistema[]>;
-    criar(i: NovoUsuarioInput): Promise<UsuarioSistema>;
+    criar(i: NovoUsuarioInput): Promise<UsuarioComSenhaTemporaria>;
     desativar(id: string): Promise<UsuarioSistema>;
     reativar(id: string): Promise<UsuarioSistema>;
-    redefinirAcesso(id: string): Promise<UsuarioSistema>;
+    /** Gera senha temporária, derruba as sessões do alvo e exige troca no próximo login. */
+    redefinirAcesso(id: string): Promise<UsuarioComSenhaTemporaria>;
     /** Ninguém altera o próprio papel; envolver síndico exige usuario.gerenciar_sindico. */
     alterarPapel(id: string, papel: Papel): Promise<UsuarioSistema>;
   };

@@ -559,7 +559,18 @@ export function createMockApi(opts: MockOptions = {}): Api {
   ];
 
   // ===========================================================================================
+  /** No mock nenhuma senha é guardada: a temporária só exercita a mesma tela da API real. */
+  const ALFABETO_TEMP = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const senhaTemporariaDemo = () => {
+    const b = new Uint32Array(16);
+    globalThis.crypto.getRandomValues(b);
+    return Array.from(b, (n) => ALFABETO_TEMP[n % ALFABETO_TEMP.length]).join('');
+  };
+  // O mock nunca exige troca de senha: a demonstração entra com qualquer senha.
+  const comSessao = (u: UsuarioSistema) => ({ ...clone(u), deveTrocarSenha: false });
+
   const api: Api = {
+    modo: 'mock',
     auth: {
       // 2FA fica para a fase de segurança (pós-MVP): login é só usuário + senha para todos os papéis.
       async login({ login, senha }) {
@@ -577,7 +588,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
         registrar(d, u, 'auth.login', 'sessao', u.id, null, { login: u.login });
         salvar();
         sessao = u; gravarSessao();
-        return clone(u);
+        return comSessao(u);
       },
       async logout() {
         await esperar();
@@ -588,7 +599,16 @@ export function createMockApi(opts: MockOptions = {}): Api {
         }
         sessao = null; gravarSessao();
       },
-      async me() { await carregar(); return sessao ? clone(sessao) : null; },
+      async me() { await carregar(); return sessao ? comSessao(sessao) : null; },
+      async trocarSenha({ senhaAtual, novaSenha }) {
+        const eu = usuario();
+        // Mesma política mínima da API (12+), para a tela de troca se comportar igual nos dois modos.
+        if (!senhaAtual) throw new ApiError(422, 'SENHA_ATUAL_INCORRETA', 'A senha atual não confere.');
+        if (novaSenha.length < 12) throw new ApiError(422, 'SENHA_FRACA', 'A senha precisa ter pelo menos 12 caracteres.');
+        if (novaSenha === senhaAtual) throw new ApiError(422, 'SENHA_FRACA', 'A nova senha precisa ser diferente da atual.');
+        await escrever((d) => { registrar(d, eu, 'auth.trocar_senha', 'usuario', eu.id, null, { login: eu.login }); });
+        return comSessao(eu);
+      },
     },
 
     busca: {
@@ -1564,7 +1584,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
           const novo: UsuarioSistema = { id: uid('u'), nome: i.nome.trim(), login, papel: i.papel, ativo: true, ultimoAcesso: null };
           d.usuarios.push(novo);
           registrar(d, eu, 'usuario.criar', 'usuario', novo.id, null, novo);
-          return novo;
+          return { usuario: novo, senhaTemporaria: senhaTemporariaDemo() };
         });
       },
       async desativar(id) {
@@ -1594,7 +1614,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
           const x = alvoUsuario(d, eu, id);
           // no mock: só registra o pedido; o servidor real geraria senha temporária e exigiria troca no próximo login
           registrar(d, eu, 'usuario.redefinirAcesso', 'usuario', x.id, null, { login: x.login });
-          return x;
+          return { usuario: x, senhaTemporaria: senhaTemporariaDemo() };
         });
       },
       async alterarPapel(id, papel) {

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { TriangleAlert } from 'lucide-react';
-import { useApi } from '../../api';
+import { Copy, TriangleAlert } from 'lucide-react';
+import { useApi, type NovoUsuarioInput, type UsuarioComSenhaTemporaria } from '../../api';
 import { useAuth, useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
 import { Badge } from '../../components/Badge';
@@ -12,20 +12,29 @@ import { Cel, Lista, ListaCab, ListaLinha } from '../../components/Table';
 import { useToast } from '../../components/Toast';
 import { ROTULO_PAPEL, type Papel, type UsuarioSistema } from '@portaria/domain/types';
 import { fmtDataHora } from '@portaria/domain/time';
-import { mensagemErro, useAsync } from '../../app/useAsync';
+import { mensagemErro } from '../../app/useAsync';
+import { useAcoesUsuario, useUsuarios } from './useUsuarios';
 
 const COLUNAS = 'minmax(0,1.3fr) 140px 100px 190px 280px';
+
+/** Senha temporária em exibição: vive só neste estado local e some ao fechar o modal. */
+interface SenhaExibida extends UsuarioComSenhaTemporaria { motivo: 'criado' | 'redefinido' }
 
 export function UsuariosPage() {
   const api = useApi();
   const { usuario: eu } = useAuth();
   const { avisar } = useToast();
-  const lista = useAsync(() => api.usuarios.listar(), []);
+  const podeGerenciar = useCan('usuario.gerenciar');
+  const lista = useUsuarios(podeGerenciar);
+  const [senha, setSenha] = useState<SenhaExibida | null>(null);
+  const acoes = useAcoesUsuario((r, motivo) => setSenha({ ...r, motivo }));
   const [novo, setNovo] = useState(false);
   const [desativar, setDesativar] = useState<UsuarioSistema | null>(null);
+  const [redefinir, setRedefinir] = useState<UsuarioSistema | null>(null);
   // RNF-04: administração gerencia usuários, exceto síndico; ninguém altera o próprio papel
   const gerenciaSindico = useCan('usuario.gerenciar_sindico');
-  const podeRetencao = useCan('lgpd.retencao');
+  // Retenção (LGPD) ainda não existe na API real: o botão só aparece no modo demonstração.
+  const podeRetencao = useCan('lgpd.retencao') && api.modo === 'mock';
   const papeisPermitidos = (Object.keys(ROTULO_PAPEL) as Papel[]).filter((p) => p !== 'sindico' || gerenciaSindico);
 
   async function aplicarRetencao() {
@@ -35,8 +44,13 @@ export function UsuariosPage() {
     } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
   }
 
-  async function executar(fn: () => Promise<unknown>, ok: string) {
-    try { await fn(); avisar({ texto: ok }); void lista.recarregar(); } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
+  /** Ação de linha: sucesso vira toast; erro (403 de permissão, 422 de regra) vira toast vermelho com a mensagem da API. */
+  async function executar(fn: () => Promise<unknown>, ok?: string) {
+    try { await fn(); if (ok) avisar({ texto: ok }); } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
+  }
+  function pedirRedefinicao(u: UsuarioSistema) {
+    setRedefinir(null);
+    void executar(() => acoes.redefinirAcesso.mutateAsync(u.id));
   }
   const botao = 'h-10 rounded-lg border px-3 text-[14px] bg-white';
 
@@ -45,9 +59,10 @@ export function UsuariosPage() {
       <PageHeader titulo="Usuários do sistema" descricao="Cada operador tem login próprio. Usuários desativados mantêm o histórico."
         acoes={<>
           {podeRetencao && <Button onClick={() => void aplicarRetencao()}>Aplicar retenção (LGPD)</Button>}
-          <Button variante="primario" onClick={() => setNovo(true)}>Novo usuário</Button>
+          {podeGerenciar && <Button variante="primario" onClick={() => setNovo(true)}>Novo usuário</Button>}
         </>} />
-      {lista.error && <Alert tom="vermelho" role="alert">{lista.error}</Alert>}
+      {lista.error && <Alert tom="vermelho" role="alert">{mensagemErro(lista.error)}</Alert>}
+      {lista.isPending && podeGerenciar && <p className="text-[14px] text-[#56616B]">Carregando usuários…</p>}
       <Lista legenda="Operadores do sistema" colunas={COLUNAS}>
         <ListaCab rotulos={['Nome', 'Perfil', 'Status', 'Último acesso', 'Ações']} />
         {(lista.data ?? []).map((u) => (
@@ -55,7 +70,8 @@ export function UsuariosPage() {
             <Cel className="flex flex-col"><span className="font-medium">{u.nome}{u.id === eu?.id && <span className="ml-2 text-[12px] font-normal text-[#56616B]">(você)</span>}</span><span className="font-mono text-[13px] text-[#56616B]">{u.login}</span></Cel>
             <Cel className="text-[14px]">{u.id === eu?.id || (u.papel === 'sindico' && !gerenciaSindico) ? ROTULO_PAPEL[u.papel] : (
               <select aria-label={`Papel de ${u.nome}`} className="h-10 rounded-lg border border-[#B9C3CA] bg-white px-2 text-[14px]" value={u.papel}
-                onChange={(e) => { const p = e.target.value as Papel; void executar(() => api.usuarios.alterarPapel(u.id, p), `${u.nome} agora é ${ROTULO_PAPEL[p]}.`); }}>
+                disabled={acoes.alterarPapel.isPending}
+                onChange={(e) => { const p = e.target.value as Papel; void executar(() => acoes.alterarPapel.mutateAsync({ id: u.id, papel: p }), `${u.nome} agora é ${ROTULO_PAPEL[p]}.`); }}>
                 {papeisPermitidos.map((p) => <option key={p} value={p}>{ROTULO_PAPEL[p]}</option>)}
               </select>
             )}</Cel>
@@ -63,20 +79,31 @@ export function UsuariosPage() {
             <Cel className="text-[14px]">{u.id === eu?.id ? 'Agora (sessão atual)' : u.ultimoAcesso ? fmtDataHora(u.ultimoAcesso) : 'Nunca'}</Cel>
             <Cel className="flex gap-2">
               {u.papel === 'sindico' && !gerenciaSindico ? <span className="self-center text-[13px] text-[#56616B]">Só o síndico gerencia</span> : <>
-              {u.ativo && <button type="button" className={`${botao} border-[#B9C3CA] hover:bg-[#EEF2F4]`} onClick={() => void executar(() => api.usuarios.redefinirAcesso(u.id), `Acesso de ${u.nome} redefinido. Senha temporária gerada; troca obrigatória no próximo login.`)}>Redefinir acesso</button>}
+              {u.ativo && <button type="button" className={`${botao} border-[#B9C3CA] hover:bg-[#EEF2F4]`} onClick={() => setRedefinir(u)}>Redefinir acesso</button>}
               {u.ativo && u.id !== eu?.id && <button type="button" className={`${botao} border-[#FDA29B] text-[#B42318] hover:bg-[#FEF3F2]`} onClick={() => setDesativar(u)}>Desativar</button>}
-              {!u.ativo && <button type="button" className={`${botao} border-[#B9C3CA] hover:bg-[#EEF2F4]`} onClick={() => void executar(() => api.usuarios.reativar(u.id), `${u.nome} reativado(a).`)}>Reativar</button>}
+              {!u.ativo && <button type="button" className={`${botao} border-[#B9C3CA] hover:bg-[#EEF2F4]`} onClick={() => void executar(() => acoes.reativar.mutateAsync(u.id), `${u.nome} reativado(a).`)}>Reativar</button>}
               </>}
             </Cel>
           </ListaLinha>
         ))}
       </Lista>
 
-      {novo && <NovoUsuarioModal onClose={() => setNovo(false)} onFeito={(u) => { setNovo(false); avisar({ texto: `Usuário ${u.nome} criado.` }); void lista.recarregar(); }} />}
+      {novo && <NovoUsuarioModal onClose={() => setNovo(false)}
+        onSalvar={async (f) => { await acoes.criar.mutateAsync(f); setNovo(false); }} />}
+      {senha && <SenhaTemporariaModal senha={senha} onClose={() => setSenha(null)} />}
+      {redefinir && (
+        <Modal titulo={`Redefinir o acesso de ${redefinir.nome}?`} largura={520} gap={14} onClose={() => setRedefinir(null)}
+          rodape={<>
+            <Button variante="primario" grande className="flex-1" onClick={() => pedirRedefinicao(redefinir)}>Redefinir acesso</Button>
+            <Button grande data-autofocus onClick={() => setRedefinir(null)}>Cancelar</Button>
+          </>}>
+          <p className="text-[15px] leading-[1.5]">Será gerada uma senha temporária. As sessões abertas de {redefinir.nome} são encerradas, e a troca de senha passa a ser obrigatória no próximo login.</p>
+        </Modal>
+      )}
       {desativar && (
         <Modal titulo={`Desativar ${desativar.nome}?`} largura={520} gap={14} onClose={() => setDesativar(null)}
           rodape={<>
-            <Button variante="perigo" grande className="flex-1" onClick={() => { const u = desativar; setDesativar(null); void executar(() => api.usuarios.desativar(u.id), `${u.nome} desativado(a). O histórico foi mantido.`); }}>Desativar</Button>
+            <Button variante="perigo" grande className="flex-1" onClick={() => { const u = desativar; setDesativar(null); void executar(() => acoes.desativar.mutateAsync(u.id), `${u.nome} desativado(a). O histórico foi mantido.`); }}>Desativar</Button>
             <Button grande data-autofocus onClick={() => setDesativar(null)}>Cancelar</Button>
           </>}>
           <div className="flex gap-[10px] rounded-lg border border-[#FEC84B] bg-[#FEF0C7] px-[14px] py-3 text-[#7A2E0E]">
@@ -89,18 +116,20 @@ export function UsuariosPage() {
   );
 }
 
-function NovoUsuarioModal({ onClose, onFeito }: { onClose: () => void; onFeito: (u: UsuarioSistema) => void }) {
-  const api = useApi();
+function NovoUsuarioModal({ onClose, onSalvar }: { onClose: () => void; onSalvar: (f: NovoUsuarioInput) => Promise<void> }) {
   const gerenciaSindico = useCan('usuario.gerenciar_sindico');
   const [f, setF] = useState<{ nome: string; login: string; papel: Papel }>({ nome: '', login: '', papel: 'porteiro' });
   const [erro, setErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
   async function salvar(e: FormEvent) {
     e.preventDefault();
-    try { onFeito(await api.usuarios.criar(f)); } catch (err) { setErro(mensagemErro(err)); }
+    if (salvando) return;
+    setErro(''); setSalvando(true);
+    try { await onSalvar({ nome: f.nome.trim(), login: f.login.trim(), papel: f.papel }); } catch (err) { setErro(mensagemErro(err)); setSalvando(false); }
   }
   return (
     <Modal titulo="Novo usuário" largura={560} gap={14} onClose={onClose}
-      rodape={<><Button type="submit" form="f-user" variante="primario" grande className="flex-1">Criar usuário</Button><Button grande onClick={onClose}>Cancelar</Button></>}>
+      rodape={<><Button type="submit" form="f-user" variante="primario" grande className="flex-1" carregando={salvando}>Criar usuário</Button><Button grande onClick={onClose}>Cancelar</Button></>}>
       <form id="f-user" onSubmit={salvar} className="flex flex-col gap-[14px]">
         <Field label="Nome completo"><input data-autofocus className="input" value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} /></Field>
         <Field label="Login"><input className="input font-mono" value={f.login} onChange={(e) => setF({ ...f, login: e.target.value })} placeholder="nome.sobrenome" /></Field>
@@ -116,6 +145,40 @@ function NovoUsuarioModal({ onClose, onFeito }: { onClose: () => void; onFeito: 
         <div className="rounded-lg bg-[#E3F0F2] px-3 py-[10px] text-[14px] text-[#0B4450]">Todo perfil entra com login e senha individuais.</div>
         {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
       </form>
+    </Modal>
+  );
+}
+
+/**
+ * Mostra a senha temporária UMA vez. Ao fechar, o estado da tela é zerado e a senha some da memória da UI
+ * (não fica em contexto global, cache do React Query nem storage). A API também não a devolve de novo.
+ */
+function SenhaTemporariaModal({ senha, onClose }: { senha: SenhaExibida; onClose: () => void }) {
+  const [copiada, setCopiada] = useState(false);
+  async function copiar() {
+    try { await navigator.clipboard.writeText(senha.senhaTemporaria); setCopiada(true); } catch { setCopiada(false); }
+  }
+  return (
+    <Modal titulo={senha.motivo === 'criado' ? `Usuário ${senha.usuario.nome} criado` : `Acesso de ${senha.usuario.nome} redefinido`}
+      largura={560} gap={14} tom="petroleo" tituloId="modal-senha-temporaria" onClose={onClose}
+      rodape={<Button variante="primario" grande className="flex-1" data-autofocus onClick={onClose}>Já copiei, fechar</Button>}>
+      <div className="flex gap-[10px] rounded-lg border border-[#FEC84B] bg-[#FEF0C7] px-[14px] py-3 text-[#7A2E0E]">
+        <TriangleAlert className="h-5 w-5 shrink-0" strokeWidth={2.2} aria-hidden />
+        <span><strong>Copie agora.</strong> Esta senha temporária não será mostrada de novo. No primeiro acesso, {senha.usuario.nome} vai precisar trocá-la.</span>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[14px] font-medium">Login</span>
+        <span className="font-mono text-[15px]">{senha.usuario.login}</span>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <span id="rot-senha-temp" className="text-[14px] font-medium">Senha temporária</span>
+        <div className="flex items-center gap-2">
+          <output aria-labelledby="rot-senha-temp" className="flex-1 select-all rounded-lg border border-[#B9C3CA] bg-[#F6F8F9] px-[14px] py-[10px] font-mono text-[18px] tracking-[0.04em]">
+            {senha.senhaTemporaria}
+          </output>
+          <Button onClick={() => void copiar()}><Copy className="mr-1.5 inline h-4 w-4" aria-hidden />{copiada ? 'Copiada' : 'Copiar'}</Button>
+        </div>
+      </div>
     </Modal>
   );
 }

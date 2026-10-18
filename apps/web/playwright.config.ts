@@ -6,6 +6,7 @@ const PORTA = 5180;
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: ['http/**'], // e2e contra a API real: playwright.http.config.ts (npm run test:e2e:http)
   outputDir: './test-results',
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
   fullyParallel: true,

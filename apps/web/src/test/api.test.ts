@@ -302,7 +302,7 @@ describe('RBAC e usuários', () => {
     expect((await api.usuarios.listar()).length).toBeGreaterThan(0); // spec 5.2: administração gerencia usuários
     expect((await esperaErro(api.usuarios.criar({ nome: 'Novo Síndico', login: 'novo.sindico', papel: 'sindico' }))).status).toBe(403);
     await entrarComo(api, 'roberto.faria');
-    const novo = await api.usuarios.criar({ nome: 'Teste Auditor', login: 'teste.auditor', papel: 'auditor' });
+    const { usuario: novo } = await api.usuarios.criar({ nome: 'Teste Auditor', login: 'teste.auditor', papel: 'auditor' });
     const des = await api.usuarios.desativar(novo.id);
     expect(des.ativo).toBe(false);
   });

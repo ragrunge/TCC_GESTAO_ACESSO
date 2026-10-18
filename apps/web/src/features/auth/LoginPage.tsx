@@ -1,16 +1,17 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Info } from 'lucide-react';
-import { useApi } from '../../api';
-import { useAuth } from '../../auth/AuthContext';
+import { useMutation } from '@tanstack/react-query';
+import { ApiError, useApi } from '../../api';
+import { destinoDe, useAuth } from '../../auth/AuthContext';
+import { Alert } from '../../components/Alert';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { useToast } from '../../components/Toast';
-import { rotaInicial } from '@portaria/domain/rbac';
 import { mensagemErro } from '../../app/useAsync';
 import { useTituloPagina } from '../../app/titulo';
 
-// Seletor de perfil de demonstração: apenas preenche o login do operador correspondente.
+// Seletor de perfil de demonstração (só no modo mock): apenas preenche o login do operador correspondente.
 const PERFIS = [
   { id: 'porteiro', rotulo: 'Porteiro', nome: 'João Lima', login: 'joao.lima' },
   { id: 'administracao', rotulo: 'Administração', nome: 'Paula Nogueira', login: 'paula.nogueira' },
@@ -22,29 +23,31 @@ export function LoginPage() {
   const api = useApi();
   const { usuario, pronto, entrar } = useAuth();
   const { avisar } = useToast();
-  const [login, setLogin] = useState('joao.lima');
-  const [senha, setSenha] = useState('demonstracao');
-  const [erro, setErro] = useState('');
-  const [carregando, setCarregando] = useState(false);
+  // Atalhos de demonstração (perfis, senha pré-preenchida, "qualquer senha") só existem no mock.
+  const demo = api.modo === 'mock';
+  const [login, setLogin] = useState(demo ? 'joao.lima' : '');
+  const [senha, setSenha] = useState(demo ? 'demonstracao' : '');
+  // Sem `variables`: login e senha vêm do estado do formulário, então a senha não fica guardada no cache de
+  // mutations; gcTime 0 descarta o resultado assim que a tela sai.
+  const entrada = useMutation({ mutationFn: () => entrar(login, senha), gcTime: 0 });
+  const erroEntrada = entrada.error;
+  const bloqueado = erroEntrada instanceof ApiError && erroEntrada.status === 429;
 
   useTituloPagina('Entrar');
 
-  if (pronto && usuario) return <Navigate to={`/${rotaInicial(usuario.papel)}`} replace />;
+  if (pronto && usuario) return <Navigate to={destinoDe(usuario)} replace />;
 
-  async function enviar(e: FormEvent) {
+  function enviar(e: FormEvent) {
     e.preventDefault();
-    setErro(''); setCarregando(true);
-    try {
-      await entrar(login, senha);
-    } catch (err) { setErro(mensagemErro(err)); }
-    finally { setCarregando(false); }
+    if (entrada.isPending) return;
+    entrada.mutate();
   }
 
   async function restaurar() {
     if (!api.demo) return;
     if (!window.confirm('Restaurar os dados de demonstração? Tudo o que foi registrado nesta sessão será perdido.')) return;
     await api.demo.restaurar();
-    setErro('');
+    entrada.reset();
     avisar({ tom: 'neutro', texto: 'Dados de demonstração restaurados. Relógio simulado: sexta-feira 09/10/2026 14:32.' });
   }
 
@@ -70,12 +73,14 @@ export function LoginPage() {
           <form onSubmit={enviar} className="flex flex-col gap-4" noValidate>
             <h1 className="mb-1 text-[28px] font-semibold">Entrar</h1>
             <Field label="Usuário"><input className="input !h-[46px] !px-[14px]" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username" required /></Field>
-            <Field label="Senha" dica="Demonstração: qualquer senha é aceita.">
+            <Field label="Senha" dica={demo ? 'Demonstração: qualquer senha é aceita.' : undefined}>
               <input className="input !h-[46px] !px-[14px]" type="password" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="current-password" required />
             </Field>
-            {erro && <div role="alert" className="text-[14px] font-medium text-[#B42318]">{erro}</div>}
+            {erroEntrada && (bloqueado
+              ? <Alert tom="ambar" role="alert" titulo="Acesso temporariamente bloqueado">{mensagemErro(erroEntrada)}</Alert>
+              : <div role="alert" className="text-[14px] font-medium text-[#B42318]">{mensagemErro(erroEntrada)}</div>)}
             <div className="flex gap-[10px]">
-              <Button type="submit" variante="primario" grande className="flex-1" carregando={carregando}>Entrar</Button>
+              <Button type="submit" variante="primario" grande className="flex-1" carregando={entrada.isPending}>Entrar</Button>
             </div>
           </form>
 
@@ -84,7 +89,7 @@ export function LoginPage() {
             <span>Cada operador usa o próprio login. Não compartilhe sua senha.</span>
           </div>
 
-          {(
+          {demo && (
             <div className="mt-3 flex flex-col gap-2 border-t border-dashed border-[#C5CDD3] pt-5">
               <div className="text-[13px] font-medium text-[#56616B]">Perfil de demonstração</div>
               <div className="grid grid-cols-4 gap-[6px]">
