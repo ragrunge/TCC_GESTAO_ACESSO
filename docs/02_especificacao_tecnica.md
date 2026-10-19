@@ -539,7 +539,7 @@ de autorizador é `autorizado_por_pessoa_id`, não um nome livre. Quem pode corr
 | Endpoint | `GET /auditoria/integridade?de_seq=&ate_seq=` (auditor, síndico, administração) |
 | Processo | Lê os eventos em ordem de `seq` e aplica `verificarCadeia` (o mesmo código do verificador externo), a partir da gênese ou do selo do último descarte |
 | Resposta | `{ valido, verificados, ultimo_seq, ultimo_hash }` ou, na falha, `primeiro_seq_invalido` e `motivo` (`hash_divergente`, `hash_anterior_incoerente`, `lacuna_de_seq`) |
-| Agendamento | O job diário verifica desde o último selo e grava o resultado; falha gera alerta ao síndico |
+| Agendamento | Pendente: o agendador (seção 4.6) já sela e envia a âncora; a verificação diária com alerta ao síndico ainda não roda sozinha (hoje é sob demanda, na tela de Histórico) |
 
 ### 4.6 Selo e ancoragem externa
 
@@ -550,6 +550,23 @@ Mitigação: o job diário grava `selo_cadeia` (data, `ultimo_seq`, `ultimo_hash
 hash com a cadeia. Em seguida, o job envia a âncora para fora e registra `enviado_para` e `enviado_em`,
 uma única vez. Um hash ancorado em D que não coincide com o banco prova reescrita posterior a D. A força
 da âncora depende de quem a recebe não ter acesso ao servidor (decisão 2).
+
+Sem a âncora, quem tem superusuário recalcula a cadeia inteira **e reescreve os próprios selos** no banco; a
+verificação interna (4.5), que só lê o banco, passa a dizer "íntegra". Isso está provado em `test:pg`
+(`postgres-real/lgpd-selo.test.ts`): depois da reescrita completa, `GET /auditoria/integridade` acusa
+`selo_divergente`; se o atacante também reescreve o selo, a verificação volta a "válido", e só o hash recebido
+por e-mail denuncia (`POST /auditoria/selos/conferir` → `hash_divergente`).
+
+Implementação (2026-10-18, `apps/api/src/selo/`):
+
+| Item | Como funciona |
+|---|---|
+| Selo diário | Para o dia D (BRT), sela o último evento com `registrado_em` antes da meia-noite de D+1. `tipo = 'diario'`, um por dia (índice único parcial, migração 0004). Cadeia vazia: sela a gênese. Também é o ponto de corte da retenção (9.1) |
+| Selo manual | `POST /auditoria/selos` (SI, AU: `auditoria.selar`) sela a cabeça naquele momento, `tipo = 'manual'`, e envia a âncora na hora. Se a cabeça não andou desde o último selo, devolve o existente (sem selo nem e-mail repetido) |
+| Âncora | Resumo sem dado pessoal (data, tipo, seq, hash, eventos do dia até o selo, instante, id) por e-mail SMTP a `ANCORA_EMAILS` (síndico e conselho) e, opcionalmente, uma linha JSON num arquivo append-only (`ANCORA_ARQUIVO`, volume `ancoras`). Falha no envio deixa o selo pendente (`enviado_em` nulo); o agendador reenvia. Envio "pelo menos uma vez": a linha do selo fica travada (`FOR UPDATE SKIP LOCKED`) durante o envio |
+| Destinos | Dev: Mailpit do compose (`http://localhost:8025`). Produção: e-mail real, obrigatório e com TLS (a API recusa o boot sem `ANCORA_EMAILS` ou com `ANCORA_SMTP_TLS=nenhum`). O arquivo, sozinho, está no mesmo servidor e só vale como âncora se for copiado para fora |
+| Agendamento | Timer dentro da API (decisão 32), a cada `JOBS_INTERVALO_MIN` (10): sela ontem se faltar, reenvia pendentes, roda a retenção a partir das 3h BRT se ainda não rodou no dia. Trava de job por advisory lock de sessão (`pg_try_advisory_lock`), mais idempotência no banco. CLI: `node dist/cli/jobs.js selo [AAAA-MM-DD] \| ancoras \| retencao` |
+| Conferir âncora | `POST /auditoria/selos/conferir` `{ seq, hash }` (SI, AD, AU) compara o hash recebido com o banco (`confere`, `hash_divergente`, `seq_descartado`, `seq_inexistente`) e grava `auditoria.conferirAncora`. É conveniência: um servidor adulterado pode mentir. A conferência com valor de prova é a offline (4.7: exportação + `verificar.js` + o e-mail guardado). Por isso o hash colado **não** é gravado como "âncora recebida": guardar no banco o que o atacante controla não acrescenta prova |
 
 ### 4.7 Exportação verificável (RF-32)
 
@@ -754,14 +771,18 @@ Ocorrências implementadas em `apps/api/src/ocorrencias` (2026-10-18). O status 
 | GET | /auditoria/integridade | SI, AD, AU | RNF-01, RF-37 (implementado): recalcula a cadeia em lotes com a serialização do domain, a partir da gênese ou do selo do corte; confere a cabeça (`evento_acesso_cadeia`, pega remoção no fim) e cada selo diário (`selo_divergente`, pega a cadeia recalculada inteira) |
 | POST | /auditoria/exportacoes | SI, AD, AU | RF-32 (implementado, síncrono): filtros no corpo; devolve `{ nomeArquivo, conteudo, quantidade }` no formato JSONL v2 do mock (`@portaria/domain/exportacao`). Teto de 20.000 eventos (422 `EXPORTACAO_GRANDE`). A exportação vai para o `audit_log` (`auditoria.exportar`, sem o texto do filtro de nome) |
 | GET | /auditoria/alteracoes?de=&ate=&usuarioId=&acao=&entidade=&limite=&cursor= | SI, AD, AU | audit_log paginado (mais recente primeiro), sem IP |
-| GET | /auditoria/checkpoints | SI, AD, AU | seção 4.6 |
+| GET | /auditoria/selos | SI, AD, AU | Seção 4.6 (implementado): `{ ultimo, pendentesEnvio, destinos, agendador }`. Substitui `/auditoria/checkpoints` |
+| POST | /auditoria/selos | SI, AU | "Selar agora" (`auditoria.selar`): `{ selo, novo, ancora: 'enviada' \| 'pendente' \| 'sem_destino' }`; 409 `SELO_EM_ANDAMENTO` |
+| POST | /auditoria/selos/conferir | SI, AD, AU | `{ seq, hash }` recebidos por fora; `{ confere, motivo, seq, hashNoBanco, seloRegistrado }`; vai para o `audit_log` |
 
 ### 6.7 LGPD
 
 | Método | Rota | Papéis | Descrição |
 |---|---|---|---|
-| GET | /lgpd/pessoas/:id/exportacao | SI, AD | Dados da pessoa em JSON (seção 9.3) |
-| POST | /lgpd/pessoas/:id/anonimizar | SI | Atendimento de pedido de eliminação, respeitada a retenção |
+| GET | /lgpd/pessoas/:id/exportacao | SI, AD | Dados da pessoa em JSON (seção 9.3), implementado: `{ nomeArquivo, conteudo, quantidade }`, formato `portaria-parque/lgpd-exportacao` v1 do mock; vai para o `audit_log` (`lgpd.exportar`) |
+| POST | /lgpd/pessoas/:id/anonimizar | SI | Atendimento de pedido de eliminação, respeitada a retenção. 422 `PESSOA_COM_VINCULO_VALIDO`, 409 `PESSOA_JA_ANONIMIZADA`. Resposta: `{ pessoaId, registrosRedigidos, retido, eventosRetidos, retidoAte, documentosEliminados }` |
+| POST | /lgpd/retencao | SI | Roda a retenção agora (a mesma rotina do agendador, 9.1); 409 `RETENCAO_EM_ANDAMENTO` |
+| GET | /lgpd/retencao | SI | Última execução: `{ ultima: { em, porNome, resultado } \| null }` |
 
 ### 6.8 Registro de evento de acesso
 
@@ -1049,8 +1070,21 @@ A importação é idempotente por (documento_busca, unidade): reimportar o mesmo
 
 ### 9.1 Retenção (01_requisitos.md, seção 7)
 
-Job diário (`retencao`) na API. Cada execução fica em `retencao_execucao`, só com contagens e ids, sem
-dado pessoal.
+Job diário (`retencao`) na API (agendador da seção 4.6, `POST /lgpd/retencao` ou o CLI). Cada passo grava
+`retencao_execucao` (só contagens e ids, sem dado pessoal) pela sua função `SECURITY DEFINER`, e a execução
+inteira vai para o `audit_log` (`lgpd.retencao`). Rodar duas vezes seguidas não faz nada na segunda.
+
+Implementação (2026-10-18, `apps/api/src/lgpd/retencao.service.ts`, migração 0004):
+
+| Passo | Como |
+|---|---|
+| Pessoas | Mesma regra de `elegivelRetencao` (domain/mock), em SQL; uma transação por pessoa, reconferida com a linha travada; `lgpd_anonimizar_pessoa(id, 'retencao')` anonimiza, marca a foto como eliminada, redige o `audit_log` e registra a execução |
+| Foto | Morador com foto e sem vínculo vigente: `foto_documento_id` nulo e `retencao_eliminar_documentos(ids, 'foto_fim_vinculo')`. A API ainda não recebe foto; a regra fica pronta |
+| Eventos | Corte no maior seq **selado** cujo prefixo inteiro já venceu (pelo relógio do banco); `retencao_descartar_eventos`. Vencido depois do último selo elegível fica para o dia seguinte (`eventosVencidosSemSelo`) |
+| Trilha de alterações | `retencao_descartar_audit()`: DELETE do que tem mais de 3 anos pelo relógio do banco (o `app_rw` não escolhe a data). O trigger append-only ganhou essa exceção controlada |
+| Anexos de ocorrência | Só com `RETENCAO_ANEXO_OCORRENCIA_ANOS` definido, contado do encerramento da ocorrência (decisão 31, em aberto). Sem ele, nada sai por prazo |
+| Volume de documentos | Apaga o arquivo de documento já eliminado (a remoção anterior falhou), arquivo sem registro com mais de 1 hora (queda entre gravar e commitar) e temporário velho. Registro ativo sem arquivo só é contado e logado (perda de dado, não lixo) |
+| Permissão | `app_rw` continua sem DELETE e sem INSERT em `retencao_execucao`; só EXECUTE em `lgpd_anonimizar_pessoa`, `retencao_eliminar_documentos`, `retencao_descartar_audit` (novas) e nas da 0001 |
 
 | Dado | Prazo da seção 7 | Ação do job |
 |---|---|---|
@@ -1117,6 +1151,14 @@ encomendas retiradas, conferências de comprovante dos vínculos (tipo, data, co
 | Acesso | Exportação acima |
 | Correção | `PATCH /pessoas/:id` por síndico/administração, com `audit_log` antes/depois |
 | Eliminação | `POST /lgpd/pessoas/:id/anonimizar`: anonimiza o que pode ser eliminado e informa o que é retido pela necessidade de exercício regular de direitos (eventos de acesso até o fim do prazo da seção 7) |
+
+Decisões da exportação (2026-10-18): CPF só mascarado (o número não é guardado, decisão 18); o HMAC do CPF fica
+fora (é código de busca derivado, e no arquivo só serviria para cruzar o titular com o banco); telefone mascarado,
+como no mock (o arquivo sai do sistema, a conferência de identidade no balcão é fraca, e o titular conhece e corrige
+o número pela administração; o arquivo diz que o número completo é mantido); eventos só os da própria pessoa
+(aqueles em que ela autorizou a entrada de outra são dados de terceiros); documentos só com metadados (foto e anexos
+de ocorrências ligadas a eventos da pessoa, sem a descrição da ocorrência); a conferência do comprovante leva o nome
+do conferente, como pede esta seção. Restrições e autorizações prévias da pessoa não entram (decisão 33).
 
 ### 9.4 Logs de aplicação
 
@@ -1315,7 +1357,7 @@ O morador não opera o sistema em nenhuma fase prevista: não há ator novo nem 
 | 20 | Eliminação de eventos após 3 anos com append-only | Partição mensal com DROP; DELETE de prefixo selado por função controlada | **Resolvida:** prefixo selado (`retencao_descartar_eventos`); partição descartada pelo volume e pela perda de unicidade global (9.1) | Resolvida |
 | 21 | Serialização canônica do hash | Texto separado por `\|` (v0.1); JSON canônico | **Resolvida:** JSON compacto v1 com ordem fixa, null explícito e instante ISO com ms (4.3). A string com `\|` era ambígua | Resolvida |
 | 22 | ORM do backend | Prisma; TypeORM; Drizzle | **Resolvida:** Drizzle (cabeçalho) | Resolvida |
-| 23 | Retenção de dados pessoais fora da tabela da seção 7 | — | Em aberto: `encomenda.destinatario`, `importacao_inconsistencia.mensagem` (cita nomes), `audit_log.usuario_nome` em `auth.login_falha` (o texto digitado pode ser um CPF) e `autorizacao_retirada`. Proposta: mesmo prazo de 3 anos, anonimizados pelo job | Síndico com validação jurídica |
+| 23 | Retenção de dados pessoais fora da tabela da seção 7 | — | Em aberto: `encomenda.destinatario`, `importacao_inconsistencia.mensagem` (cita nomes) e `autorizacao_retirada`. (`audit_log.usuario_nome` em `auth.login_falha` sai com a retenção de 3 anos da trilha, implementada em 2026-10-18.) Proposta: mesmo prazo de 3 anos, anonimizados pelo job | Síndico com validação jurídica |
 | 24 | Morador importado sem telefone | Bloquear a importação; permitir e exigir na aprovação | **Resolvida:** `telefone` só pode ser nulo em pessoa importada (`importacao_id`) ou anonimizada; aprovar o vínculo exige telefone (regra da API) | Resolvida |
 | 25 | Modelo da conferência do comprovante (RF-05) | Colunas no vínculo (uma conferência vigente); tabela própria com histórico de conferências; manter o arquivo cifrado em `documento` | **Resolvida (2026-10-17):** colunas `conferencia_*` e `conferido_por_id` em `vinculo_unidade`, sem arquivo. A regra "aprovado exige conferência" fica num CHECK da própria linha, sem trigger entre tabelas, e o histórico de conferências refeitas já está no `audit_log` (`vinculo.conferir`, antes e depois). Uma tabela própria só se justificaria se fosse preciso consultar várias conferências por vínculo, e nenhum RF pede isso. Saíram `documento_id`, o checklist `conferencias` (jsonb de texto livre, que costumava citar nomes e CPF parcial) e o valor `comprovante_vinculo` de `tipo_documento`. Com isso, aprovar "com item que não confere mediante justificativa" deixa de existir: comprovante que não confere não é registrado, e o vínculo é rejeitado (RN-02) | Resolvida |
 | 26 | Deploy do front (Vercel) e da API (VPS) com cookie `SameSite=Strict` | Domínios separados (`*.vercel.app` e domínio da VPS) com `SameSite=None` + CORS + CSRF por cabeçalho; rewrite de `/api/*` pela Vercel para a VPS (mesma origem); domínio próprio com subdomínios (`app.` e `api.` do mesmo site); front servido pela própria VPS | **Resolvida (2026-10-18): rewrite pela Vercel** no `apps/web/vercel.json`, ANTES do fallback da SPA: `{ "source": "/api/:caminho*", "destination": "https://API_DA_VPS/api/:caminho*" }` (placeholder; a VPS ainda não existe). O navegador vê uma origem só, o cookie fica `Strict` e o CORS fica desligado em produção (`CORS_ORIGENS` vazio). Descartado `SameSite=None`: perde a proteção de CSRF sem código, exige CSRF por cabeçalho e CORS exato, e cada combinação parcial falha parecendo bug. **Custo aceito:** o IP do cliente chega à API só pelo `X-Forwarded-For` que a Vercel monta, e quem acessar a VPS direto pode forjar esse cabeçalho. Por isso o limite por IP é auxiliar, e o controle que vale é o limite por login. Configuração: no proxy da VPS (Caddy), confiar no salto da Vercel e repassar o XFF (a Vercel não publica faixa fixa de IP, então na prática é um `trusted_proxies` amplo, e daí vem a possibilidade de forjar), e na API `TRUST_PROXY=2` (Vercel + Caddy). Com `TRUST_PROXY` errado, o IP visto vira o da borda da Vercel, e 30 falhas de qualquer pessoa (o limite por IP) bloqueiam o login de todos por trás daquela borda: conferir com `curl` no deploy. Evolução sem esse custo: domínio próprio com `api.` no mesmo site (IP real pelo Caddy, sem a Vercel no caminho da autenticação) | Responsável técnico |
@@ -1323,3 +1365,6 @@ O morador não opera o sistema em nenhuma fase prevista: não há ator novo nem 
 | 28 | Tentativa barrada por restrição (RF-16) | Não gravar nada (v0.1 desta seção); gravar o evento `negado` | **Resolvida (2026-10-18):** grava `negado` com o id da restrição, como o mock (RN-11: "negativa por restrição gera registro imutável"). A checagem da restrição vem ANTES da validação do autorizador, então a tentativa é gravada mesmo sem meio (a tela grava o negado detectado ao escolher a unidade). O negado commita antes do 422 e nunca é repetido pelo retry de 40001: cada tentativa gera exatamente um evento | Resolvida |
 | 29 | Lista de funcionários para o porteiro | Porteiro lista (`pessoa.ver`, como era); só SI/AD/AU | **Resolvida (2026-10-18, decisão do usuário):** `funcionario.ver` = SI, AD, AU. A entrada por escala é validada pela própria API; a tela de entrada lê só a escala da pessoa escolhida (`GET /funcionarios/:id/escala`), sem a lista nem os dados da pessoa | Resolvida |
 | 30 | Prazo de regularização do legado (RN-09) | Fixo em 90 dias; configurável | **Resolvida (2026-10-18):** `IMPORTACAO_PRAZO_LEGADO_DIAS` (padrão 90, de 1 a 730), porque o prazo é definido em assembleia. Vale para as importações novas; os legados já criados guardam o prazo do dia da importação | Resolvida |
+| 31 | Prazo de retenção dos anexos de ocorrência | 3 anos do encerramento da ocorrência (como os eventos); enquanto a ocorrência estiver aberta + 3 anos; outro | **Em aberto (2026-10-18):** a seção 7 dos requisitos não lista ocorrências nem anexos. O mecanismo existe (`RETENCAO_ANEXO_OCORRENCIA_ANOS`, contado do encerramento), mas sem valor nenhum anexo sai por prazo. Recomendação: 3 anos do encerramento, alinhado à prescrição (seção 7) | Síndico com validação jurídica |
+| 32 | Agendamento dos jobs (selo, âncora, retenção) | `@nestjs/schedule` com cron na API; serviço cron separado no compose; timer na API que pergunta ao banco o que falta | **Resolvida (2026-10-18):** timer na API, sem dependência nova. A cada 10 min pergunta ao banco se falta o selo de ontem ou a retenção do dia: API reiniciada na hora "marcada" recupera no ciclo seguinte. Várias réplicas: advisory lock de sessão (`pg_try_advisory_lock`) pula quem chega depois, e cada passo é idempotente no banco. Serviço cron separado descartado: outro processo Node na VPS de pouca memória (a API roda com 384 MiB) | Resolvida |
+| 33 | Retenção sem fato gerador no modelo, e conteúdo da exportação | Veículo (seção 7: vínculo + 3 anos), operador (ativo + 3 anos) e funcionário (contrato + 3 anos); restrições e autorizações prévias na exportação do titular | **Em aberto (2026-10-18):** o veículo é da unidade, não da pessoa, e o modelo não guarda a data de desativação; operador e funcionário não guardam a data de desligamento. Sem o fato gerador, o job não aplica esses prazos (não inventa). Proposta: `desativado_em` em `veiculo`, `usuario_sistema` e `funcionario`, e anonimizar 3 anos depois. A exportação segue a lista desta seção (9.3), que não inclui restrições e autorizações prévias da pessoa; incluí-las (sem o texto livre, que cita terceiros) é recomendado | Síndico com validação jurídica |
