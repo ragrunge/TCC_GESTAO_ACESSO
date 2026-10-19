@@ -18,6 +18,7 @@ import * as s from '../../src/db/schema';
 import { seedEstrutura } from '../../src/db/seed';
 import { seedUsuariosDev, USUARIOS_DEV } from '../../src/db/seed-usuarios';
 import { configurarApp } from '../../src/plataforma';
+import { ENVIO_ANCORA, type EnvioAncora, type ResumoSelo, SemDestinoAncora } from '../../src/selo/ancora';
 import { CHAVE_HMAC_TESTE, PASTA_MIGRACOES } from './banco';
 
 export const SENHA = 'senha-de-teste-bem-longa';
@@ -46,6 +47,10 @@ export function configDeTeste(extra: Partial<Config> = {}): Config {
     importacao: { prazoLegadoDias: 90 },
     // Pasta temporária por API de teste (novaApi): o conteúdo cifrado fica nela e o teste confere que não há texto claro.
     documentos: { kek: Buffer.alloc(32, 9), kekVersao: 1, dir: join(tmpdir(), `portaria-docs-${process.pid}-${++dirSeq}`) },
+    // Sem destino de âncora e sem agendador: os testes chamam as rotinas sob demanda (e trocam o envio por um falso).
+    ancora: { emails: [], remetente: 'portaria@localhost', smtp: null, arquivo: null },
+    jobs: { agendador: false, intervaloMin: 10, horaRetencaoBrt: 3 },
+    retencao: { anexoOcorrenciaAnos: null },
     ...extra,
   };
 }
@@ -54,7 +59,21 @@ let ipSeq = 0;
 /** IP único por chamada (o limite por IP não interfere entre testes que não o exercitam). */
 export const novoIp = () => `10.0.${Math.floor(++ipSeq / 250)}.${(ipSeq % 250) + 1}`;
 
-export async function novaApi(extra: Partial<Config> = {}) {
+/** Âncora falsa para os testes: guarda o que seria enviado; `falhar` simula SMTP fora do ar. */
+export class AncoraDeTeste implements EnvioAncora {
+  enviados: ResumoSelo[] = [];
+  falhar = false;
+  constructor(public lista = ['e-mail: conselho@exemplo.org']) {}
+  destinos() { return this.lista; }
+  async enviar(r: ResumoSelo) {
+    if (!this.lista.length) throw new SemDestinoAncora();
+    if (this.falhar) throw Object.assign(new Error('smtp fora'), { code: 'ECONNREFUSED' });
+    this.enviados.push(r);
+    return this.lista.join('; ');
+  }
+}
+
+export async function novaApi(extra: Partial<Config> = {}, opcoes: { ancora?: EnvioAncora } = {}) {
   const client = new PGlite();
   await client.exec('CREATE ROLE app_migrator NOLOGIN; CREATE ROLE app_rw NOLOGIN;');
   const db = drizzle(client, { schema: s });
@@ -65,12 +84,13 @@ export async function novaApi(extra: Partial<Config> = {}) {
   await seedUsuariosDev(db, { senhaHash, deveTrocarSenha: false });
   const relogio = new RelogioDeTeste();
 
-  const mod = await Test.createTestingModule({ imports: [AppModule] })
+  let construtor = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(PG_POOL).useValue({ end: async () => undefined })
     .overrideProvider(DB).useValue(db)
     .overrideProvider(CONFIG).useValue(config)
-    .overrideProvider(RELOGIO).useValue(relogio)
-    .compile();
+    .overrideProvider(RELOGIO).useValue(relogio);
+  if (opcoes.ancora) construtor = construtor.overrideProvider(ENVIO_ANCORA).useValue(opcoes.ancora);
+  const mod = await construtor.compile();
   const app = mod.createNestApplication<NestExpressApplication>({ logger: false });
   configurarApp(app, config);
   await app.listen(0, '127.0.0.1'); // uma porta só: o supertest não abre um servidor por requisição

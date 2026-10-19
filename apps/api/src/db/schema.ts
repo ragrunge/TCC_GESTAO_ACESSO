@@ -600,7 +600,10 @@ export const auditLog = pgTable('audit_log', {
 
 export const seloCadeia = pgTable('selo_cadeia', {
   id: pk(),
-  data: date('data', { mode: 'string' }).notNull().unique('selo_cadeia_data_uq'),
+  /** Dia BRT a que o selo se refere. O diário é um por dia (fim do dia); o manual ("Selar agora") pode repetir o dia. */
+  data: date('data', { mode: 'string' }).notNull(),
+  /** 'diario' (agendador: último evento registrado até o fim do dia) ou 'manual' (cabeça da cadeia no momento). */
+  tipo: text('tipo').notNull().default('diario'),
   ultimoSeq: bigint('ultimo_seq', { mode: 'number' }).notNull(),
   ultimoHash: text('ultimo_hash').notNull(),
   criadoEm: criadoEm(),
@@ -609,6 +612,8 @@ export const seloCadeia = pgTable('selo_cadeia', {
   enviadoEm: instante('enviado_em'),
 }, (t) => [
   index('selo_cadeia_seq_ix').on(t.ultimoSeq),
+  uniqueIndex('selo_cadeia_diario_uq').on(t.data).where(sql`tipo = 'diario'`),
+  check('selo_cadeia_tipo_ck', sql`tipo IN ('diario', 'manual')`),
   check('selo_cadeia_seq_ck', sql`ultimo_seq >= 0`),
   check('selo_cadeia_hash_ck', sql`ultimo_hash ~ '^[0-9a-f]{64}$'`),
   check('selo_cadeia_envio_ck', sql`num_nonnulls(enviado_para, enviado_em) IN (0, 2)`),
@@ -622,4 +627,4 @@ export const retencaoExecucao = pgTable('retencao_execucao', {
   ateSeq: bigint('ate_seq', { mode: 'number' }),
   quantidade: integer('quantidade').notNull(),
   detalhes: jsonb('detalhes'),
-}, () => [check('retencao_tipo_ck', sql`tipo IN ('eventos', 'audit_redacao', 'pessoas', 'documentos')`)]);
+}, () => [check('retencao_tipo_ck', sql`tipo IN ('eventos', 'audit_redacao', 'pessoas', 'documentos', 'audit_descarte')`)]);

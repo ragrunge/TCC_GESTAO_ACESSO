@@ -29,6 +29,13 @@
       "when": 1792291789501,
       "tag": "0003_autenticacao_sessao",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792376703108,
+      "tag": "0004_lgpd_selo_ancora",
+      "breakpoints": true
     }
   ]
 }

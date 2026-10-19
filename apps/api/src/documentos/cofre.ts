@@ -11,7 +11,7 @@
 //   remove o arquivo (`descartar`). Queda do processo entre os dois deixa um arquivo órfão sem registro: inofensivo
 //   (ilegível sem a DEK, que não foi gravada) e removível por varredura.
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, rename, rm } from 'node:fs/promises';
+import { mkdir, open, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Inject, Injectable } from '@nestjs/common';
 import { erroApi } from '../comum/erros';
@@ -21,6 +21,11 @@ import { CONFIG, type Config } from '../config/config';
 const NONCE = 12;
 const TAG = 16;
 const NOME_ARQUIVO = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.bin$/;
+/** Temporário da escrita atômica (`<uuid>.tmp`): sobra de queda do processo entre o write e o rename. */
+const NOME_TEMPORARIO = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/;
+
+/** Arquivo do volume, para a varredura de órfãos da retenção. Nada fora dos dois formatos é listado (nem apagado). */
+export interface ArquivoNoVolume { nome: string; id: string; temporario: boolean; modificadoEm: number }
 
 export interface Guardado {
   id: string;
@@ -99,6 +104,37 @@ export class CofreDocumentos {
     try { await rm(this.caminho(caminhoStorage), { force: true }); } catch {
       log('warn', 'documento.descarte_falhou', {});
     }
+  }
+
+  /**
+   * Apaga o arquivo cifrado de um documento eliminado (LGPD) ou órfão. Idempotente (já ausente = ok). Devolve false
+   * se a remoção falhou: o registro continua eliminado no banco e a próxima varredura tenta de novo.
+   */
+  async eliminar(nome: string): Promise<boolean> {
+    if (!NOME_ARQUIVO.test(nome) && !NOME_TEMPORARIO.test(nome)) return false;
+    try { await rm(join(this.config.documentos.dir, nome), { force: true }); return true; } catch {
+      log('warn', 'documento.eliminacao_falhou', { detalhe: nome.slice(0, 36) });
+      return false;
+    }
+  }
+
+  /** Arquivos `<uuid>.bin` e `<uuid>.tmp` do volume (pasta ausente = vazio). */
+  async listar(): Promise<ArquivoNoVolume[]> {
+    let nomes: string[];
+    try { nomes = await readdir(this.config.documentos.dir); } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw e;
+    }
+    const saida: ArquivoNoVolume[] = [];
+    for (const nome of nomes) {
+      const temporario = NOME_TEMPORARIO.test(nome);
+      if (!temporario && !NOME_ARQUIVO.test(nome)) continue;
+      try {
+        const st = await stat(join(this.config.documentos.dir, nome));
+        if (st.isFile()) saida.push({ nome, id: nome.slice(0, 36), temporario, modificadoEm: st.mtimeMs });
+      } catch { /* sumiu entre o readdir e o stat: nada a fazer */ }
+    }
+    return saida;
   }
 
   /** Lê e decifra. Confere a versão da KEK, a autenticação do GCM e o SHA-256 gravado. */

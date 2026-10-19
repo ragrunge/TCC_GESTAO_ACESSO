@@ -59,7 +59,10 @@ COPY --from=build --chown=node:node /app/packages/domain/dist /app/packages/doma
 COPY --from=build --chown=node:node /app/apps/api/dist ./dist
 COPY --chown=node:node apps/api/package.json ./
 # Pasta dos anexos cifrados (volume `documentos` do compose): criada aqui com dono node, para o volume novo herdar.
-RUN mkdir -p /var/lib/portaria/documentos && chown node:node /var/lib/portaria/documentos && chmod 700 /var/lib/portaria/documentos
+# Idem para o arquivo append-only da âncora do selo (volume `ancoras`).
+RUN mkdir -p /var/lib/portaria/documentos /var/lib/portaria/ancoras \
+  && chown node:node /var/lib/portaria/documentos /var/lib/portaria/ancoras \
+  && chmod 700 /var/lib/portaria/documentos && chmod 750 /var/lib/portaria/ancoras
 USER node
 EXPOSE 3000
 CMD ["node", "dist/main.js"]

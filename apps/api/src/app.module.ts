@@ -20,10 +20,14 @@ import { AuditoriaRotasModule } from './auditoria/auditoria.controller';
 import { RelatoriosModule } from './relatorios/relatorios.module';
 import { EncomendasModule } from './encomendas/encomendas.module';
 import { OcorrenciasModule } from './ocorrencias/ocorrencias.module';
+import { SeloModule } from './selo/selo.module';
+import { LgpdModule } from './lgpd/lgpd.module';
+import { JobsModule } from './jobs/agendador';
 
 @Module({
   imports: [ConfigModule, DatabaseModule, AuditoriaModule, AuthModule, UsuariosModule, UnidadesModule, PessoasModule, VinculosModule,
-    FuncionariosModule, VeiculosModule, ImportacaoModule, AcessoModule, AuditoriaRotasModule, RelatoriosModule, EncomendasModule, OcorrenciasModule],
+    FuncionariosModule, VeiculosModule, ImportacaoModule, AcessoModule, AuditoriaRotasModule, RelatoriosModule, EncomendasModule, OcorrenciasModule,
+    SeloModule, LgpdModule, JobsModule],
   controllers: [SaudeController],
   providers: [
     // Ordem importa: autenticação antes de autorização. Os dois respeitam @Publico() (o /saude continua aberto).

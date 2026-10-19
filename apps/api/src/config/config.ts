@@ -37,7 +37,31 @@ export interface Config {
    * gravada em `documento.chave_versao`; `dir` é a pasta dos arquivos cifrados (`PORTARIA_DOCUMENTOS_DIR`), fora do banco.
    */
   documentos: { kek: Buffer; kekVersao: number; dir: string };
+  /**
+   * Âncora externa do selo diário (spec §4.6): para onde vai o resumo (data, seq, hash, eventos do dia). Destino que o
+   * administrador do banco não controla: e-mail do síndico e do conselho (`ANCORA_EMAILS`, por SMTP) e, opcionalmente,
+   * uma linha JSON por selo num arquivo append-only fora do volume do banco (`ANCORA_ARQUIVO`). Em produção o e-mail é
+   * obrigatório e com TLS; o arquivo, sozinho, está no mesmo servidor e não protege contra quem tem root nele.
+   */
+  ancora: {
+    emails: string[];
+    remetente: string;
+    smtp: { host: string; porta: number; tls: TlsSmtp; usuario: string | null; senha: string | null } | null;
+    arquivo: string | null;
+  };
+  /**
+   * Agendador interno (selo diário, envio de âncoras pendentes, retenção). `agendador=false` desliga os timers (testes,
+   * CLI); as rotinas continuam disponíveis sob demanda. A retenção diária roda a partir de `horaRetencaoBrt`.
+   */
+  jobs: { agendador: boolean; intervaloMin: number; horaRetencaoBrt: number };
+  /**
+   * Prazo de retenção dos anexos de ocorrência, em anos a partir do encerramento da ocorrência. A seção 7 dos requisitos
+   * NÃO o define (spec §14, decisão em aberto): sem `RETENCAO_ANEXO_OCORRENCIA_ANOS`, nenhum anexo é eliminado por prazo.
+   */
+  retencao: { anexoOcorrenciaAnos: number | null };
 }
+
+export type TlsSmtp = 'implicito' | 'starttls' | 'nenhum';
 
 /**
  * Padrões da spec §5.1 (§14 nº 27): 10 falhas por login e 30 por IP numa janela de 15 min bloqueiam por 15 min.
@@ -92,6 +116,40 @@ function carregarDocumentos(env: NodeJS.ProcessEnv): Config['documentos'] {
   return { kek, kekVersao, dir };
 }
 
+const EMAIL = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/;
+
+function carregarAncora(env: NodeJS.ProcessEnv, ambiente: Ambiente): Config['ancora'] {
+  const emails = (env.ANCORA_EMAILS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  for (const e of emails) if (!EMAIL.test(e)) throw new ErroConfig('ANCORA_EMAILS: endereço inválido');
+  const host = env.ANCORA_SMTP_HOST?.trim() || null;
+  const arquivo = env.ANCORA_ARQUIVO?.trim() || null;
+  if (arquivo && !arquivo.startsWith('/')) throw new ErroConfig('ANCORA_ARQUIVO deve ser um caminho absoluto');
+  const remetente = env.ANCORA_REMETENTE?.trim() || 'portaria@localhost';
+  if (!EMAIL.test(remetente) && remetente !== 'portaria@localhost') throw new ErroConfig('ANCORA_REMETENTE: endereço inválido');
+  if (emails.length && !host) throw new ErroConfig('ANCORA_EMAILS exige ANCORA_SMTP_HOST');
+  let smtp: Config['ancora']['smtp'] = null;
+  if (host) {
+    if (!emails.length) throw new ErroConfig('ANCORA_SMTP_HOST sem ANCORA_EMAILS: para quem mandar a âncora?');
+    const tls = (env.ANCORA_SMTP_TLS?.trim() || 'starttls') as TlsSmtp;
+    if (!['implicito', 'starttls', 'nenhum'].includes(tls)) throw new ErroConfig("ANCORA_SMTP_TLS deve ser 'implicito', 'starttls' ou 'nenhum'");
+    // SMTP sem TLS só existe no Mailpit do compose de dev: em produção, a âncora não pode trafegar (nem a senha) em claro.
+    if (tls === 'nenhum' && ambiente === 'producao') throw new ErroConfig('ANCORA_SMTP_TLS=nenhum não é permitido com PORTARIA_AMBIENTE=producao');
+    const usuario = env.ANCORA_SMTP_USUARIO?.trim() || null;
+    const senha = env.ANCORA_SMTP_SENHA ?? null;
+    if (!!usuario !== !!senha) throw new ErroConfig('ANCORA_SMTP_USUARIO e ANCORA_SMTP_SENHA vão juntos');
+    smtp = { host, porta: inteiro(env, 'ANCORA_SMTP_PORTA', tls === 'implicito' ? 465 : 587, 1, 65535), tls, usuario, senha: senha || null };
+  }
+  // Sem e-mail, a âncora fica no próprio servidor: em produção isso anula a proteção do selo (spec §4.6).
+  if (ambiente === 'producao' && !emails.length) throw new ErroConfig('ANCORA_EMAILS é obrigatória com PORTARIA_AMBIENTE=producao (âncora externa do selo)');
+  return { emails, remetente, smtp, arquivo };
+}
+
+function opcionalBooleano(env: NodeJS.ProcessEnv, nome: string, padrao: boolean): boolean {
+  const v = env[nome]?.trim();
+  if (v === undefined || v === '') return padrao;
+  return booleano(env, nome);
+}
+
 export function carregarConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const ambiente = exigir(env, 'PORTARIA_AMBIENTE');
   if (ambiente !== 'dev' && ambiente !== 'producao') throw new ErroConfig("PORTARIA_AMBIENTE deve ser 'dev' ou 'producao'");
@@ -139,5 +197,12 @@ export function carregarConfig(env: NodeJS.ProcessEnv = process.env): Config {
     hmacCpfKey,
     importacao: { prazoLegadoDias: inteiro(env, 'IMPORTACAO_PRAZO_LEGADO_DIAS', PRAZO_LEGADO_PADRAO_DIAS, 1, 730) },
     documentos: carregarDocumentos(env),
+    ancora: carregarAncora(env, ambiente),
+    jobs: {
+      agendador: opcionalBooleano(env, 'JOBS_AGENDADOR', true),
+      intervaloMin: inteiro(env, 'JOBS_INTERVALO_MIN', 10, 1, 60),
+      horaRetencaoBrt: inteiro(env, 'RETENCAO_HORA_BRT', 3, 0, 23),
+    },
+    retencao: { anexoOcorrenciaAnos: inteiro(env, 'RETENCAO_ANEXO_OCORRENCIA_ANOS', 0, 1, 20) || null },
   };
 }

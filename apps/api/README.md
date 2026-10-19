@@ -65,6 +65,10 @@ docker compose run --rm migrate # depois de criar migração nova (o migrate só
 docker compose ps
 curl http://127.0.0.1:3000/api/v1/saude    # {"data":{"status":"ok","banco":"ok","ultimoSeq":0,"em":"..."}}
 docker compose exec api node dist/cli/seed-dev.js   # 4 usuários de dev; senha = SEED_SENHA_DEV do .env
+docker compose exec api node dist/cli/jobs.js retencao            # retenção LGPD agora (spec §9.1); saída só com contagens
+docker compose exec api node dist/cli/jobs.js selo [AAAA-MM-DD]   # selo diário do dia (padrão: ontem BRT) + âncoras pendentes
+docker compose exec api node dist/cli/jobs.js ancoras             # só reenvia âncoras pendentes
+open http://localhost:8025                                        # Mailpit (só dev): o e-mail da âncora do selo chega aqui
 docker compose logs -f api
 docker compose down             # derruba (mantém os dados)
 docker compose down -v          # derruba e ZERA o volume do Postgres
@@ -175,6 +179,11 @@ loga só SQLSTATE e constraint (a mensagem do `DrizzleQueryError` traz SQL e par
 | `LOGIN_MAX_FALHAS_LOGIN`, `LOGIN_MAX_FALHAS_IP` | 10 (3 a 50), 30 (3 a 500) | falhas na janela que bloqueiam; vazio = padrão (spec §14, nº 27) |
 | `LOGIN_JANELA_MIN`, `LOGIN_BLOQUEIO_MIN` | 15, 15 | minutos; vazio = padrão |
 | `IMPORTACAO_PRAZO_LEGADO_DIAS` | 90 (1 a 730) | prazo para regularizar o legado da planilha (RN-09), definido em assembleia; vazio = padrão (spec §14, nº 30) |
+| `ANCORA_EMAILS`, `ANCORA_REMETENTE` | e-mails, vírgula | destinatários da âncora do selo (síndico e conselho); obrigatório em produção (spec §4.6). Dev: os fictícios do compose |
+| `ANCORA_SMTP_HOST`, `_PORTA`, `_TLS`, `_USUARIO`, `_SENHA` | host; 587/465; `starttls` \| `implicito` \| `nenhum` | `nenhum` só em dev (Mailpit); produção recusa. Usuário e senha vão juntos |
+| `ANCORA_ARQUIVO` | caminho absoluto | cópia append-only (JSONL) da âncora no volume `ancoras`; só vale se for copiada para fora do servidor |
+| `JOBS_AGENDADOR`, `JOBS_INTERVALO_MIN`, `RETENCAO_HORA_BRT` | `true`; 10; 3 | agendador interno (selo, âncoras, retenção); `false` desliga (spec §14, nº 32) |
+| `RETENCAO_ANEXO_OCORRENCIA_ANOS` | 1 a 20 | prazo dos anexos de ocorrência, do encerramento; vazio = nenhum sai por prazo (spec §14, nº 31, em aberto) |
 
 Os padrões do limite de login ficam em `PADROES_LOGIN` (`src/config/config.ts`); valor fora da faixa derruba o boot.
 O atraso crescente e os parâmetros do argon2 (`PADROES_ARGON2`) continuam constantes: mudam com revisão de código.
@@ -202,7 +211,6 @@ cookie Strict viaja).
   `typesVersions` dá os `.d.ts` ao build CommonJS da API (`moduleResolution: Node10` não lê `exports`). A serialização canônica
   do hash e o verificador vivem em `@portaria/domain/hashChain`; `src/db/cadeia.ts` só reexporta e mapeia a linha do Drizzle.
   O Dockerfile compila o domain no estágio `build` e copia `package.json` + `dist` para o runtime.
-- `PORTARIA_KEK` já é repassada à API, mas ainda não é usada (documentos cifrados não foram implementados).
 - `/auth/reautenticar` (desbloqueio de tela da portaria) não foi implementado.
 - Bootstrap do primeiro síndico em produção: hoje só pelo seed (`PORTARIA_AMBIENTE=producao` cria os 4 usuários com troca
   obrigatória). Falta um comando que crie só o síndico, com login e nome informados.
@@ -211,7 +219,9 @@ cookie Strict viaja).
 - `login_limite` cresce uma linha por login ou IP distinto e não tem limpeza (app_rw não tem DELETE); um job de manutenção
   como app_migrator resolve quando o volume importar.
 - `test:pg` sobrescreve a senha do `app_rw` no cluster (ver db/README.md).
-- Serviços `web`, `mailhog` e `minio` da spec §12.2 não foram incluídos.
+- Serviços `web` e `minio` da spec §12.2 não foram incluídos (o `mailpit`, de dev, recebe a âncora do selo).
+- Verificação diária de integridade com alerta ao síndico (spec §4.5): o agendador sela e envia a âncora, mas a verificação
+  continua sob demanda.
 - A imagem `migrate` carrega as dependências de desenvolvimento inteiras (591 MB); é só de dev, mas pode virar um estágio enxuto.
 - Registro de acesso: a busca (`ultimoAcesso`) ainda usa o valor gravado, não o efetivo depois de uma correção.
 - `pessoasDentro`, `presentes` e "já está dentro" fazem anti-join com as saídas de toda a trilha: medir quando passar de

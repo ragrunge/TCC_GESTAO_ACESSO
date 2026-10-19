@@ -145,3 +145,22 @@ A restauração em servidor novo é, nesta ordem:
 A chave `PORTARIA_HMAC_CPF_KEY` também não está no dump. Sem ela, a busca por CPF dos cadastros restaurados não funciona.
 O backup da chave é separado, e obrigatório.
 
+O que mais fica fora do dump, cada um com o seu backup (2026-10-18):
+
+| Item | Onde | Sem ele |
+|---|---|---|
+| `PORTARIA_KEK` (e a versão) | `.env` / cofre do provedor | os anexos cifrados do volume `documentos` ficam ilegíveis para sempre |
+| Volume `documentos` | Docker | o banco aponta para arquivos que não existem (a retenção conta "registro sem arquivo") |
+| Volume `ancoras` | Docker | só a cópia local da âncora; a prova está nos e-mails do síndico e do conselho, que precisam ser guardados por eles |
+| E-mails da âncora | caixa do síndico e do conselho | sem eles, uma reescrita completa da trilha não é detectável (spec §4.6) |
+
+Restore e retenção: um dump antigo restaurado traz de volta eventos e cadastros que a retenção já tinha eliminado. Depois
+do restore, rodar `docker compose exec api node dist/cli/jobs.js retencao` antes de abrir para uso. Os documentos
+eliminados não voltam (o arquivo foi apagado do volume), mas o registro restaurado ainda os teria como ativos: a varredura
+os conta como "registro sem arquivo".
+
+Atenção: a retenção refaz só o que vence por PRAZO. A anonimização A PEDIDO (art. 18, VI) feita depois da data do dump
+volta desfeita no restore, e o job não a refaz. Depois de um restore, reaplicar os pedidos de eliminação posteriores ao
+dump (lista no `audit_log` do banco antigo, ação `lgpd.anonimizar` com motivo `pedido`, ou no registro de pedidos da
+administração).
+

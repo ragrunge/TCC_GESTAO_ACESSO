@@ -1,5 +1,5 @@
 # Ambiente de desenvolvimento da Portaria Parque: db -> migrate (roda e termina) -> api.
-# Uso: cp .env.example .env (preencher) e então:
+# Uso: cp .env.example .env (preencher) e então (o mailpit, só de dev, recebe a âncora do selo: http://localhost:8025):
 #   docker compose up --build --watch     API com reload: salvar em apps/api/src recompila e reinicia (tsc-watch)
 #   docker compose up -d --build          sem reload (o watch também pode ser ligado depois: docker compose watch)
 #   API_TARGET=runtime docker compose up -d --build   a imagem de produção (sem tsc-watch, usuário node)
@@ -82,9 +82,27 @@ services:
       # Vazios são válidos: sem CORS (mesma origem) e sem seed de dev (produção).
       CORS_ORIGENS: ${CORS_ORIGENS:-}
       SEED_SENHA_DEV: ${SEED_SENHA_DEV:-}
+      # Âncora externa do selo diário (spec §4.6). Padrão de DEV: o Mailpit abaixo (sem TLS, só na rede do compose) e
+      # destinatários fictícios. Em produção: e-mail do síndico e do conselho, SMTP com TLS e usuário/senha no .env
+      # (a API recusa TLS=nenhum e ANCORA_EMAILS vazio com PORTARIA_AMBIENTE=producao).
+      ANCORA_EMAILS: ${ANCORA_EMAILS:-sindico@condominio.test,conselho@condominio.test}
+      ANCORA_REMETENTE: ${ANCORA_REMETENTE:-portaria@condominio.test}
+      ANCORA_SMTP_HOST: ${ANCORA_SMTP_HOST:-mailpit}
+      ANCORA_SMTP_PORTA: ${ANCORA_SMTP_PORTA:-1025}
+      ANCORA_SMTP_TLS: ${ANCORA_SMTP_TLS:-nenhum}
+      ANCORA_SMTP_USUARIO: ${ANCORA_SMTP_USUARIO:-}
+      ANCORA_SMTP_SENHA: ${ANCORA_SMTP_SENHA:-}
+      # Cópia append-only (uma linha JSON por selo) num volume próprio, fora do volume do banco. Só vale como âncora se
+      # for copiada para fora do servidor (backup externo).
+      ANCORA_ARQUIVO: /var/lib/portaria/ancoras/ancoras.jsonl
+      # Agendador interno (selo de ontem, âncoras pendentes e retenção diária a partir das 3h BRT). Vazio = ligado.
+      JOBS_AGENDADOR: ${JOBS_AGENDADOR:-}
+      # Anexos de ocorrência: a seção 7 dos requisitos não define o prazo (spec §14). Vazio = nenhum anexo sai por prazo.
+      RETENCAO_ANEXO_OCORRENCIA_ANOS: ${RETENCAO_ANEXO_OCORRENCIA_ANOS:-}
     volumes:
       # Sem a KEK (PORTARIA_KEK, só no .env) o volume é ilegível; backup do volume e da KEK em lugares separados.
       - documentos:/var/lib/portaria/documentos
+      - ancoras:/var/lib/portaria/ancoras
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
@@ -118,6 +136,18 @@ services:
         - action: rebuild
           path: ./apps/api/tsconfig.build.json
 
+  # SÓ DEV: caixa de e-mail falsa que recebe a âncora do selo (http://localhost:8025). Não vai para o compose de
+  # produção: lá o destino é o e-mail real do síndico e do conselho (ANCORA_*), e a API recusa SMTP sem TLS.
+  mailpit:
+    image: axllent/mailpit:v1.31.4
+    environment:
+      MP_MAX_MESSAGES: "500"
+    ports:
+      - "127.0.0.1:8025:8025"
+    mem_limit: 128m
+    restart: unless-stopped
+
 volumes:
   pgdata: {}
   documentos: {}
+  ancoras: {}
