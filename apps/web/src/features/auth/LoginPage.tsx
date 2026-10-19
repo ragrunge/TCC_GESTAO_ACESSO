@@ -32,6 +32,8 @@ export function LoginPage() {
   const entrada = useMutation({ mutationFn: () => entrar(login, senha), gcTime: 0 });
   const erroEntrada = entrada.error;
   const bloqueado = erroEntrada instanceof ApiError && erroEntrada.status === 429;
+  // Só sai com a senha certa (a API não revela o motivo a quem não a conhece): a saída é pedir nova senha à administração.
+  const temporariaVencida = erroEntrada instanceof ApiError && erroEntrada.code === 'SENHA_TEMPORARIA_EXPIRADA';
 
   useTituloPagina('Entrar');
 
@@ -78,6 +80,8 @@ export function LoginPage() {
             </Field>
             {erroEntrada && (bloqueado
               ? <Alert tom="ambar" role="alert" titulo="Acesso temporariamente bloqueado">{mensagemErro(erroEntrada)}</Alert>
+              : temporariaVencida
+              ? <Alert tom="ambar" role="alert" titulo="Senha temporária vencida">{mensagemErro(erroEntrada)}</Alert>
               : <div role="alert" className="text-[14px] font-medium text-[#B42318]">{mensagemErro(erroEntrada)}</div>)}
             <div className="flex gap-[10px]">
               <Button type="submit" variante="primario" grande className="flex-1" carregando={entrada.isPending}>Entrar</Button>

@@ -43,6 +43,13 @@
       "when": 1792428205203,
       "tag": "0005_unidade_bloco",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792431707824,
+      "tag": "0006_senha_temporaria_validade",
+      "breakpoints": true
     }
   ]
 }

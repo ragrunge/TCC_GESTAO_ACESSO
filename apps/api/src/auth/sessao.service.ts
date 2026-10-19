@@ -1,6 +1,7 @@
 // Sessão (spec §5.1): token opaco de 256 bits no cookie; no banco só o SHA-256 dele. Expira por tempo absoluto
 // (expira_em, gravado na criação) e por inatividade (ultimo_uso_em + SESSAO_INATIVIDADE_MIN, calculado aqui).
 import { Inject, Injectable } from '@nestjs/common';
+import { senhaTemporariaVencida } from '@portaria/domain/rules';
 import { and, eq, isNull, ne } from 'drizzle-orm';
 import { createHash, randomBytes } from 'node:crypto';
 import { CONFIG, type Config } from '../config/config';
@@ -36,7 +37,10 @@ export class SessaoService {
     return { token, sessaoId: s!.id, expiraEm };
   }
 
-  /** null = sem sessão válida (inexistente, revogada, expirada, inativa ou usuário desativado). */
+  /**
+   * null = sem sessão válida (inexistente, revogada, expirada, inativa, usuário desativado, ou troca de senha pendente
+   * com a senha temporária vencida).
+   */
   async validar(token: string): Promise<AuthDaRequisicao | null> {
     if (!TOKEN.test(token)) return null;
     const agora = this.relogio.agora();
@@ -44,10 +48,15 @@ export class SessaoService {
       id: sessao.id, ultimoUsoEm: sessao.ultimoUsoEm, expiraEm: sessao.expiraEm, revogadaEm: sessao.revogadaEm,
       usuarioId: usuarioSistema.id, nome: usuarioSistema.nome, login: usuarioSistema.login, papel: usuarioSistema.papel,
       ativo: usuarioSistema.ativo, deveTrocarSenha: usuarioSistema.deveTrocarSenha,
+      senhaTemporariaExpiraEm: usuarioSistema.senhaTemporariaExpiraEm,
     }).from(sessao).innerJoin(usuarioSistema, eq(usuarioSistema.id, sessao.usuarioId))
       .where(eq(sessao.tokenHash, hashDoToken(token))).limit(1);
     if (!l || l.revogadaEm || !l.ativo) return null;
     if (l.expiraEm <= agora) return null;
+    // Sessão aberta com a temporária ainda válida não sobrevive ao prazo dela (a sessão dura até 12 h): sem isso, a
+    // senha vencida ainda serviria de "senha atual" em /auth/trocar-senha. Decidido aqui, no estado lido a cada
+    // requisição, sem gravar revogação: vale para as 3 rotas liberadas e não precisa de motivo novo no CHECK da sessão.
+    if (senhaTemporariaVencida({ deveTrocarSenha: l.deveTrocarSenha, senhaTemporariaExpiraEm: l.senhaTemporariaExpiraEm?.getTime() ?? null }, agora.getTime())) return null;
     const inatividadeMs = this.config.sessao.inatividadeMin * 60_000;
     if (agora.getTime() - l.ultimoUsoEm.getTime() >= inatividadeMs) return null;
     // Uma escrita por minuto por sessão, não uma por requisição.

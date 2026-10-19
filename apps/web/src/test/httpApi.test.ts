@@ -87,6 +87,22 @@ describe('adaptador HTTP (axios)', () => {
     expect(eventos).toEqual(['expirada', 'expirada']);
   });
 
+  it('login com a senha temporária vencida: 401 SENHA_TEMPORARIA_EXPIRADA chega com a mensagem, sem aviso de sessão', async () => {
+    const msg = 'Senha temporária vencida. Peça a redefinição à administração.';
+    const { api, eventos } = montar(() => ({ status: 401, data: { code: 'SENHA_TEMPORARIA_EXPIRADA', message: msg } }));
+    expect(await esperaErro(api.auth.login({ login: 'marina.couto', senha: 'abcd-efgh-ijkm-npqr' }))).toMatchObject({ status: 401, code: 'SENHA_TEMPORARIA_EXPIRADA', message: msg });
+    expect(eventos).toEqual([]);
+  });
+
+  it('usuários: o prazo da senha temporária passa da API para a tela (lista e criar)', async () => {
+    const expira = 1_792_600_000_000;
+    const { api } = montar((c) => (c.url === '/usuarios' && c.method === 'get'
+      ? { status: 200, data: { data: [{ ...USUARIO, deveTrocarSenha: true, senhaTemporariaExpiraEm: expira }], pagination: { cursor: null, hasNextPage: false } } }
+      : { status: 201, data: { data: { usuario: { ...USUARIO, deveTrocarSenha: true, senhaTemporariaExpiraEm: expira }, senhaTemporaria: 'abcd-efgh-ijkm-npqr' } } }));
+    expect((await api.usuarios.listar())[0]).toMatchObject({ deveTrocarSenha: true, senhaTemporariaExpiraEm: expira });
+    expect((await api.usuarios.criar({ nome: 'Marina Couto', login: 'marina.couto', papel: 'porteiro' })).usuario.senhaTemporariaExpiraEm).toBe(expira);
+  });
+
   it('me: 401 no boot devolve null sem aviso; sucesso desembrulha { usuario, sessao }', async () => {
     const semSessao = montar(() => erro401);
     expect(await semSessao.api.auth.me()).toBeNull();

@@ -5,9 +5,9 @@ import {
 } from './units';
 import {
   cadastroCompleto, descreverJanela, elegivelRetencao, escalaVigente, estadoAutorizacaoPrevia, legadoVencido, meiosAceitos,
-  podeEntregarEncomenda, restricoesVigentes, validarAutorizacaoEntrada, validarConferencia, validarDecisaoVinculo, validarEscala, vinculoValido,
+  podeEntregarEncomenda, restricoesVigentes, SENHA_TEMPORARIA_VALIDADE_MS, senhaTemporariaVencida, validarAutorizacaoEntrada, validarConferencia, validarDecisaoVinculo, validarEscala, vinculoValido,
 } from './rules';
-import { brt, menosAnos } from './time';
+import { brt, HORA, menosAnos } from './time';
 import type { AutorizacaoPrevia, Funcionario, Pessoa, VinculoUnidade } from './types';
 import { codigoEvento } from './hashChain';
 
@@ -252,5 +252,20 @@ describe('escalaVigente (RF-09)', () => {
   it('funcionário inativo ou ausente nunca tem escala vigente', () => {
     expect(escalaVigente({ ...f([5], '22:00', '06:00'), ativo: false }, brt(2026, 10, 9, 23, 0))).toBe(false);
     expect(escalaVigente(undefined, brt(2026, 10, 9, 23, 0))).toBe(false);
+  });
+});
+
+describe('senha temporária (spec §5.1)', () => {
+  const t0 = brt(2026, 10, 19, 10, 0);
+  it('vale 72 h e vence no instante exato do prazo', () => {
+    expect(SENHA_TEMPORARIA_VALIDADE_MS).toBe(72 * HORA);
+    const u = { deveTrocarSenha: true, senhaTemporariaExpiraEm: t0 + SENHA_TEMPORARIA_VALIDADE_MS };
+    expect(senhaTemporariaVencida(u, t0 + SENHA_TEMPORARIA_VALIDADE_MS - 1)).toBe(false);
+    expect(senhaTemporariaVencida(u, t0 + SENHA_TEMPORARIA_VALIDADE_MS)).toBe(true);
+  });
+  it('sem troca pendente nunca vence; troca pendente sem prazo conta como vencida (falha fechada)', () => {
+    expect(senhaTemporariaVencida({ deveTrocarSenha: false, senhaTemporariaExpiraEm: null }, t0)).toBe(false);
+    expect(senhaTemporariaVencida({}, t0)).toBe(false);
+    expect(senhaTemporariaVencida({ deveTrocarSenha: true, senhaTemporariaExpiraEm: null }, t0)).toBe(true);
   });
 });

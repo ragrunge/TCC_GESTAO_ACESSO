@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { senhaTemporariaVencida } from '@portaria/domain/rules';
 import { eq, sql } from 'drizzle-orm';
 import { setTimeout as esperar } from 'node:timers/promises';
 import { AuditoriaService, type Ator } from '../auditoria/auditoria.service';
@@ -32,13 +33,30 @@ export const paraPublico = (u: { ultimoAcesso: Date | null } & Omit<UsuarioPubli
   ultimoAcesso: u.ultimoAcesso ? u.ultimoAcesso.getTime() : null, deveTrocarSenha: u.deveTrocarSenha,
 });
 
+/** Gestão de usuários (só quem tem usuario.gerenciar): a visão pública + o fim da validade da senha temporária. */
+export interface UsuarioGerenciado extends UsuarioPublico {
+  senhaTemporariaExpiraEm: number | null;
+}
+
+export const colunasGestao = { ...colunasPublicas, senhaTemporariaExpiraEm: usuarioSistema.senhaTemporariaExpiraEm };
+
+export const paraGestao = (u: Parameters<typeof paraPublico>[0] & { senhaTemporariaExpiraEm: Date | null }): UsuarioGerenciado => ({
+  ...paraPublico(u), senhaTemporariaExpiraEm: u.senhaTemporariaExpiraEm ? u.senhaTemporariaExpiraEm.getTime() : null,
+});
+
+/** Troca pendente com a senha temporária vencida (ou sem prazo gravado: falha fechada). */
+export const temporariaVencida = (u: { deveTrocarSenha: boolean; senhaTemporariaExpiraEm: Date | null }, agora: Date) =>
+  senhaTemporariaVencida({ deveTrocarSenha: u.deveTrocarSenha, senhaTemporariaExpiraEm: u.senhaTemporariaExpiraEm?.getTime() ?? null }, agora.getTime());
+
 export type ResultadoLogin =
   | { ok: true; token: string; expiraEm: Date; usuario: UsuarioPublico }
-  | { ok: false; motivo: 'credenciais' }
+  | { ok: false; motivo: 'credenciais' | 'senha_temporaria_expirada' }
   | { ok: false; motivo: 'bloqueado'; ate: Date };
 
 /** Mensagem ÚNICA para usuário inexistente, inativo e senha errada (spec §5.1). */
 export const MENSAGEM_CREDENCIAIS = 'Usuário ou senha inválidos.';
+/** Só sai com a senha CERTA: quem não a conhece recebe MENSAGEM_CREDENCIAIS, como em qualquer senha errada. */
+export const MENSAGEM_TEMPORARIA_EXPIRADA = 'Senha temporária vencida. Peça a redefinição à administração.';
 
 @Injectable()
 export class AuthService {
@@ -64,7 +82,7 @@ export class AuthService {
     const rLogin = await this.limite.reservar(chLogin, agora);
     const rIp = chIp ? await this.limite.reservar(chIp, agora) : null;
 
-    const [u] = await this.db.select({ ...colunasPublicas, senhaHash: usuarioSistema.senhaHash }).from(usuarioSistema)
+    const [u] = await this.db.select({ ...colunasGestao, senhaHash: usuarioSistema.senhaHash }).from(usuarioSistema)
       .where(sql`lower(${usuarioSistema.login}) = ${normalizarLogin(loginDigitado)}`).limit(1);
     const ator: Ator | null = u ? { id: u.id, nome: u.nome, papel: u.papel } : null;
     const falha = (motivo: string) => this.auditoria.registrar(this.db, {
@@ -80,8 +98,13 @@ export class AuthService {
     if (u && u.ativo) ok = await this.senhas.verificar(u.senhaHash, senha);
     else await this.senhas.verificarFicticio(senha); // mesmo custo: o tempo de resposta não revela se o login existe
 
-    if (!ok) {
-      await falha(!u ? 'login_inexistente' : !u.ativo ? 'usuario_inativo' : 'senha_incorreta');
+    // A validade só é olhada DEPOIS do argon2 e só com a senha certa: senha errada numa conta vencida recebe a
+    // mensagem genérica, no mesmo tempo. Senha certa e vencida conta como falha (mantém a reserva, pode bloquear e
+    // NÃO chama limite.sucesso): não autenticou, e um "sucesso" aqui zeraria o contador do login e aliviaria o do IP
+    // para quem tem uma senha vencida em mãos. Não cria sessão.
+    const vencida = ok && temporariaVencida(u!, agora);
+    if (!ok || vencida) {
+      await falha(vencida ? 'senha_temporaria_expirada' : !u ? 'login_inexistente' : !u.ativo ? 'usuario_inativo' : 'senha_incorreta');
       for (const r of [rLogin, rIp]) {
         if (!r) continue;
         const ate = await this.limite.bloquearSeAtingiu(r, agora);
@@ -93,7 +116,7 @@ export class AuthService {
         }
       }
       await esperar(this.limite.atraso(rLogin.falhas));
-      return { ok: false, motivo: 'credenciais' };
+      return { ok: false, motivo: vencida ? 'senha_temporaria_expirada' : 'credenciais' };
     }
 
     const user = u!;
@@ -152,7 +175,7 @@ export class AuthService {
     const novoHash = await this.senhas.gerarHash(novaSenha); // fora da transação: argon2 leva ~250 ms
     return this.db.transaction(async (tx) => {
       const [depois] = await tx.update(usuarioSistema)
-        .set({ senhaHash: novoHash, deveTrocarSenha: false, senhaAlteradaEm: agora, atualizadoEm: agora })
+        .set({ senhaHash: novoHash, deveTrocarSenha: false, senhaTemporariaExpiraEm: null, senhaAlteradaEm: agora, atualizadoEm: agora })
         .where(eq(usuarioSistema.id, ctx.ator.id)).returning(colunasPublicas);
       const revogadas = await this.sessoes.revogarDoUsuario(tx, ctx.ator.id, 'troca_senha', agora, ctx.sessaoId);
       await this.limite.zerar(tx, chLogin, agora);

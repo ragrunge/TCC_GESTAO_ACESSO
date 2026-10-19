@@ -1,12 +1,14 @@
 // Gestão de usuários do sistema (spec §5.2, RNF-04): usuario.gerenciar (SI, AD); alvo ou papel "síndico" exige
 // também usuario.gerenciar_sindico (só SI). Ninguém desativa, rebaixa ou redefine a si mesmo por aqui.
+// Toda resposta daqui leva senhaTemporariaExpiraEm (colunasGestao): todas as rotas exigem usuario.gerenciar.
 import { Inject, Injectable } from '@nestjs/common';
 import { pode, type Acao } from '@portaria/domain/rbac';
+import { SENHA_TEMPORARIA_VALIDADE_MS } from '@portaria/domain/rules';
 import type { Papel } from '@portaria/domain/types';
 import { asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AuditoriaService } from '../auditoria/auditoria.service';
-import { colunasPublicas, paraPublico, type UsuarioPublico } from '../auth/auth.service';
+import { colunasGestao, paraGestao, type UsuarioGerenciado } from '../auth/auth.service';
 import { LimiteLoginService } from '../auth/limite-login.service';
 import { SenhaService } from '../auth/senha.service';
 import { SessaoService } from '../auth/sessao.service';
@@ -46,7 +48,7 @@ export class UsuariosService {
   }
 
   private async travarAlvo(tx: Tx, id: string) {
-    const [x] = await tx.select(colunasPublicas).from(usuarioSistema).where(eq(usuarioSistema.id, id)).for('update');
+    const [x] = await tx.select(colunasGestao).from(usuarioSistema).where(eq(usuarioSistema.id, id)).for('update');
     if (!x) throw erroApi(404, 'USUARIO_NAO_ENCONTRADO', 'Usuário não encontrado.');
     return x;
   }
@@ -62,16 +64,16 @@ export class UsuariosService {
     if (ctx.ator.id === id) throw erroApi(422, codigo, mensagem);
   }
 
-  async listar(p: Paginacao): Promise<Pagina<UsuarioPublico>> {
+  async listar(p: Paginacao): Promise<Pagina<UsuarioGerenciado>> {
     const depois = p.cursor ? decodificarCursor(p.cursor, CursorUsuarios) : null;
-    const linhas = await this.db.select(colunasPublicas).from(usuarioSistema)
+    const linhas = await this.db.select(colunasGestao).from(usuarioSistema)
       .where(depois ? sql`(${usuarioSistema.nome}, ${usuarioSistema.id}) > (${depois.n}, ${depois.i}::uuid)` : undefined)
       .orderBy(asc(usuarioSistema.nome), asc(usuarioSistema.id))
       .limit(p.limite + 1); // um a mais: diz se há próxima página sem COUNT
     const pagina = linhas.slice(0, p.limite);
     const ultimo = pagina[pagina.length - 1];
     const proximo = linhas.length > p.limite && ultimo ? codificarCursor({ n: ultimo.nome, i: ultimo.id }) : null;
-    return new Pagina(pagina.map(paraPublico), proximo);
+    return new Pagina(pagina.map(paraGestao), proximo);
   }
 
   async criar(ctx: Contexto, i: { nome: string; login: string; papel: Papel }) {
@@ -79,19 +81,21 @@ export class UsuariosService {
     const senhaTemporaria = this.senhas.gerarTemporaria();
     const senhaHash = await this.senhas.gerarHash(senhaTemporaria); // fora da transação
     const agora = this.relogio.agora();
+    const senhaTemporariaExpiraEm = new Date(agora.getTime() + SENHA_TEMPORARIA_VALIDADE_MS);
     try {
       const usuario = await this.db.transaction(async (tx) => {
         const papelAtor = await this.revalidarAtor(tx, ctx, 'usuario.gerenciar');
         this.exigirGestaoDeSindico(papelAtor, [i.papel]);
         const [novo] = await tx.insert(usuarioSistema).values({
-          nome: i.nome, login: i.login, papel: i.papel, senhaHash, deveTrocarSenha: true, criadoEm: agora, atualizadoEm: agora,
-        }).returning(colunasPublicas);
+          nome: i.nome, login: i.login, papel: i.papel, senhaHash, deveTrocarSenha: true, senhaTemporariaExpiraEm,
+          criadoEm: agora, atualizadoEm: agora,
+        }).returning(colunasGestao);
         await this.auditoria.registrar(tx, {
           ator: ctx.ator, acao: 'usuario.criar', entidade: 'usuario_sistema', registroId: novo!.id, ip: ctx.ip, depois: novo,
         });
         return novo!;
       });
-      return { usuario: paraPublico(usuario), senhaTemporaria };
+      return { usuario: paraGestao(usuario), senhaTemporaria };
     } catch (e) {
       // Aqui a transação já terminou (rollback): traduzir o erro não depende de consultar o banco.
       if (codigoPg(e) === '23505') throw erroApi(409, 'LOGIN_EXISTENTE', 'Já existe um usuário com este login.');
@@ -110,11 +114,11 @@ export class UsuariosService {
       const antes = await this.travarAlvo(tx, id);
       this.exigirGestaoDeSindico(papelAtor, novoPapel ? [antes.papel, novoPapel] : [antes.papel]);
       const depois = await fn(tx, antes, agora);
-      if (!depois) return paraPublico(antes); // nada mudou: sem linha de auditoria
+      if (!depois) return paraGestao(antes); // nada mudou: sem linha de auditoria
       await this.auditoria.registrar(tx, {
         ator: ctx.ator, acao: acaoAuditoria, entidade: 'usuario_sistema', registroId: id, ip: ctx.ip, antes, depois,
       });
-      return paraPublico(depois);
+      return paraGestao(depois);
     });
   }
 
@@ -122,7 +126,7 @@ export class UsuariosService {
     this.naoSiMesmo(ctx, id, 'AUTO_DESATIVACAO', 'Você não pode desativar o próprio usuário.');
     return this.alterar(ctx, id, 'usuario.desativar', null, async (tx, alvo, agora) => {
       if (!alvo.ativo) return null;
-      const [d] = await tx.update(usuarioSistema).set({ ativo: false, atualizadoEm: agora }).where(eq(usuarioSistema.id, id)).returning(colunasPublicas);
+      const [d] = await tx.update(usuarioSistema).set({ ativo: false, atualizadoEm: agora }).where(eq(usuarioSistema.id, id)).returning(colunasGestao);
       // Desativar derruba as sessões abertas na mesma transação (o guard também recusa usuário inativo).
       await this.sessoes.revogarDoUsuario(tx, id, 'desativacao', agora);
       return d!;
@@ -132,7 +136,7 @@ export class UsuariosService {
   reativar(ctx: Contexto, id: string) {
     return this.alterar(ctx, id, 'usuario.reativar', null, async (tx, alvo, agora) => {
       if (alvo.ativo) return null;
-      const [d] = await tx.update(usuarioSistema).set({ ativo: true, atualizadoEm: agora }).where(eq(usuarioSistema.id, id)).returning(colunasPublicas);
+      const [d] = await tx.update(usuarioSistema).set({ ativo: true, atualizadoEm: agora }).where(eq(usuarioSistema.id, id)).returning(colunasGestao);
       return d!;
     });
   }
@@ -143,7 +147,7 @@ export class UsuariosService {
     return this.alterar(ctx, id, 'usuario.alterar_papel', papel, async (tx, alvo, agora) => {
       if (alvo.papel === papel) return null;
       // O papel é lido a cada requisição pelo SessaoGuard: a mudança vale já na próxima, sem revogar sessão.
-      const [d] = await tx.update(usuarioSistema).set({ papel, atualizadoEm: agora }).where(eq(usuarioSistema.id, id)).returning(colunasPublicas);
+      const [d] = await tx.update(usuarioSistema).set({ papel, atualizadoEm: agora }).where(eq(usuarioSistema.id, id)).returning(colunasGestao);
       return d!;
     });
   }
@@ -153,9 +157,11 @@ export class UsuariosService {
     const senhaTemporaria = this.senhas.gerarTemporaria();
     const senhaHash = await this.senhas.gerarHash(senhaTemporaria);
     const usuario = await this.alterar(ctx, id, 'usuario.redefinir_senha', null, async (tx, alvo, agora) => {
+      // Nova temporária, novo prazo de 72 h (a redefinição é também o jeito de renovar uma temporária vencida).
+      const senhaTemporariaExpiraEm = new Date(agora.getTime() + SENHA_TEMPORARIA_VALIDADE_MS);
       const [d] = await tx.update(usuarioSistema)
-        .set({ senhaHash, deveTrocarSenha: true, senhaAlteradaEm: agora, atualizadoEm: agora })
-        .where(eq(usuarioSistema.id, id)).returning(colunasPublicas);
+        .set({ senhaHash, deveTrocarSenha: true, senhaTemporariaExpiraEm, senhaAlteradaEm: agora, atualizadoEm: agora })
+        .where(eq(usuarioSistema.id, id)).returning(colunasGestao);
       await this.sessoes.revogarDoUsuario(tx, id, 'redefinicao_senha', agora);
       await this.limite.zerar(tx, this.limite.chave('login', alvo.login), agora); // desbloqueia o login do alvo
       return d!;

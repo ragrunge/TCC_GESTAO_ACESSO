@@ -19,6 +19,7 @@ import {
   ANEXO_MAX_BYTES, ANEXO_MAX_POR_OCORRENCIA, ANEXO_TIPOS, DIAS_ENCOMENDA_ATRASADA, diasDesde, ehMimeAnexo,
   MIN_JUSTIFICATIVA, pessoaTemVinculoValido, podeEntregarEncomenda, restricoesVigentes, validarAutorizacaoEntrada,
   validarConferencia, validarDecisaoVinculo, validarEscala, vinculoValido, vinculosValidosDaUnidade,
+  SENHA_TEMPORARIA_VALIDADE_MS, senhaTemporariaVencida,
 } from '@portaria/domain/rules';
 import {
   FORMATO_HASH, calcularHash, codigoEvento, hashGenese, paraExportado, sha256Hex, verificarCadeiaEventos,
@@ -626,6 +627,8 @@ export function createMockApi(opts: MockOptions = {}): Api {
   };
   // O mock nunca exige troca de senha: a demonstração entra com qualquer senha.
   const comSessao = (u: UsuarioSistema) => ({ ...clone(u), deveTrocarSenha: false });
+  /** Como a API: criar e redefinir deixam a troca pendente com prazo de 72 h no relógio simulado. */
+  const comTemporaria = (u: UsuarioSistema) => { u.deveTrocarSenha = true; u.senhaTemporariaExpiraEm = agora() + SENHA_TEMPORARIA_VALIDADE_MS; };
 
   // Selo e âncora externa (spec 4.6) dependem do banco e de um destino fora dele: só existem na API real.
   const SEM_SELO_NO_MOCK = new Set(['auditoria.selos', 'auditoria.selar', 'auditoria.conferirAncora']);
@@ -649,6 +652,12 @@ export function createMockApi(opts: MockOptions = {}): Api {
           // mensagem única: não distingue usuário inexistente de senha errada (spec 5.1)
           throw new ApiError(401, 'CREDENCIAIS_INVALIDAS', 'Usuário ou senha inválidos.');
         }
+        // No mock qualquer senha "confere"; a validade da temporária é reproduzida no relógio simulado (spec §5.1).
+        if (senhaTemporariaVencida(u, agora())) {
+          registrar(d, u, 'auth.login_falha', 'sessao', u.id, null, { login: login.trim(), motivo: 'senha_temporaria_expirada' }, login.trim());
+          salvar();
+          throw new ApiError(401, 'SENHA_TEMPORARIA_EXPIRADA', 'Senha temporária vencida. Peça a redefinição à administração.');
+        }
         u.ultimoAcesso = agora();
         registrar(d, u, 'auth.login', 'sessao', u.id, null, { login: u.login });
         salvar();
@@ -671,7 +680,11 @@ export function createMockApi(opts: MockOptions = {}): Api {
         if (!senhaAtual) throw new ApiError(422, 'SENHA_ATUAL_INCORRETA', 'A senha atual não confere.');
         if (novaSenha.length < 12) throw new ApiError(422, 'SENHA_FRACA', 'A senha precisa ter pelo menos 12 caracteres.');
         if (novaSenha === senhaAtual) throw new ApiError(422, 'SENHA_FRACA', 'A nova senha precisa ser diferente da atual.');
-        await escrever((d) => { registrar(d, eu, 'auth.trocar_senha', 'usuario', eu.id, null, { login: eu.login }); });
+        await escrever((d) => {
+          const x = d.usuarios.find((u) => u.id === eu.id);
+          if (x) { x.deveTrocarSenha = false; x.senhaTemporariaExpiraEm = null; } // a troca zera o prazo, como na API
+          registrar(d, eu, 'auth.trocar_senha', 'usuario', eu.id, null, { login: eu.login });
+        });
         return comSessao(eu);
       },
     },
@@ -1808,6 +1821,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
           if (d.usuarios.some((x) => x.login === login)) throw new ApiError(409, 'LOGIN_EXISTENTE', 'Já existe um usuário com este login.');
           // RN-05: login individual
           const novo: UsuarioSistema = { id: uid('u'), nome: i.nome.trim(), login, papel: i.papel, ativo: true, ultimoAcesso: null };
+          comTemporaria(novo);
           d.usuarios.push(novo);
           registrar(d, eu, 'usuario.criar', 'usuario', novo.id, null, novo);
           return { usuario: novo, senhaTemporaria: senhaTemporariaDemo() };
@@ -1838,8 +1852,9 @@ export function createMockApi(opts: MockOptions = {}): Api {
         const eu = exige('usuario.gerenciar');
         return escrever((d) => {
           const x = alvoUsuario(d, eu, id);
-          // no mock: só registra o pedido; o servidor real geraria senha temporária e exigiria troca no próximo login
-          registrar(d, eu, 'usuario.redefinirAcesso', 'usuario', x.id, null, { login: x.login });
+          // no mock: registra o pedido e renova o prazo; o servidor real também exige a troca no próximo login
+          comTemporaria(x);
+          registrar(d, eu, 'usuario.redefinirAcesso', 'usuario', x.id, null, { login: x.login, senha_temporaria_expira_em: x.senhaTemporariaExpiraEm });
           return { usuario: x, senhaTemporaria: senhaTemporariaDemo() };
         });
       },

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { CONFIG, type Config } from '../config/config';
 import { erroApi } from '../comum/erros';
 import { ZodPipe } from '../comum/zod.pipe';
-import { AuthService, MENSAGEM_CREDENCIAIS } from './auth.service';
+import { AuthService, MENSAGEM_CREDENCIAIS, MENSAGEM_TEMPORARIA_EXPIRADA } from './auth.service';
 import { gravarCookieSessao, limparCookieSessao } from './cookie';
 import { Autenticado, Ctx, ipDe, Publico } from './decorators';
 import { SENHA_MAX } from './senha.service';
@@ -36,6 +36,7 @@ export class AuthController {
       res.setHeader('Retry-After', String(Math.max(1, Math.ceil((r.ate.getTime() - Date.now()) / 1000))));
       throw erroApi(429, 'LOGIN_BLOQUEADO', 'Muitas tentativas de login. Aguarde alguns minutos e tente novamente.');
     }
+    if (!r.ok && r.motivo === 'senha_temporaria_expirada') throw erroApi(401, 'SENHA_TEMPORARIA_EXPIRADA', MENSAGEM_TEMPORARIA_EXPIRADA);
     if (!r.ok) throw erroApi(401, 'CREDENCIAIS_INVALIDAS', MENSAGEM_CREDENCIAIS);
     gravarCookieSessao(res, this.config, r.token, r.expiraEm);
     return { usuario: r.usuario, sessao: { expiraEm: r.expiraEm.toISOString(), inatividadeMin: this.config.sessao.inatividadeMin } };

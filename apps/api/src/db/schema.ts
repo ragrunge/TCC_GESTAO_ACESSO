@@ -96,6 +96,8 @@ export const usuarioSistema = pgTable('usuario_sistema', {
   /** Senha criada por terceiro (cadastro ou redefinição): só /auth/me, /auth/logout e /auth/trocar-senha até trocar. */
   deveTrocarSenha: boolean('deve_trocar_senha').notNull().default(true),
   senhaAlteradaEm: instante('senha_alterada_em'),
+  /** Fim da validade da senha temporária (72 h, @portaria/domain/rules). NULL sem troca pendente (CHECK abaixo). */
+  senhaTemporariaExpiraEm: instante('senha_temporaria_expira_em'),
   // O bloqueio por falhas de login NÃO fica aqui (0003): vive em `login_limite`, por login e por IP, para tratar igual
   // login existente e inexistente (sem enumeração) e funcionar com várias réplicas.
   criadoEm: criadoEm(),
@@ -103,6 +105,7 @@ export const usuarioSistema = pgTable('usuario_sistema', {
 }, (t) => [
   uniqueIndex('usuario_login_uq').on(sql`lower(${t.login})`),
   check('usuario_senha_argon2id_ck', sql`senha_hash LIKE '$argon2id$%'`),
+  check('usuario_senha_temporaria_ck', sql`deve_trocar_senha OR senha_temporaria_expira_em IS NULL`),
 ]);
 
 // ----- Sessões (spec §5.1): token opaco no cookie; aqui só o SHA-256 dele --------------------------------------

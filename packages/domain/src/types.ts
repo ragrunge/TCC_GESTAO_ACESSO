@@ -329,6 +329,10 @@ export interface UsuarioSistema {
   papel: Papel;
   ativo: boolean;
   ultimoAcesso: number | null;
+  /** Troca de senha pendente (senha temporária criada pela administração). Ausente onde a API não informa. */
+  deveTrocarSenha?: boolean;
+  /** Fim da validade da senha temporária (ms). Só na gestão de usuários; null sem troca pendente. */
+  senhaTemporariaExpiraEm?: number | null;
 }
 
 export type StatusImportacao = 'analisada' | 'confirmada' | 'cancelada';

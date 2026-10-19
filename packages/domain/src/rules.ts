@@ -4,11 +4,25 @@ import type {
   AutorizacaoPrevia, CategoriaPessoa, ConferenciaComprovante, Escala, Funcionario, MeioAutorizacao, Pessoa,
   Restricao, VinculoUnidade,
 } from './types';
-import { DIA, DIAS_SEMANA_ABREV, hhmmParaMin, menosAnos, minutosDoDia, partes } from './time';
+import { DIA, DIAS_SEMANA_ABREV, HORA, hhmmParaMin, menosAnos, minutosDoDia, partes } from './time';
 
 export const MIN_JUSTIFICATIVA = 15;
 export const DIAS_ENCOMENDA_ATRASADA = 7;
 export const HORAS_PERMANENCIA_ALERTA = 8;
+
+// ----- Senha temporária (spec §5.1) ---------------------------------------------------------------------------------
+// Criada pela administração (cadastro ou redefinição) e enviada por mensagem: vale 72 h. Constante de regra, não
+// configuração de ambiente. A API grava o fim em usuario_sistema.senha_temporaria_expira_em; o mock usa o relógio simulado.
+export const SENHA_TEMPORARIA_VALIDADE_MS = 72 * HORA;
+
+/**
+ * Senha temporária vencida: troca pendente e prazo passado. Troca pendente SEM prazo gravado também conta como vencida
+ * (falha fechada: linha escrita fora da API não vira senha eterna). Sem troca pendente, nunca.
+ */
+export function senhaTemporariaVencida(u: { deveTrocarSenha?: boolean; senhaTemporariaExpiraEm?: number | null }, agora: number): boolean {
+  if (!u.deveTrocarSenha) return false;
+  return u.senhaTemporariaExpiraEm == null || u.senhaTemporariaExpiraEm <= agora;
+}
 
 // ----- Anexos de ocorrência (RF-27, RNF-03, spec §9.2) -------------------------------------------------------------
 // Os mesmos limites na tela (pré-validação) e na API (decisão). 4 MiB: a foto de celular comprimida e o PDF de um

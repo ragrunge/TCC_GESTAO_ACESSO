@@ -57,8 +57,11 @@ describe('migração 0005: torre -> bloco, sem apagar nem mudar id, hash ou refe
     const t9032 = await idAntigo(client, 9, '032');
 
     // Uso real antes da migração: vínculo aprovado e eventos encadeados apontando para a unidade
-    const [usuario] = await db.insert(s.usuarioSistema).values({ nome: 'Ana Adm', login: 'ana', papel: 'administracao', senhaHash: SENHA_FALSA }).returning();
-    const [porteiro] = await db.insert(s.usuarioSistema).values({ nome: 'Paulo', login: 'paulo', papel: 'porteiro', senhaHash: SENHA_FALSA }).returning();
+    // Usuários em SQL cru: o schema atual tem colunas de migrações posteriores (0006), que o banco na 0004 não tem.
+    const usuarioAntigo = async (nome: string, login: string, papel: string) => (await client.query<{ id: string }>(
+      'INSERT INTO usuario_sistema (nome, login, papel, senha_hash) VALUES ($1, $2, $3, $4) RETURNING id', [nome, login, papel, SENHA_FALSA])).rows;
+    const [usuario] = await usuarioAntigo('Ana Adm', 'ana', 'administracao');
+    const [porteiro] = await usuarioAntigo('Paulo', 'paulo', 'porteiro');
     const [ponto] = await db.insert(s.pontoAcesso).values({ nome: 'Portaria social' }).returning();
     const [morador] = await db.insert(s.pessoa).values({ nome: 'Joana', categoria: 'morador', semCpf: true, telefone: '11987654321' }).returning();
     const [visitante] = await db.insert(s.pessoa).values({ nome: 'Vítor', categoria: 'visitante', semCpf: true, telefone: '11987654322' }).returning();

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Copy, MessageSquareText, TriangleAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { type NovoUsuarioInput, type UsuarioComSenhaTemporaria } from '../../api';
+import { type NovoUsuarioInput, type UsuarioComSenhaTemporaria, useApi } from '../../api';
 import { useAuth, useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
 import { Badge } from '../../components/Badge';
@@ -13,8 +13,9 @@ import { Cel, Lista, ListaCab, ListaLinha } from '../../components/Table';
 import { useToast } from '../../components/Toast';
 import { ROTULO_PAPEL, type Papel, type UsuarioSistema } from '@portaria/domain/types';
 import { fmtDataHora } from '@portaria/domain/time';
-import { mensagemErro } from '../../app/useAsync';
+import { mensagemErro, useAgora } from '../../app/useAsync';
 import { RetencaoLgpd } from './RetencaoLgpd';
+import { avisoSenhaTemporaria, mensagemAcesso, validadeTexto } from './senhaTemporaria';
 import { useAcoesUsuario, useUsuarios } from './useUsuarios';
 
 const COLUNAS = 'minmax(0,1.3fr) 140px 100px 190px 280px';
@@ -27,6 +28,10 @@ export function UsuariosPage() {
   const { avisar } = useToast();
   const podeGerenciar = useCan('usuario.gerenciar');
   const lista = useUsuarios(podeGerenciar);
+  // Prazo da senha temporária: o mock decide no relógio simulado; a API real, no relógio de verdade.
+  const api = useApi();
+  const agoraSimulado = useAgora(30_000);
+  const agora = api.modo === 'mock' ? agoraSimulado : Date.now();
   const [senha, setSenha] = useState<SenhaExibida | null>(null);
   const acoes = useAcoesUsuario((r, motivo) => setSenha({ ...r, motivo }));
   const [novo, setNovo] = useState(false);
@@ -60,7 +65,8 @@ export function UsuariosPage() {
         <ListaCab rotulos={['Nome', 'Perfil', 'Status', 'Último acesso', 'Ações']} />
         {(lista.data ?? []).map((u) => (
           <ListaLinha key={u.id} minH={56} padY={8}>
-            <Cel className="flex flex-col"><span className="font-medium">{u.nome}{u.id === eu?.id && <span className="ml-2 text-[12px] font-normal text-[#56616B]">(você)</span>}</span><span className="font-mono text-[13px] text-[#56616B]">{u.login}</span></Cel>
+            <Cel className="flex flex-col"><span className="font-medium">{u.nome}{u.id === eu?.id && <span className="ml-2 text-[12px] font-normal text-[#56616B]">(você)</span>}</span><span className="font-mono text-[13px] text-[#56616B]">{u.login}</span>
+              {(() => { const a = avisoSenhaTemporaria(u, agora); return a && <span className={`text-[13px] font-medium ${a.vencida ? 'text-[#B42318]' : 'text-[#B54708]'}`}>{a.texto}</span>; })()}</Cel>
             <Cel className="text-[14px]">{u.id === eu?.id || (u.papel === 'sindico' && !gerenciaSindico) ? ROTULO_PAPEL[u.papel] : (
               <select aria-label={`Papel de ${u.nome}`} className="h-10 rounded-lg border border-[#B9C3CA] bg-white px-2 text-[14px]" value={u.papel}
                 disabled={acoes.alterarPapel.isPending}
@@ -152,8 +158,8 @@ function NovoUsuarioModal({ onClose, onSalvar }: { onClose: () => void; onSalvar
 function SenhaTemporariaModal({ senha, onClose }: { senha: SenhaExibida; onClose: () => void }) {
   const [copiado, setCopiado] = useState<'senha' | 'mensagem' | null>(null);
   // Texto pronto para colar no WhatsApp/e-mail. A senha é temporária e de troca obrigatória no primeiro acesso.
-  const mensagem = `Acesso ao sistema da portaria\nLogin: ${senha.usuario.login}\nSenha temporária: ${senha.senhaTemporaria}\n`
-    + `Entre em ${window.location.origin} e troque a senha no primeiro acesso.`;
+  const expiraEm = senha.usuario.senhaTemporariaExpiraEm ?? null;
+  const mensagem = mensagemAcesso({ login: senha.usuario.login, senhaTemporaria: senha.senhaTemporaria, expiraEm, origem: window.location.origin });
   async function copiar(texto: string, qual: 'senha' | 'mensagem') {
     try { await navigator.clipboard.writeText(texto); setCopiado(qual); } catch { setCopiado(null); }
   }
@@ -178,6 +184,7 @@ function SenhaTemporariaModal({ senha, onClose }: { senha: SenhaExibida; onClose
           <Button onClick={() => void copiar(senha.senhaTemporaria, 'senha')}><Copy className="mr-1.5 inline h-4 w-4" aria-hidden />{copiado === 'senha' ? 'Copiada' : 'Copiar'}</Button>
         </div>
         <span className="text-[13px] text-[#56616B]">Digite com os hífens, só letras minúsculas e números.</span>
+        {expiraEm != null && <span className="text-[14px] font-medium text-[#7A2E0E]">Válida até {validadeTexto(expiraEm)}. Depois disso, será preciso redefinir o acesso.</span>}
       </div>
       <Button onClick={() => void copiar(mensagem, 'mensagem')}>
         <MessageSquareText className="mr-1.5 inline h-4 w-4" aria-hidden />{copiado === 'mensagem' ? 'Mensagem copiada' : 'Copiar mensagem com login, senha e endereço'}

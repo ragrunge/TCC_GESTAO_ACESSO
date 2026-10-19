@@ -419,6 +419,13 @@ seguidas com rotação, recusa de arquivo com chave privada e restore completo (
    `--ignore-existing` e nenhum `--delete`: a cópia externa não apaga nada quando a VPS rotaciona (ou é adulterada).
    Para object storage, use bucket com retenção imutável (object lock).
 
+   **Em uso (desde 2026-10-19):** chave dedicada só de leitura, presa no `authorized_keys` do root a
+   `restrict,command="tar -C /var/backups/tcc-portaria -cf - diario mensal"` (o `rrsync` do Ubuntu recusa o `openrsync`
+   do macOS). Na máquina do responsável, um agente do `launchd` roda às 09:00 e no login:
+   `ssh -i <chave> root@179.197.78.78 backup | tar -xkf - -C ~/backups/tcc-portaria` (`-k`: nunca sobrescreve),
+   confere todos os `.sha256` e avisa por notificação se a VPS não responder, se um hash divergir ou se o último dump
+   tiver mais de 2 dias.
+
 4. **Teste de restauração mensal** (spec §11): restaurar o último conjunto numa máquina isolada (seção 9), rodar a
    verificação de integridade e o `verificar-ancoras`, e registrar o resultado.
 
