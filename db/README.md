@@ -135,6 +135,10 @@ Sem `PG_TEST_URL`, a suíte é pulada (`describe.skipIf`).
 
 ## Backup (RNF-10)
 
+Script de produção: `db/backup/backup-portaria.sh` (pg_dump `-Fc` + volumes, cifrado com chave pública age, 30 diários
+e 12 mensais), com timer systemd e crontab de exemplo na mesma pasta. Restore completo, na ordem, em
+`docs/deploy.md` §9.
+
 `pg_dump`/`pg_restore` são **por banco**: `CREATE ROLE`, senhas e `GRANT` de cluster **não viajam no dump**.
 A restauração em servidor novo é, nesta ordem:
 
@@ -151,8 +155,8 @@ O que mais fica fora do dump, cada um com o seu backup (2026-10-18):
 |---|---|---|
 | `PORTARIA_KEK` (e a versão) | `.env` / cofre do provedor | os anexos cifrados do volume `documentos` ficam ilegíveis para sempre |
 | Volume `documentos` | Docker | o banco aponta para arquivos que não existem (a retenção conta "registro sem arquivo") |
-| Volume `ancoras` | Docker | só a cópia local da âncora; a prova está nos e-mails do síndico e do conselho, que precisam ser guardados por eles |
-| E-mails da âncora | caixa do síndico e do conselho | sem eles, uma reescrita completa da trilha não é detectável (spec §4.6) |
+| Volume `ancoras` | Docker | só a cópia local da âncora; a prova está no branch `ancoras` do GitHub (e nos e-mails, se esse destino estiver ligado) |
+| Branch `ancoras` (GitHub) | repositório, protegido contra force-push e deleção | sem ele, uma reescrita completa da trilha não é detectável (spec §4.6) |
 
 Restore e retenção: um dump antigo restaurado traz de volta eventos e cadastros que a retenção já tinha eliminado. Depois
 do restore, rodar `docker compose exec api node dist/cli/jobs.js retencao` antes de abrir para uso. Os documentos

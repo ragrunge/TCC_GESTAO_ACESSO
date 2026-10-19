@@ -1,0 +1,182 @@
+# PRODUÇÃO da Portaria Parque (VPS compartilhada; runbook em docs/deploy.md). Arquivo AUTÔNOMO, não é override do
+# docker-compose.yml de dev: nada dele é herdado, e não existe combinação de -f que misture os dois.
+#
+# Na VPS, o .env (copiado de .env.producao.example) traz COMPOSE_FILE=docker-compose.prod.yml: qualquer
+# `docker compose ...` digitado na pasta do clone usa ESTE arquivo, sem depender de lembrar do -f.
+#
+#   docker compose build                         build na própria VPS (amd64), a partir do clone
+#   docker compose up -d                         db -> permissoes + migrate (rodam e terminam) -> api
+#   docker compose ps / logs -f api              estado e log (json-file com rotação)
+#
+# Isolamento da VPS que também roda o Tobe (porta 3333, Postgres próprio):
+#   - projeto `tcc-portaria` (volumes e redes nascem com esse prefixo; nada é compartilhado com outro projeto);
+#   - banco SEM porta publicada, numa rede interna (sem saída para a internet);
+#   - API publicada só em 127.0.0.1:${API_HOST_PORT} (padrão 3100), para o proxy da VPS; nada em 0.0.0.0;
+#   - limite de memória por serviço, logs com rotação, usuário não-root na API.
+name: tcc-portaria
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      APP_MIGRATOR_PASSWORD: ${APP_MIGRATOR_PASSWORD:?defina APP_MIGRATOR_PASSWORD no .env}
+      APP_RW_PASSWORD: ${APP_RW_PASSWORD:?defina APP_RW_PASSWORD no .env}
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      # Bootstrap de roles e do banco: roda UMA vez, na primeira subida do volume (00_roles.sh é 100755 no git).
+      - ./db/bootstrap:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    networks: [banco]
+    healthcheck:
+      # -h 127.0.0.1: no init o servidor temporário só escuta no socket e enganaria o pg_isready (ver _Feedback).
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d portaria"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    mem_limit: 512m
+    # Postgres com 512 MiB: buffers e conexões no tamanho do limite (a API abre no máximo 10 conexões).
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "max_connections=40", "-c", "work_mem=4MB"]
+    shm_size: 128m
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    logging: *logging
+
+  # Dono dos volumes da API: o volume novo herda o dono da imagem (node), mas um volume restaurado de backup, ou criado
+  # por outra imagem, nasce root e a API (não-root) não grava nele. Roda como root, só com CHOWN, FOWNER e DAC_OVERRIDE
+  # (para descer em pasta 700 de outro dono), e termina.
+  permissoes:
+    image: tcc-portaria-api:${API_TAG:-atual}
+    pull_policy: never
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - chown -R node:node /var/lib/portaria/documentos /var/lib/portaria/ancoras && chmod 700 /var/lib/portaria/documentos && chmod 750 /var/lib/portaria/ancoras
+    volumes:
+      - documentos:/var/lib/portaria/documentos
+      - ancoras:/var/lib/portaria/ancoras
+    network_mode: none
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    restart: "no"
+    logging: *logging
+
+  # Migrações (drizzle-kit, como app_migrator): roda a cada `up`, aplica só o que falta e termina. A API só sobe
+  # depois que ela conclui com sucesso; migração que falha segura a API velha no ar (o `up` não a recria).
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    image: tcc-portaria-migrate:${API_TAG:-atual}
+    environment:
+      DATABASE_URL_MIGRATOR: postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@db:5432/portaria
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [banco]
+    mem_limit: 256m
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+    logging: *logging
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    image: tcc-portaria-api:${API_TAG:-atual}
+    environment:
+      NODE_ENV: production
+      TZ: UTC
+      PORT: "3000"
+      # app_rw: sem DELETE, sem UPDATE nas trilhas, sem CREATE. Nunca app_migrator.
+      DATABASE_URL: postgres://app_rw:${APP_RW_PASSWORD}@db:5432/portaria
+      # Fixos em produção (não vêm do .env): a API recusa o boot com COOKIE_SECURE=false em producao.
+      PORTARIA_AMBIENTE: producao
+      COOKIE_SECURE: "true"
+      # Mesma origem pelo rewrite da Vercel: CORS desligado.
+      CORS_ORIGENS: ""
+      # Saltos de proxy confiáveis: 2 = Vercel + proxy da VPS (topologias em docs/deploy.md §TRUST_PROXY).
+      TRUST_PROXY: ${TRUST_PROXY:?defina TRUST_PROXY no .env (2 com Vercel + proxy da VPS)}
+      SESSAO_ABSOLUTA_MIN: ${SESSAO_ABSOLUTA_MIN:-720}
+      SESSAO_INATIVIDADE_MIN: ${SESSAO_INATIVIDADE_MIN:-30}
+      LOGIN_MAX_FALHAS_LOGIN: ${LOGIN_MAX_FALHAS_LOGIN:-}
+      LOGIN_MAX_FALHAS_IP: ${LOGIN_MAX_FALHAS_IP:-}
+      LOGIN_JANELA_MIN: ${LOGIN_JANELA_MIN:-}
+      LOGIN_BLOQUEIO_MIN: ${LOGIN_BLOQUEIO_MIN:-}
+      IMPORTACAO_PRAZO_LEGADO_DIAS: ${IMPORTACAO_PRAZO_LEGADO_DIAS:-}
+      PORTARIA_HMAC_CPF_KEY: ${PORTARIA_HMAC_CPF_KEY:?defina PORTARIA_HMAC_CPF_KEY no .env}
+      PORTARIA_KEK: ${PORTARIA_KEK:?defina PORTARIA_KEK no .env}
+      PORTARIA_KEK_VERSAO: ${PORTARIA_KEK_VERSAO:?defina PORTARIA_KEK_VERSAO no .env}
+      PORTARIA_DOCUMENTOS_DIR: /var/lib/portaria/documentos
+      # Âncora: github (endpoint público lido pelo GitHub Actions). E-mail é opcional: para ligar, acrescente `email`
+      # aqui e as variáveis ANCORA_EMAILS/ANCORA_SMTP_* (com TLS) no .env e abaixo.
+      ANCORA_DESTINOS: ${ANCORA_DESTINOS:-github}
+      ANCORA_EMAILS: ${ANCORA_EMAILS:-}
+      ANCORA_REMETENTE: ${ANCORA_REMETENTE:-}
+      ANCORA_SMTP_HOST: ${ANCORA_SMTP_HOST:-}
+      ANCORA_SMTP_PORTA: ${ANCORA_SMTP_PORTA:-}
+      ANCORA_SMTP_TLS: ${ANCORA_SMTP_TLS:-}
+      ANCORA_SMTP_USUARIO: ${ANCORA_SMTP_USUARIO:-}
+      ANCORA_SMTP_SENHA: ${ANCORA_SMTP_SENHA:-}
+      # Cópia local append-only (não é âncora externa; entra no backup).
+      ANCORA_ARQUIVO: /var/lib/portaria/ancoras/ancoras.jsonl
+      JOBS_AGENDADOR: ""
+      RETENCAO_ANEXO_OCORRENCIA_ANOS: ${RETENCAO_ANEXO_OCORRENCIA_ANOS:-}
+      # SEED_SENHA_DEV NÃO fica aqui: o seed é um `docker compose run` de uma vez (docs/deploy.md), com a senha só no
+      # ambiente daquele processo.
+    volumes:
+      - documentos:/var/lib/portaria/documentos
+      - ancoras:/var/lib/portaria/ancoras
+    ports:
+      # Só loopback: o proxy da VPS (fase 2) é o único caminho de fora. 3100 não colide com o Tobe (3333).
+      - "127.0.0.1:${API_HOST_PORT:-3100}:3000"
+    networks: [banco, borda]
+    depends_on:
+      db:
+        condition: service_healthy
+      permissoes:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/v1/saude"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+    # Raiz somente leitura: a API só escreve nos dois volumes; /tmp em memória para o que o Node precisar.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # 384 MiB: a API e 2 hashes argon2 simultâneos (64 MiB cada, limite em PADROES_ARGON2.concorrencia).
+    mem_limit: 384m
+    restart: unless-stopped
+    logging: *logging
+
+networks:
+  # Banco e migração: sem saída para a internet e sem porta publicada (internal não permite publicar).
+  banco:
+    internal: true
+  # Só a API: é a rede que publica 127.0.0.1:${API_HOST_PORT}.
+  borda: {}
+
+volumes:
+  # Sem `name:` fixo: viram tcc-portaria_pgdata etc. (prefixo do projeto), e um teste com `-p outro-nome` usa outros.
+  pgdata: {}
+  documentos: {}
+  ancoras: {}

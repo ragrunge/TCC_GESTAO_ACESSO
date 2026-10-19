@@ -83,8 +83,11 @@ services:
       CORS_ORIGENS: ${CORS_ORIGENS:-}
       SEED_SENHA_DEV: ${SEED_SENHA_DEV:-}
       # Âncora externa do selo diário (spec §4.6). Padrão de DEV: o Mailpit abaixo (sem TLS, só na rede do compose) e
-      # destinatários fictícios. Em produção: e-mail do síndico e do conselho, SMTP com TLS e usuário/senha no .env
-      # (a API recusa TLS=nenhum e ANCORA_EMAILS vazio com PORTARIA_AMBIENTE=producao).
+      # destinatários fictícios. Em produção o destino é o GitHub Actions (docker-compose.prod.yml); e-mail é opcional
+      # (a API recusa TLS=nenhum e a ausência de destino externo com PORTARIA_AMBIENTE=producao).
+      # Destinos externos: github (endpoint público GET /api/v1/auditoria/selos/publico, lido pelo GitHub Actions em
+      # produção) e email (o Mailpit, em dev). Produção: docker-compose.prod.yml (github, sem SMTP).
+      ANCORA_DESTINOS: ${ANCORA_DESTINOS:-github,email}
       ANCORA_EMAILS: ${ANCORA_EMAILS:-sindico@condominio.test,conselho@condominio.test}
       ANCORA_REMETENTE: ${ANCORA_REMETENTE:-portaria@condominio.test}
       ANCORA_SMTP_HOST: ${ANCORA_SMTP_HOST:-mailpit}
@@ -137,7 +140,7 @@ services:
           path: ./apps/api/tsconfig.build.json
 
   # SÓ DEV: caixa de e-mail falsa que recebe a âncora do selo (http://localhost:8025). Não vai para o compose de
-  # produção: lá o destino é o e-mail real do síndico e do conselho (ANCORA_*), e a API recusa SMTP sem TLS.
+  # produção: lá o destino é o GitHub Actions; e-mail real, se ligado, exige TLS (a API recusa SMTP sem TLS).
   mailpit:
     image: axllent/mailpit:v1.31.4
     environment:
