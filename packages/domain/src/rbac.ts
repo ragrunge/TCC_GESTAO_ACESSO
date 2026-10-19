@@ -16,6 +16,7 @@ export type Acao =
   | 'veiculo.cadastrar'
   | 'funcionario.gerenciar' | 'funcionario.ver' | 'pessoa.editar'
   | 'autorizacao.area_comum' | 'encomenda.autorizar_retirada'
+  | 'documento.ver'
   | 'lgpd.exportar' | 'lgpd.anonimizar' | 'lgpd.retencao';
 
 const SI: Papel = 'sindico', AD: Papel = 'administracao', PO: Papel = 'porteiro', AU: Papel = 'auditor';
@@ -55,6 +56,9 @@ export const MATRIZ: Record<Acao, Papel[]> = {
   'pessoa.editar': [SI, AD], // correção de cadastro (LGPD art. 18) e regularização (RN-09)
   'autorizacao.area_comum': [SI, AD], // RF-36: área comum é autorizada pela administração
   'encomenda.autorizar_retirada': [SI, AD, PO], // RN-08, a pedido de morador com vínculo válido
+  // Conteúdo de anexo de ocorrência (RF-27, RN-10, spec §6.2 /documentos/:id/conteudo): síndico e administração. O porteiro
+  // anexa, mas não abre o arquivo depois; o auditor vê só os metadados.
+  'documento.ver': [SI, AD],
   'lgpd.exportar': [SI, AD], // spec 9.3
   'lgpd.anonimizar': [SI],
   'lgpd.retencao': [SI], // RNF-09
