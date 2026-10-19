@@ -187,8 +187,8 @@ server {
 }
 
 server {
-    listen 443 ssl;
-    http2 on;
+    # nginx 1.24 (Ubuntu 24.04) não conhece `http2 on;` (só a partir da 1.25.1): http2 vai no listen.
+    listen 443 ssl http2;
     server_name 179-197-78-78.sslip.io;
 
     ssl_certificate     /etc/letsencrypt/live/179-197-78-78.sslip.io/fullchain.pem;
@@ -211,8 +211,10 @@ server {
 }
 ```
 
-Certificado: `sudo certbot certonly --webroot -w /var/www/certbot -d 179-197-78-78.sslip.io --test-cert` (staging);
-depois, sem `--test-cert`. O `$proxy_add_x_forwarded_for` é por `location`: **não afeta o Tobe**.
+Certificado em dois passos, porque o `nginx -t` falha enquanto o bloco 443 aponta para um certificado que ainda não
+existe: (1) `mkdir -p /var/www/certbot`, habilitar só o bloco 80, `nginx -t && systemctl reload nginx`;
+(2) `certbot certonly --webroot -w /var/www/certbot -d 179-197-78-78.sslip.io --test-cert` (staging), depois sem
+`--test-cert` (com `--force-renewal` para trocar o de staging); (3) acrescentar o bloco 443, `nginx -t`, reload. O `$proxy_add_x_forwarded_for` é por `location`: **não afeta o Tobe**.
 
 ### 5.2 Caddy (no host)
 
