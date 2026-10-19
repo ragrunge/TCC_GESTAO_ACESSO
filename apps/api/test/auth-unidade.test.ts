@@ -62,6 +62,7 @@ describe('config do ambiente (falha no boot em vez de default silencioso)', () =
   const base = {
     PORTARIA_AMBIENTE: 'dev', COOKIE_SECURE: 'false', TRUST_PROXY: 'false',
     PORTARIA_HMAC_CPF_KEY: Buffer.alloc(32, 1).toString('base64'),
+    PORTARIA_KEK: Buffer.alloc(32, 2).toString('base64'), PORTARIA_KEK_VERSAO: '1',
   };
   it('válida', () => {
     const c = carregarConfig(base);
@@ -77,6 +78,10 @@ describe('config do ambiente (falha no boot em vez de default silencioso)', () =
     expect(c.importacao).toEqual({ prazoLegadoDias: 90 });
     expect(carregarConfig({ ...base, IMPORTACAO_PRAZO_LEGADO_DIAS: '' }).importacao.prazoLegadoDias).toBe(90);
     expect(carregarConfig({ ...base, IMPORTACAO_PRAZO_LEGADO_DIAS: '120' }).importacao.prazoLegadoDias).toBe(120);
+    // Anexos cifrados (spec §9.2): KEK de 32 bytes, versão e pasta (padrão: o volume do compose)
+    expect(c.documentos).toMatchObject({ kekVersao: 1, dir: '/var/lib/portaria/documentos' });
+    expect(c.documentos.kek.length).toBe(32);
+    expect(carregarConfig({ ...base, PORTARIA_DOCUMENTOS_DIR: '/tmp/x' }).documentos.dir).toBe('/tmp/x');
   });
   it.each([
     [{ COOKIE_SECURE: '1' }, /COOKIE_SECURE/],
@@ -96,6 +101,12 @@ describe('config do ambiente (falha no boot em vez de default silencioso)', () =
     [{ IMPORTACAO_PRAZO_LEGADO_DIAS: '0' }, /IMPORTACAO_PRAZO_LEGADO_DIAS/],
     [{ IMPORTACAO_PRAZO_LEGADO_DIAS: '1000' }, /IMPORTACAO_PRAZO_LEGADO_DIAS/],
     [{ IMPORTACAO_PRAZO_LEGADO_DIAS: 'noventa' }, /IMPORTACAO_PRAZO_LEGADO_DIAS/],
+    [{ PORTARIA_KEK: '' }, /PORTARIA_KEK não definida/],
+    [{ PORTARIA_KEK: Buffer.alloc(16, 1).toString('base64') }, /exatamente 32 bytes/],
+    [{ PORTARIA_KEK: Buffer.alloc(48, 1).toString('base64') }, /exatamente 32 bytes/],
+    [{ PORTARIA_KEK_VERSAO: '' }, /PORTARIA_KEK_VERSAO/],
+    [{ PORTARIA_KEK_VERSAO: 'um' }, /PORTARIA_KEK_VERSAO/],
+    [{ PORTARIA_DOCUMENTOS_DIR: 'relativo/pasta' }, /caminho absoluto/],
   ])('recusa %o', (extra, erro) => {
     expect(() => carregarConfig({ ...base, ...extra })).toThrow(erro);
   });

@@ -1,5 +1,7 @@
 // API de verdade (AppModule, guards e filtro globais, configurarApp) sobre um PGlite com as migrações reais.
 // HTTP real via supertest: o defeito de wiring de decorator (pipe, guard, @Publico) só aparece assim.
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { hash } from '@node-rs/argon2';
 import type { INestApplication } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -28,6 +30,8 @@ export class RelogioDeTeste {
   avancarMin(min: number) { this.atual = new Date(this.atual.getTime() + min * 60_000); }
 }
 
+let dirSeq = 0;
+
 export function configDeTeste(extra: Partial<Config> = {}): Config {
   return {
     ambiente: 'dev',
@@ -40,6 +44,8 @@ export function configDeTeste(extra: Partial<Config> = {}): Config {
     argon2: { memoriaKib: 1024, iteracoes: 1, paralelismo: 1, concorrencia: 2, filaMax: 50 },
     hmacCpfKey: CHAVE_HMAC_TESTE,
     importacao: { prazoLegadoDias: 90 },
+    // Pasta temporária por API de teste (novaApi): o conteúdo cifrado fica nela e o teste confere que não há texto claro.
+    documentos: { kek: Buffer.alloc(32, 9), kekVersao: 1, dir: join(tmpdir(), `portaria-docs-${process.pid}-${++dirSeq}`) },
     ...extra,
   };
 }

@@ -4,7 +4,8 @@ Backend NestJS 11 + Drizzle ORM + PostgreSQL. Hoje: `GET /api/v1/saude`, autenti
 troca de senha), autorização pela matriz RBAC do domain, gestão de usuários, unidades (CRUD e resumo paginado), catálogo,
 busca de pessoas e busca global (leitura), contagem de vínculos, trilha `audit_log` e a camada de banco (schema, migrações,
 verificador da cadeia de hash, testes), pessoas, vínculos, funcionários, veículos, importação e o registro de acesso (eventos,
-presentes, turno, autorizações prévias, restrições, auditoria e relatórios). Encomendas, ocorrências e LGPD ainda não existem.
+presentes, turno, autorizações prévias, restrições, auditoria e relatórios), encomendas e ocorrências (com anexos cifrados). LGPD
+(exportar, anonimizar, retenção) e o job do selo diário ainda não existem.
 
 ```
 src/main.ts              bootstrap: lê a config e chama configurarApp; 0.0.0.0:3000
@@ -22,6 +23,9 @@ src/eventos/             M2 (spec §6.3): entrada, recusa, saída, correção, l
                          efetivo.ts: valores efetivos em SQL (original + última correção); evento-view.ts: a EventoView do mock em lote
 src/auditoria/auditoria.controller.ts  integridade no banco (lotes, selo, cabeça), exportação JSONL v2 e trilha de alterações paginada
 src/relatorios/          resumo (RF-30, RF-31) agregado no banco e CSV (construtor do domain)
+src/encomendas/          M3 (spec §6.4): receber, filas paginadas, resumo, atrasadas, retirada (RN-08) e autorização de retirada
+src/ocorrencias/         M4 (spec §6.5): abrir, status só para a frente, vincular eventos (aditivo), anexos multipart
+src/documentos/cofre.ts  anexos cifrados: AES-256-GCM, DEK por arquivo embrulhada pela KEK (PORTARIA_KEK), AAD = id, volume `documentos`
 src/comum/transacao.ts   transação com retry curto em 40001/40P01
 src/cli/seed-dev.ts      seed de dev: estrutura + 4 usuários (um por papel), senha de SEED_SENHA_DEV; com PORTARIA_AMBIENTE=dev, pessoas fictícias
 src/database/            DatabaseModule global: Pool do pg + Drizzle (node-postgres), DATABASE_URL, fecha o pool no shutdown

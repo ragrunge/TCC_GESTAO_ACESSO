@@ -88,6 +88,7 @@ describe.skipIf(!URL_ADMIN)('API sobre PostgreSQL real: registro de acesso conco
     ids.ana = (await dbMig.select().from(s.pessoa).where(eq(s.pessoa.nome, 'Ana Ribeiro')))[0]!.id;
     ids.bruno = (await dbMig.select().from(s.pessoa).where(eq(s.pessoa.nome, 'Bruno Teixeira')))[0]!.id;
     ids.marcos = (await dbMig.select().from(s.pessoa).where(eq(s.pessoa.nome, 'Marcos Pereira')))[0]!.id;
+    ids.paulo = (await dbMig.select().from(s.pessoa).where(eq(s.pessoa.nome, 'Paulo Ribeiro')))[0]!.id;
     await mig.end();
 
     // Pool da API: o app o encerra no close (DatabaseModule). Erro em conexão ociosa não vira "unhandled".
@@ -174,6 +175,28 @@ describe.skipIf(!URL_ADMIN)('API sobre PostgreSQL real: registro de acesso conco
     const ev = (await get('auditor', `/eventos-acesso/${id}`)).body.data;
     expect(ev).toMatchObject({ unidadeDestinoId: ids.t432, ocorridoEm: hora });
     expect(Object.keys(ev.valoresOriginais).sort()).toEqual(['ocorridoEm', 'unidadeDestinoId']);
+  }, 60_000);
+
+  it('encomenda: 8 retiradas simultâneas (duas pessoas com vínculo) gravam uma só; as outras 7 são 409 legíveis', async () => {
+    const e = await post('porteiro', '/encomendas', { unidadeId: ids.t432, destinatario: 'Ana Ribeiro', unidadeConfirmada: true });
+    expect(e.status).toBe(201);
+    const rs = await Promise.all(Array.from({ length: 8 }, (_, i) =>
+      post(i % 2 ? 'administracao' : 'porteiro', `/encomendas/${e.body.data.id}/retirada`, { pessoaId: i % 2 ? ids.paulo : ids.ana })));
+    expect(rs.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(rs.filter((r) => r.status === 409).map((r) => r.body.code)).toEqual(Array(7).fill('ENCOMENDA_JA_ENTREGUE'));
+    expect(JSON.stringify(rs.map((r) => r.body))).not.toMatch(/encomenda \d+ já foi retirada|check_violation|password/i); // sem a mensagem do trigger/driver
+    const db = drizzle(leitura, { schema: s });
+    const trilha = await db.select().from(s.auditLog).where(and(eq(s.auditLog.acao, 'encomenda.entregar'), eq(s.auditLog.registroId, e.body.data.id)));
+    expect(trilha).toHaveLength(1);
+  }, 60_000);
+
+  it('ocorrência: 6 mudanças simultâneas para "em andamento": uma passa, as outras veem o novo status (422), histórico com uma linha', async () => {
+    const o = await post('porteiro', '/ocorrencias', { tipo: 'outro', descricao: 'Portão travado', unidadeId: null });
+    expect(o.status).toBe(201);
+    const rs = await Promise.all(Array.from({ length: 6 }, () => post('porteiro', `/ocorrencias/${o.body.data.id}/status`, { status: 'em_andamento' })));
+    expect(rs.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(rs.filter((r) => r.status !== 200).map((r) => r.body.code)).toEqual(Array(5).fill('TRANSICAO_INVALIDA'));
+    expect((await get('auditor', `/ocorrencias/${o.body.data.id}`)).body.data.historicoStatus).toHaveLength(1);
   }, 60_000);
 
   it('depois de tudo, a verificação no banco real continua íntegra', async () => {

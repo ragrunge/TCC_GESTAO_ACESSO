@@ -77,9 +77,14 @@ services:
       PORTARIA_HMAC_CPF_KEY: ${PORTARIA_HMAC_CPF_KEY:?defina PORTARIA_HMAC_CPF_KEY no .env}
       PORTARIA_KEK: ${PORTARIA_KEK:?defina PORTARIA_KEK no .env}
       PORTARIA_KEK_VERSAO: ${PORTARIA_KEK_VERSAO:?defina PORTARIA_KEK_VERSAO no .env}
+      # Anexos de ocorrência cifrados (AES-256-GCM, spec §9.2): só o conteúdo cifrado, no volume abaixo (fora do banco).
+      PORTARIA_DOCUMENTOS_DIR: /var/lib/portaria/documentos
       # Vazios são válidos: sem CORS (mesma origem) e sem seed de dev (produção).
       CORS_ORIGENS: ${CORS_ORIGENS:-}
       SEED_SENHA_DEV: ${SEED_SENHA_DEV:-}
+    volumes:
+      # Sem a KEK (PORTARIA_KEK, só no .env) o volume é ilegível; backup do volume e da KEK em lugares separados.
+      - documentos:/var/lib/portaria/documentos
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
@@ -115,3 +120,4 @@ services:
 
 volumes:
   pgdata: {}
+  documentos: {}

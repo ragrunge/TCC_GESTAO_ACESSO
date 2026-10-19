@@ -13,7 +13,7 @@ import { diaBrt, inicioDoDiaBrt } from '../comum/datas';
 import { AcessoNegado, codigoPg, erroApi } from '../comum/erros';
 import { RELOGIO, type Relogio } from '../comum/relogio';
 import { DB, type Db, type Executor, type Tx } from '../database/database.module';
-import { areaComum, autorizacaoPrevia, pessoa, restricao, unidade, vinculoUnidade } from '../db/schema';
+import { areaComum, autorizacaoPrevia, pessoa, restricao, vinculoUnidade } from '../db/schema';
 import { UnidadesService } from '../unidades/unidades.service';
 import { vinculoValidoSql } from '../vinculos/vinculo-valido';
 import {
@@ -201,11 +201,10 @@ export class AutorizacoesService {
         const [p] = await tx.select({ id: pessoa.id }).from(pessoa).where(eq(pessoa.id, i.pessoaId));
         if (!p) throw erroApi(404, 'PESSOA_NAO_ENCONTRADA', 'Pessoa não encontrada.');
         if (!paraTodos && !i.unidadeId) throw erroApi(422, 'UNIDADE_OBRIGATORIA', 'Restrição de unidade exige a unidade.');
-        if (i.unidadeId) {
-          // Restrição protege: vale também em unidade desativada (o mock não exige unidade ativa aqui).
-          const [u] = await tx.select({ id: unidade.id }).from(unidade).where(eq(unidade.id, i.unidadeId));
-          if (!u) throw erroApi(404, 'UNIDADE_NAO_ENCONTRADA', 'Unidade não encontrada.');
-        }
+        // Unidade desativada não recebe restrição nova (decisão de 2026-10-18, revendo a do lote de acesso): ninguém entra
+        // nela (a entrada já barra UNIDADE_INATIVA) e o solicitante não teria vínculo válido para pedir. FOR SHARE contra a
+        // desativação concorrente, como os outros usos novos. Vale também para a origem de uma restrição de condomínio.
+        if (i.unidadeId) await this.unidades.paraNovoUso(tx, i.unidadeId);
         // CHECK restricao_escopo_unidade_ck: no escopo unidade o solicitante é obrigatório (morador com vínculo válido)
         if (!paraTodos && !i.solicitadaPorPessoaId) throw erroApi(422, 'SOLICITANTE_OBRIGATORIO', 'Registre o morador que pediu a restrição.');
         if (i.solicitadaPorPessoaId) {

@@ -32,6 +32,11 @@ export interface Config {
    * assembleia (`IMPORTACAO_PRAZO_LEGADO_DIAS`, padrão 90, de 1 a 730).
    */
   importacao: { prazoLegadoDias: number };
+  /**
+   * Anexos cifrados (RNF-03, spec §9.2): KEK de 32 bytes (`PORTARIA_KEK`, base64) e a versão dela (`PORTARIA_KEK_VERSAO`),
+   * gravada em `documento.chave_versao`; `dir` é a pasta dos arquivos cifrados (`PORTARIA_DOCUMENTOS_DIR`), fora do banco.
+   */
+  documentos: { kek: Buffer; kekVersao: number; dir: string };
 }
 
 /**
@@ -71,6 +76,20 @@ function inteiro(env: NodeJS.ProcessEnv, nome: string, padrao: number, min: numb
   const n = Number(bruto);
   if (n < min || n > max) throw new ErroConfig(`${nome} deve estar entre ${min} e ${max}`);
   return n;
+}
+
+/** Pasta padrão dos anexos cifrados no container (volume `documentos` do compose). */
+export const DOCUMENTOS_DIR_PADRAO = '/var/lib/portaria/documentos';
+
+function carregarDocumentos(env: NodeJS.ProcessEnv): Config['documentos'] {
+  const kek = Buffer.from(exigir(env, 'PORTARIA_KEK'), 'base64');
+  // AES-256: exatamente 32 bytes. Mais ou menos que isso é chave colada errada, não "mais segura".
+  if (kek.length !== 32) throw new ErroConfig('PORTARIA_KEK precisa ter exatamente 32 bytes (base64)');
+  const kekVersao = inteiro(env, 'PORTARIA_KEK_VERSAO', 0, 1, 32767);
+  if (kekVersao === 0) throw new ErroConfig('PORTARIA_KEK_VERSAO não definida');
+  const dir = env.PORTARIA_DOCUMENTOS_DIR?.trim() || DOCUMENTOS_DIR_PADRAO;
+  if (!dir.startsWith('/')) throw new ErroConfig('PORTARIA_DOCUMENTOS_DIR deve ser um caminho absoluto');
+  return { kek, kekVersao, dir };
 }
 
 export function carregarConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -119,5 +138,6 @@ export function carregarConfig(env: NodeJS.ProcessEnv = process.env): Config {
     argon2: { ...PADROES_ARGON2 },
     hmacCpfKey,
     importacao: { prazoLegadoDias: inteiro(env, 'IMPORTACAO_PRAZO_LEGADO_DIAS', PRAZO_LEGADO_PADRAO_DIAS, 1, 730) },
+    documentos: carregarDocumentos(env),
   };
 }

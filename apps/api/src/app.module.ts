@@ -18,10 +18,12 @@ import { VeiculosModule } from './veiculos/veiculos.module';
 import { AcessoModule } from './eventos/acesso.module';
 import { AuditoriaRotasModule } from './auditoria/auditoria.controller';
 import { RelatoriosModule } from './relatorios/relatorios.module';
+import { EncomendasModule } from './encomendas/encomendas.module';
+import { OcorrenciasModule } from './ocorrencias/ocorrencias.module';
 
 @Module({
   imports: [ConfigModule, DatabaseModule, AuditoriaModule, AuthModule, UsuariosModule, UnidadesModule, PessoasModule, VinculosModule,
-    FuncionariosModule, VeiculosModule, ImportacaoModule, AcessoModule, AuditoriaRotasModule, RelatoriosModule],
+    FuncionariosModule, VeiculosModule, ImportacaoModule, AcessoModule, AuditoriaRotasModule, RelatoriosModule, EncomendasModule, OcorrenciasModule],
   controllers: [SaudeController],
   providers: [
     // Ordem importa: autenticação antes de autorização. Os dois respeitam @Publico() (o /saude continua aberto).
