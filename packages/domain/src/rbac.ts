@@ -11,7 +11,7 @@ export type Acao =
   | 'encomenda.ver' | 'encomenda.operar'
   | 'ocorrencia.ver' | 'ocorrencia.operar'
   | 'relatorio.ver' | 'turno.ver'
-  | 'auditoria.verificar' | 'auditoria.exportar'
+  | 'auditoria.verificar' | 'auditoria.exportar' | 'auditoria.selar'
   | 'usuario.gerenciar' | 'usuario.gerenciar_sindico'
   | 'veiculo.cadastrar'
   | 'funcionario.gerenciar' | 'funcionario.ver' | 'pessoa.editar'
@@ -46,6 +46,8 @@ export const MATRIZ: Record<Acao, Papel[]> = {
   'turno.ver': [SI, AD, PO],
   'auditoria.verificar': [SI, AD, AU],
   'auditoria.exportar': [SI, AD, AU],
+  // Selo da cadeia sob demanda (spec §4.6): síndico e auditor (conselho). O selo diário é do agendador, sem usuário.
+  'auditoria.selar': [SI, AU],
   'usuario.gerenciar': [SI, AD], // spec 5.2 (RNF-04); quando o alvo é síndico, exige também usuario.gerenciar_sindico
   'usuario.gerenciar_sindico': [SI], // criar, editar, desativar ou promover a síndico: só o síndico
   'veiculo.cadastrar': [SI, AD],
