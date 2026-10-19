@@ -7,6 +7,8 @@ verificador da cadeia de hash, testes), pessoas, vínculos, funcionários, veíc
 presentes, turno, autorizações prévias, restrições, auditoria e relatórios), encomendas e ocorrências (com anexos cifrados). LGPD
 (exportar, anonimizar, retenção) e o job do selo diário ainda não existem.
 
+Documentação OpenAPI, Swagger local e coleções Bruno/Postman: ver [`docs/api/`](../../docs/api/README.md).
+
 ```
 src/main.ts              bootstrap: lê a config e chama configurarApp; 0.0.0.0:3000
 src/plataforma.ts        configurarApp (usado também pelos testes): prefixo api/v1, trust proxy, CORS, log, no-store

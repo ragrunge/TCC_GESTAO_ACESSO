@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:pg": "vitest run test/postgres-real",
     "typecheck": "tsc --noEmit",
-    "dev:pglite": "vite-node test/e2e/iniciar.ts"
+    "dev:pglite": "vite-node test/e2e/iniciar.ts",
+    "openapi": "vite-node test/openapi/gerar.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.7",

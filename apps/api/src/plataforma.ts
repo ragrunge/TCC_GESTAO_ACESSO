@@ -4,8 +4,11 @@ import type { NextFunction, Request, Response } from 'express';
 import type { Config } from './config/config';
 import { logDeRequisicao } from './comum/log';
 
+/** Prefixo global da API (usado também pelo gerador de OpenAPI, para montar as URLs dos servidores). */
+export const PREFIXO_GLOBAL = 'api/v1';
+
 export function configurarApp(app: NestExpressApplication, config: Config) {
-  app.setGlobalPrefix('api/v1');
+  app.setGlobalPrefix(PREFIXO_GLOBAL);
   // trust proxy: só com proxy de verdade na frente (TRUST_PROXY=n saltos). Sem proxy, X-Forwarded-For seria
   // entrada do cliente e o limite de login por IP viraria opcional para quem forja o cabeçalho.
   app.set('trust proxy', config.trustProxy);

@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Portaria Parque",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

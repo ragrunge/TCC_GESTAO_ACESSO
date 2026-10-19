@@ -67,6 +67,16 @@ describe('API de produção (AppModule) não expõe as rotas do e2e', () => {
   });
 });
 
+describe('API de produção (AppModule) não expõe a documentação', () => {
+  let api: ApiDeTeste;
+  beforeAll(async () => { api = await novaApi(); });
+  afterAll(async () => { await api.app.close(); });
+
+  it.each(['/api/v1/docs', '/api/v1/openapi.json'])('GET %s dá 404 (em produção a documentação é o arquivo versionado)', async (rota) => {
+    expect((await api.http().get(rota)).status).toBe(404);
+  });
+});
+
 describe('servidor de e2e: reset', () => {
   let s: Awaited<ReturnType<typeof iniciarServidorE2e>>;
   beforeAll(async () => { s = await iniciarServidorE2e({ porta: 0, env: {} }); }, 120_000);
@@ -93,4 +103,14 @@ describe('servidor de e2e: reset', () => {
     const seed = await http().post('/api/v1/pessoas/busca').set('Cookie', cookie2).send({ q: 'Márcia Pereira' });
     expect(seed.body.data.pessoas.map((p: { nome: string }) => p.nome)).toContain('Márcia Pereira');
   }, 60_000);
+
+  it('serve o OpenAPI e o Swagger UI (versão fixa do CDN), sem exigir sessão', async () => {
+    const doc = await request(s.url).get('/api/v1/openapi.json');
+    expect(doc.status).toBe(200);
+    expect(doc.body.openapi).toBe('3.1.0');
+    expect(doc.body.servers[0].url).toBe('/api/v1'); // o "Try it out" fala com este servidor
+    const html = await request(s.url).get('/api/v1/docs');
+    expect(html.status).toBe(200);
+    expect(html.text).toMatch(/swagger-ui-dist@\d+\.\d+\.\d+\/swagger-ui-bundle\.js/);
+  });
 });

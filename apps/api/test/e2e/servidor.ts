@@ -9,6 +9,8 @@
 //    (este modo nunca fala com Postgres de verdade);
 //  - as rotas /__e2e/* (reset e manipulação de dados de teste) são registradas aqui, direto no Express, e não existem no
 //    AppModule; o servidor escuta só em 127.0.0.1. Prova: test/servidor-e2e.test.ts.
+//  - o mesmo vale para a documentação: /api/v1/openapi.json e /api/v1/docs (Swagger UI) só existem aqui. Em produção a
+//    documentação é o arquivo versionado docs/api/openapi.json.
 import { hash } from '@node-rs/argon2';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
@@ -25,13 +27,34 @@ import * as s from '../../src/db/schema';
 import { seedEstrutura } from '../../src/db/seed';
 import { seedPessoasDev } from '../../src/db/seed-pessoas-dev';
 import { seedUsuariosDev } from '../../src/db/seed-usuarios';
-import { configurarApp } from '../../src/plataforma';
+import { gerarOpenApi } from '../../src/openapi/gerar-openapi';
+import { configurarApp, PREFIXO_GLOBAL } from '../../src/plataforma';
 import { configDeTeste } from '../helpers/app';
 import { CHAVE_HMAC_TESTE, PASTA_MIGRACOES } from '../helpers/banco';
 import { semearDadosE2e, USUARIOS_E2E } from './dados';
 
 /** Senha de todos os usuários do e2e (fictícia, só deste modo). O playwright.config.ts manda a mesma em E2E_SENHA. */
 export const SENHA_E2E_PADRAO = 'senha-e2e-portaria-parque';
+
+/** Versão fixa do Swagger UI (jsdelivr): sem `latest`, para a página não mudar sozinha. */
+const SWAGGER_UI_VERSAO = '5.17.14';
+const HTML_SWAGGER = `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API da Portaria Parque (local)</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@${SWAGGER_UI_VERSAO}/swagger-ui.css">
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@${SWAGGER_UI_VERSAO}/swagger-ui-bundle.js"></script>
+<script>
+  window.ui = SwaggerUIBundle({ url: '/${PREFIXO_GLOBAL}/openapi.json', dom_id: '#swagger-ui', withCredentials: true });
+</script>
+</body>
+</html>
+`;
 
 /** Recusa o modo e2e em qualquer sinal de ambiente real. Lança com a lista do que encontrou. */
 export function verificarAmbienteE2e(env: NodeJS.ProcessEnv): void {
@@ -126,6 +149,19 @@ export async function iniciarServidorE2e(o: OpcoesServidorE2e) {
     if (!r.length) throw new Error(`${login} não tem senha temporária pendente`);
     return {};
   }));
+
+  // Documentação (só neste modo): o OpenAPI sai dos metadados do app em execução; o Swagger UI vem do CDN com versão fixa.
+  // O servidor local vai primeiro na lista, para o "Try it out" falar com este processo (e não com a produção).
+  let openapi: string | undefined;
+  http.get(`/${PREFIXO_GLOBAL}/openapi.json`, (_req: Request, res: Response) => {
+    if (!openapi) {
+      const doc = gerarOpenApi(app, { aviso: () => undefined }) as { servers: { url: string }[] };
+      const local = doc.servers.find((sv) => sv.url.startsWith('http://127.0.0.1')) ?? doc.servers[0]!;
+      openapi = JSON.stringify({ ...doc, servers: [{ ...local, url: `/${PREFIXO_GLOBAL}` }, ...doc.servers.filter((sv) => sv !== local)] });
+    }
+    res.type('application/json').send(openapi);
+  });
+  http.get(`/${PREFIXO_GLOBAL}/docs`, (_req: Request, res: Response) => { res.type('html').send(HTML_SWAGGER); });
 
   await app.init();
 
