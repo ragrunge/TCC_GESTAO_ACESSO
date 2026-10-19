@@ -42,7 +42,7 @@ const INSTRUCOES_TRILHA = [
   '1. Para cada linha de tipo "evento", calcule SHA-256(hash_anterior + canonico) e compare com "hash".',
   '2. Para eventos consecutivos (seq, seq+1), confirme que "hash_anterior" do seguinte é igual ao "hash" do anterior; o primeiro deve ter hash_anterior igual a ancora.hash.',
   '3. Exportação filtrada (consecutivos = false) só permite conferir cada evento isoladamente (passo 1).',
-  '4. Compare o hash do último evento com a âncora recebida por fonte externa independente (e-mail ao síndico/conselho). Sem âncora externa o arquivo prova apenas consistência interna.',
+  '4. Compare o hash dos eventos selados com a âncora guardada por fonte externa independente (selos.jsonl do branch ancoras no GitHub, ou o e-mail ao síndico/conselho; ver verificar-ancoras). Sem âncora externa o arquivo prova apenas consistência interna.',
   'Qualquer divergência indica que o registro (ou um anterior) foi alterado depois de gravado.',
 ];
 

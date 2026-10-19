@@ -409,7 +409,7 @@ describe('agendador e destinos da âncora', () => {
 
   it('arquivo append-only: uma linha JSON por selo, sem apagar as anteriores', async () => {
     const arquivo = join(tmpdir(), `ancoras-${process.pid}-${Date.now()}`, 'ancoras.jsonl');
-    const envio = new EnvioAncoraReal(configDeTeste({ ancora: { emails: [], remetente: 'portaria@localhost', smtp: null, arquivo } }));
+    const envio = new EnvioAncoraReal(configDeTeste({ ancora: { github: false, emails: [], remetente: 'portaria@localhost', smtp: null, arquivo } }));
     expect(envio.destinos()).toEqual(['arquivo append-only']);
     const base = { id: randomUUID(), data: '2026-10-17', tipo: 'diario' as const, ultimoHash: 'a'.repeat(64), eventosNoDia: 1, seladoEm: new Date() };
     await envio.enviar({ ...base, ultimoSeq: 1 });
@@ -418,13 +418,13 @@ describe('agendador e destinos da âncora', () => {
     expect(linhas.map((l) => l.ultimoSeq)).toEqual([1, 2]);
   });
 
-  it('config: produção exige e-mail da âncora com TLS; SMTP e destinatários vão juntos', () => {
+  it('config: produção exige destino externo da âncora (github ou e-mail com TLS); SMTP e destinatários vão juntos', () => {
     const base = {
       PORTARIA_AMBIENTE: 'dev', COOKIE_SECURE: 'false', TRUST_PROXY: 'false',
       PORTARIA_HMAC_CPF_KEY: Buffer.alloc(32, 1).toString('base64'), PORTARIA_KEK: Buffer.alloc(32, 2).toString('base64'), PORTARIA_KEK_VERSAO: '1',
     };
     const c = carregarConfig(base);
-    expect(c.ancora).toEqual({ emails: [], remetente: 'portaria@localhost', smtp: null, arquivo: null });
+    expect(c.ancora).toEqual({ github: false, emails: [], remetente: 'portaria@localhost', smtp: null, arquivo: null });
     expect(c.jobs).toEqual({ agendador: true, intervaloMin: 10, horaRetencaoBrt: 3 });
     expect(c.retencao).toEqual({ anexoOcorrenciaAnos: null });
     const dev = carregarConfig({ ...base, ANCORA_EMAILS: 'sindico@exemplo.org, conselho@exemplo.org', ANCORA_SMTP_HOST: 'mailpit', ANCORA_SMTP_PORTA: '1025', ANCORA_SMTP_TLS: 'nenhum', JOBS_AGENDADOR: 'false' });
@@ -432,7 +432,17 @@ describe('agendador e destinos da âncora', () => {
     expect(dev.ancora.emails).toHaveLength(2);
     expect(dev.jobs.agendador).toBe(false);
     const prod = { ...base, PORTARIA_AMBIENTE: 'producao', COOKIE_SECURE: 'true' };
-    expect(() => carregarConfig(prod)).toThrow(/ANCORA_EMAILS é obrigatória/);
+    expect(() => carregarConfig(prod)).toThrow(/ANCORA_DESTINOS \(github e\/ou email\) é obrigatória/);
+    // Destino github: produção sobe sem e-mail nem SMTP
+    expect(carregarConfig({ ...prod, ANCORA_DESTINOS: 'github' }).ancora).toMatchObject({ github: true, emails: [], smtp: null });
+    expect(carregarConfig({ ...prod, ANCORA_DESTINOS: 'github, email', ANCORA_EMAILS: 'a@b.org', ANCORA_SMTP_HOST: 'smtp.exemplo.org' }).ancora)
+      .toMatchObject({ github: true, emails: ['a@b.org'] });
+    expect(() => carregarConfig({ ...prod, ANCORA_DESTINOS: 'git' })).toThrow(/destino desconhecido/);
+    expect(() => carregarConfig({ ...prod, ANCORA_DESTINOS: 'email' })).toThrow(/ANCORA_EMAILS está vazia/);
+    // Ambíguo: e-mail configurado mas fora da lista explícita (o e-mail não sairia, sem ninguém perceber)
+    expect(() => carregarConfig({ ...prod, ANCORA_DESTINOS: 'github', ANCORA_EMAILS: 'a@b.org', ANCORA_SMTP_HOST: 'smtp.exemplo.org' })).toThrow(/não está em ANCORA_DESTINOS/);
+    // Sem ANCORA_DESTINOS, ANCORA_EMAILS continua bastando (comportamento anterior)
+    expect(carregarConfig({ ...prod, ANCORA_EMAILS: 'a@b.org', ANCORA_SMTP_HOST: 'smtp.exemplo.org' }).ancora.github).toBe(false);
     expect(() => carregarConfig({ ...prod, ANCORA_EMAILS: 'a@b.org', ANCORA_SMTP_HOST: 'smtp', ANCORA_SMTP_TLS: 'nenhum' })).toThrow(/não é permitido/);
     expect(carregarConfig({ ...prod, ANCORA_EMAILS: 'a@b.org', ANCORA_SMTP_HOST: 'smtp.exemplo.org', ANCORA_SMTP_USUARIO: 'u', ANCORA_SMTP_SENHA: 'p' }).ancora.smtp)
       .toMatchObject({ porta: 587, tls: 'starttls' });

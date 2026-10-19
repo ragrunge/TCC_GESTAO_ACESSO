@@ -38,12 +38,17 @@ export interface Config {
    */
   documentos: { kek: Buffer; kekVersao: number; dir: string };
   /**
-   * Âncora externa do selo diário (spec §4.6): para onde vai o resumo (data, seq, hash, eventos do dia). Destino que o
-   * administrador do banco não controla: e-mail do síndico e do conselho (`ANCORA_EMAILS`, por SMTP) e, opcionalmente,
-   * uma linha JSON por selo num arquivo append-only fora do volume do banco (`ANCORA_ARQUIVO`). Em produção o e-mail é
-   * obrigatório e com TLS; o arquivo, sozinho, está no mesmo servidor e não protege contra quem tem root nele.
+   * Âncora externa do selo diário (spec §4.6): para onde vai o resumo (data, seq, hash, eventos do dia). Destinos
+   * externos (`ANCORA_DESTINOS`), fora do alcance de quem administra o banco:
+   *  - `github`: os selos DIÁRIOS ficam num endpoint público (`GET /auditoria/selos/publico`), que um workflow agendado
+   *    do GitHub Actions lê e commita, só por append, no branch `ancoras` do repositório. Nenhum segredo na VPS.
+   *  - `email`: SMTP para o síndico e o conselho (`ANCORA_EMAILS`), com TLS em produção.
+   * O arquivo append-only (`ANCORA_ARQUIVO`) é cópia local, no mesmo servidor: não conta como destino externo.
+   * Em produção, pelo menos um destino externo é obrigatório.
    */
   ancora: {
+    /** Publica os selos diários no endpoint público para o GitHub Actions. */
+    github: boolean;
     emails: string[];
     remetente: string;
     smtp: { host: string; porta: number; tls: TlsSmtp; usuario: string | null; senha: string | null } | null;
@@ -118,8 +123,29 @@ function carregarDocumentos(env: NodeJS.ProcessEnv): Config['documentos'] {
 
 const EMAIL = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/;
 
+const DESTINOS_ANCORA = ['github', 'email'] as const;
+
+/**
+ * `ANCORA_DESTINOS`: lista separada por vírgula (`github`, `email`). Vazia ou ausente = inferida: `email` se
+ * `ANCORA_EMAILS` estiver preenchida (o comportamento anterior), senão nenhum. Explícita, ela manda: `ANCORA_EMAILS`
+ * preenchida sem `email` na lista é recusada (configuração ambígua: o e-mail não sairia e ninguém perceberia).
+ */
+function destinosAncora(env: NodeJS.ProcessEnv, temEmails: boolean): Set<(typeof DESTINOS_ANCORA)[number]> {
+  const bruto = env.ANCORA_DESTINOS?.trim() ?? '';
+  if (bruto === '') return new Set(temEmails ? ['email'] : []);
+  const lista = bruto.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  for (const d of lista) {
+    if (!(DESTINOS_ANCORA as readonly string[]).includes(d)) throw new ErroConfig(`ANCORA_DESTINOS: destino desconhecido (${d}); use github e/ou email`);
+  }
+  const destinos = new Set(lista as (typeof DESTINOS_ANCORA)[number][]);
+  if (temEmails && !destinos.has('email')) throw new ErroConfig("ANCORA_EMAILS preenchida, mas 'email' não está em ANCORA_DESTINOS");
+  if (destinos.has('email') && !temEmails) throw new ErroConfig("ANCORA_DESTINOS inclui 'email', mas ANCORA_EMAILS está vazia");
+  return destinos;
+}
+
 function carregarAncora(env: NodeJS.ProcessEnv, ambiente: Ambiente): Config['ancora'] {
   const emails = (env.ANCORA_EMAILS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  const destinos = destinosAncora(env, emails.length > 0);
   for (const e of emails) if (!EMAIL.test(e)) throw new ErroConfig('ANCORA_EMAILS: endereço inválido');
   const host = env.ANCORA_SMTP_HOST?.trim() || null;
   const arquivo = env.ANCORA_ARQUIVO?.trim() || null;
@@ -139,9 +165,11 @@ function carregarAncora(env: NodeJS.ProcessEnv, ambiente: Ambiente): Config['anc
     if (!!usuario !== !!senha) throw new ErroConfig('ANCORA_SMTP_USUARIO e ANCORA_SMTP_SENHA vão juntos');
     smtp = { host, porta: inteiro(env, 'ANCORA_SMTP_PORTA', tls === 'implicito' ? 465 : 587, 1, 65535), tls, usuario, senha: senha || null };
   }
-  // Sem e-mail, a âncora fica no próprio servidor: em produção isso anula a proteção do selo (spec §4.6).
-  if (ambiente === 'producao' && !emails.length) throw new ErroConfig('ANCORA_EMAILS é obrigatória com PORTARIA_AMBIENTE=producao (âncora externa do selo)');
-  return { emails, remetente, smtp, arquivo };
+  // Sem destino externo, a âncora fica só no próprio servidor: em produção isso anula a proteção do selo (spec §4.6).
+  if (ambiente === 'producao' && destinos.size === 0) {
+    throw new ErroConfig('ANCORA_DESTINOS (github e/ou email) é obrigatória com PORTARIA_AMBIENTE=producao (âncora externa do selo)');
+  }
+  return { github: destinos.has('github'), emails, remetente, smtp, arquivo };
 }
 
 function opcionalBooleano(env: NodeJS.ProcessEnv, nome: string, padrao: boolean): boolean {

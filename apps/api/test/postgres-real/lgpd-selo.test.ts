@@ -1,6 +1,9 @@
 // LGPD e selo sobre PostgreSQL REAL: a API conecta como app_rw (LOGIN, o cenário de produção), e o ataque é feito como
 // SUPERUSUÁRIO do cluster, que é exatamente quem o hash sozinho não detém. Pulado sem PG_TEST_URL. Como rodar (raiz):
 //   set -a; . ./.env; set +a; PG_TEST_URL="postgres://postgres:${POSTGRES_PASSWORD}@127.0.0.1:${DB_HOST_PORT}/postgres" npm run test:pg -w apps/api
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { hash } from '@node-rs/argon2';
 import type { INestApplication } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -10,7 +13,10 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { principal as coletarAncoras } from '../../../../scripts/ancoras/anexar-selos.mjs';
 import { AppModule } from '../../src/app.module';
+import { diaBrt } from '../../src/comum/datas';
+import { RELOGIO } from '../../src/comum/relogio';
 import { CONFIG } from '../../src/config/config';
 import { DB, PG_POOL } from '../../src/database/database.module';
 import * as s from '../../src/db/schema';
@@ -19,6 +25,8 @@ import { seedPessoasDev } from '../../src/db/seed-pessoas-dev';
 import { seedUsuariosDev } from '../../src/db/seed-usuarios';
 import { configurarApp } from '../../src/plataforma';
 import { ENVIO_ANCORA } from '../../src/selo/ancora';
+import { conferirAncoras } from '../../src/selo/conferir-ancoras';
+import { SeloService } from '../../src/selo/selo.module';
 import { AncoraDeTeste, configDeTeste, cookieDe, SENHA } from '../helpers/app';
 import { CHAVE_HMAC_TESTE, PASTA_MIGRACOES } from '../helpers/banco';
 
@@ -39,6 +47,9 @@ describe.skipIf(!URL_ADMIN)('LGPD e selo sobre PostgreSQL real (app_rw com LOGIN
   let su: pg.Client; // superusuário conectado ao banco de teste
   let app: INestApplication;
   const ancora = new AncoraDeTeste();
+  // Relógio real com deslocamento: o teste "espera" o cache do endpoint público vencer sem esperar de verdade.
+  let deslocamentoMs = 0;
+  const relogio = { agora: () => new Date(Date.now() + deslocamentoMs) };
   const cookies: Record<string, string> = {};
   const ids: Record<string, string> = {};
 
@@ -70,7 +81,8 @@ describe.skipIf(!URL_ADMIN)('LGPD e selo sobre PostgreSQL real (app_rw com LOGIN
     const dbMig = drizzle(mig, { schema: s });
     await migrate(dbMig, { migrationsFolder: PASTA_MIGRACOES });
     await seedEstrutura(dbMig);
-    const config = configDeTeste();
+    // Destino github ligado (endpoint público dos selos diários); o envio por e-mail é o falso AncoraDeTeste.
+    const config = configDeTeste({ ancora: { github: true, emails: [], remetente: 'portaria@localhost', smtp: null, arquivo: null } });
     const senhaHash = await hash(SENHA, { memoryCost: config.argon2.memoriaKib, timeCost: 1, parallelism: 1 });
     await seedUsuariosDev(dbMig, { senhaHash, deveTrocarSenha: false });
     await seedPessoasDev(dbMig, { chaveHmac: CHAVE_HMAC_TESTE });
@@ -91,6 +103,7 @@ describe.skipIf(!URL_ADMIN)('LGPD e selo sobre PostgreSQL real (app_rw com LOGIN
       .overrideProvider(DB).useValue(drizzle(pool, { schema: s }))
       .overrideProvider(CONFIG).useValue(config)
       .overrideProvider(ENVIO_ANCORA).useValue(ancora)
+      .overrideProvider(RELOGIO).useValue(relogio)
       .compile();
     const nest = mod.createNestApplication<NestExpressApplication>({ logger: false });
     configurarApp(nest, config);
@@ -148,10 +161,29 @@ describe.skipIf(!URL_ADMIN)('LGPD e selo sobre PostgreSQL real (app_rw com LOGIN
     expect((await post('sindico', '/lgpd/retencao')).status).toBe(200);
   });
 
-  it('superusuário reescreve um evento e RECALCULA a cadeia inteira: o selo denuncia; se ele também reescreve o selo, só a âncora externa denuncia', async () => {
+  it('superusuário reescreve um evento e RECALCULA a cadeia inteira: o selo denuncia; se ele também reescreve o selo, só a âncora externa (arquivo do GitHub e e-mail) denuncia', async () => {
+    // Selo diário de hoje (o que o GitHub coleta) e a coleta do workflow: endpoint público -> script -> selos.jsonl
+    expect((await app.get(SeloService).selarDia(diaBrt(new Date())))?.novo).toBe(true);
+    const dir = mkdtempSync(join(tmpdir(), 'ancoras-pg-'));
+    const f = { resposta: join(dir, 'resposta.json'), arquivo: join(dir, 'selos.jsonl'), relatorio: join(dir, 'divergencia.md') };
+    const coletar = async () => {
+      deslocamentoMs += 61_000; // fora do cache de 60 s (a coleta real é diária)
+      const r = await request(app.getHttpServer()).get(`${V1}/auditoria/selos/publico`).set('X-Forwarded-For', '10.8.9.9');
+      expect(r.status).toBe(200);
+      writeFileSync(f.resposta, r.text);
+      return coletarAncoras(['--resposta', f.resposta, '--arquivo', f.arquivo, '--relatorio', f.relatorio]);
+    };
+    expect((await coletar()).novos).toHaveLength(1);
+    const ancorado = readFileSync(f.arquivo, 'utf8');
+    const diaAncorado = JSON.parse(ancorado) as { seq: number; hash: string };
+    const exportar = async () => (await post('auditor', '/auditoria/exportacoes', {})).body.data.conteudo as string;
+    expect((await conferirAncoras(await exportar(), ancorado)).conclusao).toBe('confere');
+
+    // Selo manual com e-mail (o destino opcional): a cabeça andou? não; devolve o diário existente, já "enviado".
     const selo = await post('auditor', '/auditoria/selos');
-    expect(selo.body.data).toMatchObject({ novo: true, ancora: 'enviada' });
+    expect(selo.body.data).toMatchObject({ ancora: 'enviada' });
     const recebido = ancora.enviados.at(-1)!; // o que o conselho guardou no e-mail
+    expect(recebido).toMatchObject({ ultimoSeq: diaAncorado.seq, ultimoHash: diaAncorado.hash });
     expect((await get('auditor', '/auditoria/integridade')).body.data).toMatchObject({ valido: true, selosConferidos: 1 });
 
     // Ataque: desliga o append-only, altera o seq 2 e recalcula TODOS os hashes e a cabeça
@@ -181,7 +213,14 @@ describe.skipIf(!URL_ADMIN)('LGPD e selo sobre PostgreSQL real (app_rw com LOGIN
       await su.query(`ALTER TABLE selo_cadeia ENABLE TRIGGER selo_cadeia_validar`);
     }
     expect((await get('auditor', '/auditoria/integridade')).body.data).toMatchObject({ valido: true });
-    // ...mas o hash que saiu por e-mail no dia não coincide com o banco: reescrita provada
+    // ...mas o arquivo de âncoras do GitHub, comparado OFFLINE com a trilha exportada, prova a reescrita
+    const r = await conferirAncoras(await exportar(), ancorado);
+    expect(r).toMatchObject({ conclusao: 'divergente', trilha: { valido: true }, divergentes: [{ seq: diaAncorado.seq, hashAncorado: diaAncorado.hash }] });
+    // e a coleta seguinte do workflow falha alto, sem tocar no arquivo
+    const depois = await coletar();
+    expect(depois.codigo).toBe(2);
+    expect(readFileSync(f.arquivo, 'utf8')).toBe(ancorado);
+    // O e-mail (destino opcional) também denuncia, pela conferência na API
     const c = await post('auditor', '/auditoria/selos/conferir', { seq: recebido.ultimoSeq, hash: recebido.ultimoHash });
     expect(c.body.data).toMatchObject({ confere: false, motivo: 'hash_divergente' });
     expect(c.body.data.hashNoBanco).not.toBe(recebido.ultimoHash);

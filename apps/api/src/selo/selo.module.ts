@@ -8,12 +8,15 @@
 // - Envio da âncora: depois do COMMIT do selo; quem falha fica pendente (`enviado_em` nulo) e o agendador tenta de novo.
 //   O envio é "pelo menos uma vez": se o UPDATE de `enviado_em` falhar depois do e-mail, o próximo envio repete o e-mail.
 // - Conferir âncora: compara um seq+hash recebido por fora com o banco. Conveniência: um servidor adulterado pode mentir
-//   aqui; a conferência com valor de prova é a offline (exportação + verificar.js + o e-mail guardado).
-import { Body, Controller, Get, HttpCode, Inject, Injectable, Module, Post } from '@nestjs/common';
+//   aqui; a conferência com valor de prova é a offline (exportação + verificar-ancoras + o branch `ancoras` ou o e-mail).
+// - Selos públicos (destino `github`): `GET /auditoria/selos/publico`, sem sessão, com cache e limite próprios. O porquê
+//   de cada restrição está em ./publico.ts.
+import { Body, Controller, Get, HttpCode, Inject, Injectable, Module, Post, Req, Res } from '@nestjs/common';
 import { and, asc, count, desc, eq, gte, isNull, lt, lte } from 'drizzle-orm';
+import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { AuditoriaService } from '../auditoria/auditoria.service';
-import { Acao, Ctx } from '../auth/decorators';
+import { Acao, Ctx, ipDe, Publico } from '../auth/decorators';
 import type { Contexto } from '../auth/tipos';
 import { diaBrt, inicioDoDiaBrt, somarDias } from '../comum/datas';
 import { erroApi } from '../comum/erros';
@@ -25,6 +28,7 @@ import { DB, type Db } from '../database/database.module';
 import { eventoAcesso, eventoAcessoCadeia, seloCadeia } from '../db/schema';
 import { TravaJobs } from '../jobs/trava';
 import { ENVIO_ANCORA, type EnvioAncora, EnvioAncoraReal, SemDestinoAncora } from './ancora';
+import { CACHE_PUBLICO_MS, FORMATO_SELOS_PUBLICOS, LimiteTaxaPublico, SELOS_PUBLICOS_MAX, type SelosPublicos } from './publico';
 
 type LinhaSelo = typeof seloCadeia.$inferSelect;
 type TipoSelo = 'diario' | 'manual';
@@ -49,8 +53,14 @@ const ConferirDto = z.strictObject({
 /** Ator do agendador no audit_log (sem usuário: usuario_id e papel nulos, como permite o CHECK). */
 export const NOME_AGENDADOR = 'Agendador (sistema)';
 
+/** Executor de consulta: o banco ou a transação em curso (no PGlite, consulta fora da transação trava). */
+type Executor = Pick<Db, 'select'>;
+
 @Injectable()
 export class SeloService {
+  /** Resposta do endpoint público em cache (promessa: requisições simultâneas dividem uma consulta só). */
+  private cachePublico: { ate: number; valor: Promise<SelosPublicos> } | null = null;
+
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(RELOGIO) private readonly relogio: Relogio,
@@ -79,6 +89,7 @@ export class SeloService {
     const [novo] = await this.db.insert(seloCadeia).values({ data: dia, tipo: 'diario', ultimoSeq: alvo.seq, ultimoHash: alvo.hash })
       .onConflictDoNothing().returning();
     if (!novo) return { selo: seloView((await this.diario(dia))!), novo: false }; // outra réplica selou ao mesmo tempo
+    this.cachePublico = null; // selo diário novo: a coleta do GitHub vê na hora, sem esperar o cache vencer
     await this.auditoria.registrar(this.db, {
       ator: null, nomeInformado: NOME_AGENDADOR, acao: 'auditoria.selar', entidade: 'selo_cadeia', registroId: novo.id,
       depois: { tipo: 'diario', data: dia, ultimoSeq: alvo.seq, ultimoHash: alvo.hash },
@@ -129,12 +140,9 @@ export class SeloService {
         const [s] = await tx.select().from(seloCadeia).where(and(eq(seloCadeia.id, id), isNull(seloCadeia.enviadoEm)))
           .for('update', { skipLocked: true });
         if (!s) return false;
-        const inicio = inicioDoDiaBrt(s.data);
-        const [{ n }] = await tx.select({ n: count() }).from(eventoAcesso).where(and(
-          lte(eventoAcesso.seq, s.ultimoSeq), gte(eventoAcesso.registradoEm, inicio), lt(eventoAcesso.registradoEm, inicioDoDiaBrt(somarDias(s.data, 1))),
-        )) as [{ n: number }];
         const para = await this.envio.enviar({
-          id: s.id, data: s.data, tipo: s.tipo as TipoSelo, ultimoSeq: s.ultimoSeq, ultimoHash: s.ultimoHash, eventosNoDia: Number(n), seladoEm: s.criadoEm,
+          id: s.id, data: s.data, tipo: s.tipo as TipoSelo, ultimoSeq: s.ultimoSeq, ultimoHash: s.ultimoHash,
+          eventosNoDia: await this.eventosNoDia(tx, s), seladoEm: s.criadoEm,
         });
         await tx.update(seloCadeia).set({ enviadoPara: para.slice(0, 500), enviadoEm: this.relogio.agora() }).where(eq(seloCadeia.id, s.id));
         return true;
@@ -145,6 +153,40 @@ export class SeloService {
       log('warn', 'ancora.envio_falhou', { detalhe: id, codigo: (e as { code?: string }).code ?? 'erro' });
       return false;
     }
+  }
+
+  /** Eventos registrados no dia BRT do selo até o seq selado (o mesmo número no e-mail e no endpoint público). */
+  private async eventosNoDia(ex: Executor, s: Pick<LinhaSelo, 'data' | 'ultimoSeq'>): Promise<number> {
+    const [{ n }] = await ex.select({ n: count() }).from(eventoAcesso).where(and(
+      lte(eventoAcesso.seq, s.ultimoSeq), gte(eventoAcesso.registradoEm, inicioDoDiaBrt(s.data)),
+      lt(eventoAcesso.registradoEm, inicioDoDiaBrt(somarDias(s.data, 1))),
+    )) as [{ n: number }];
+    return Number(n);
+  }
+
+  /**
+   * Selos DIÁRIOS mais recentes para o endpoint público (destino `github`): data, seq, hash e total do dia, do mais
+   * antigo para o mais novo. Nada de selo manual, instante ou id (ver ./publico.ts). Em cache por CACHE_PUBLICO_MS.
+   */
+  selosPublicos(): Promise<SelosPublicos> {
+    const agora = this.relogio.agora().getTime();
+    if (this.cachePublico && agora < this.cachePublico.ate && agora >= this.cachePublico.ate - CACHE_PUBLICO_MS) return this.cachePublico.valor;
+    const valor = this.consultarSelosPublicos();
+    const entrada = { ate: agora + CACHE_PUBLICO_MS, valor };
+    this.cachePublico = entrada;
+    // Falha (banco fora) não fica em cache: a próxima chamada tenta de novo.
+    valor.catch(() => { if (this.cachePublico === entrada) this.cachePublico = null; });
+    return valor;
+  }
+
+  private async consultarSelosPublicos(): Promise<SelosPublicos> {
+    const linhas = await this.db.select().from(seloCadeia).where(eq(seloCadeia.tipo, 'diario'))
+      .orderBy(desc(seloCadeia.data)).limit(SELOS_PUBLICOS_MAX);
+    const selos = [];
+    for (const s of linhas.reverse()) {
+      selos.push({ data: s.data, seq: s.ultimoSeq, hash: s.ultimoHash, totalDoDia: await this.eventosNoDia(this.db, s) });
+    }
+    return { formato: FORMATO_SELOS_PUBLICOS, versao: 1, selos };
   }
 
   /** Âncoras pendentes, da mais antiga para a mais nova; para no primeiro erro (SMTP fora: tenta no próximo ciclo). */
@@ -203,7 +245,28 @@ export class SeloService {
 
 @Controller('auditoria/selos')
 export class SeloController {
-  constructor(@Inject(SeloService) private readonly s: SeloService) {}
+  constructor(
+    @Inject(SeloService) private readonly s: SeloService,
+    @Inject(LimiteTaxaPublico) private readonly limite: LimiteTaxaPublico,
+    @Inject(CONFIG) private readonly config: Config,
+  ) {}
+
+  /** Público, sem parâmetro (ver ./publico.ts). Só existe com o destino `github` ligado; desligado, 404. */
+  @Get('publico')
+  @Publico()
+  async publico(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const r = this.limite.consumir(ipDe(req) ?? 'sem-ip', Date.now());
+    if (!r.ok) {
+      res.setHeader('Retry-After', String(r.retryAfterSeg));
+      throw erroApi(429, 'LIMITE_EXCEDIDO', 'Muitas consultas aos selos públicos. Tente de novo em instantes.');
+    }
+    if (!this.config.ancora.github) throw erroApi(404, 'NAO_ENCONTRADO', 'Recurso não encontrado.');
+    const corpo = await this.s.selosPublicos();
+    // Só o sucesso sai com cache público. Não usar @Header: o Nest aplica antes do handler, e um 429/404 sairia
+    // com max-age (resposta de erro com validade explícita pode ser guardada por cache intermediário).
+    res.setHeader('Cache-Control', `public, max-age=${CACHE_PUBLICO_MS / 1000}`);
+    return corpo;
+  }
 
   @Get()
   @Acao('auditoria.verificar')
@@ -222,7 +285,11 @@ export class SeloController {
 
 @Module({
   controllers: [SeloController],
-  providers: [SeloService, TravaJobs, { provide: ENVIO_ANCORA, useClass: EnvioAncoraReal }],
+  providers: [
+    SeloService, TravaJobs, { provide: ENVIO_ANCORA, useClass: EnvioAncoraReal },
+    // Factory: um limite por instância da aplicação (useValue seria um objeto só, dividido entre apps de teste).
+    { provide: LimiteTaxaPublico, useFactory: () => new LimiteTaxaPublico() },
+  ],
   exports: [SeloService, TravaJobs],
 })
 export class SeloModule {}

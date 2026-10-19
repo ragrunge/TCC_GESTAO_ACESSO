@@ -48,7 +48,7 @@ export function configDeTeste(extra: Partial<Config> = {}): Config {
     // Pasta temporária por API de teste (novaApi): o conteúdo cifrado fica nela e o teste confere que não há texto claro.
     documentos: { kek: Buffer.alloc(32, 9), kekVersao: 1, dir: join(tmpdir(), `portaria-docs-${process.pid}-${++dirSeq}`) },
     // Sem destino de âncora e sem agendador: os testes chamam as rotinas sob demanda (e trocam o envio por um falso).
-    ancora: { emails: [], remetente: 'portaria@localhost', smtp: null, arquivo: null },
+    ancora: { github: false, emails: [], remetente: 'portaria@localhost', smtp: null, arquivo: null },
     jobs: { agendador: false, intervaloMin: 10, horaRetencaoBrt: 3 },
     retencao: { anexoOcorrenciaAnos: null },
     ...extra,

@@ -29,7 +29,7 @@ src/documentos/cofre.ts  anexos cifrados: AES-256-GCM, DEK por arquivo embrulhad
 src/comum/transacao.ts   transação com retry curto em 40001/40P01
 src/cli/seed-dev.ts      seed de dev: estrutura + 4 usuários (um por papel), senha de SEED_SENHA_DEV; com PORTARIA_AMBIENTE=dev, pessoas fictícias
 src/database/            DatabaseModule global: Pool do pg + Drizzle (node-postgres), DATABASE_URL, fecha o pool no shutdown
-src/saude/               GET /api/v1/saude: select 1 + ultimo_seq da cadeia; 503 se o banco cair
+src/saude/               GET /api/v1/saude: select 1 + leitura da cabeça da cadeia (sem devolver o seq); 503 se o banco cair
 src/db/schema.ts         schema Drizzle (fonte das migrações geradas)
 src/db/cadeia.ts         serialização canônica v1 e verificador independente da cadeia (RF-32, RF-37)
 src/db/cpf.ts            máscara e HMAC do CPF
@@ -63,7 +63,7 @@ docker compose watch            # liga o reload numa stack já de pé
 API_TARGET=runtime docker compose up -d --build   # imagem de produção (sem tsc-watch, usuário node)
 docker compose run --rm migrate # depois de criar migração nova (o migrate só roda sozinho na subida)
 docker compose ps
-curl http://127.0.0.1:3000/api/v1/saude    # {"data":{"status":"ok","banco":"ok","ultimoSeq":0,"em":"..."}}
+curl http://127.0.0.1:3000/api/v1/saude    # {"data":{"status":"ok","banco":"ok","em":"..."}}
 docker compose exec api node dist/cli/seed-dev.js   # 4 usuários de dev; senha = SEED_SENHA_DEV do .env
 docker compose exec api node dist/cli/jobs.js retencao            # retenção LGPD agora (spec §9.1); saída só com contagens
 docker compose exec api node dist/cli/jobs.js selo [AAAA-MM-DD]   # selo diário do dia (padrão: ontem BRT) + âncoras pendentes
@@ -165,7 +165,7 @@ Uma linha JSON por requisição (`request_id` gerado no servidor, `usuario_id`, 
 com campos em allowlist (`src/comum/log.ts`): corpo, cookie, login digitado, senha e query nunca entram. Erro de banco
 loga só SQLSTATE e constraint (a mensagem do `DrizzleQueryError` traz SQL e parâmetros).
 
-### Variáveis (repassadas uma a uma no docker-compose.yml)
+### Variáveis (repassadas uma a uma no docker-compose.yml e no docker-compose.prod.yml)
 
 | Variável | Valores | Observação |
 |---|---|---|
@@ -175,13 +175,14 @@ loga só SQLSTATE e constraint (a mensagem do `DrizzleQueryError` traz SQL e par
 | `CORS_ORIGENS` | origens exatas, vírgula | vazio = CORS desligado (produção, mesma origem) |
 | `SESSAO_ABSOLUTA_MIN`, `SESSAO_INATIVIDADE_MIN` | 720, 30 | minutos |
 | `PORTARIA_HMAC_CPF_KEY` | base64, 32+ bytes | também origem (HKDF) da chave do `login_limite` |
-| `SEED_SENHA_DEV` | 12+ caracteres | só o seed usa (e o seed de pessoas fictícias); vazio em produção |
+| `SEED_SENHA_DEV` | 12+ caracteres | só o seed usa. Em produção não fica no serviço: vai só no `docker compose run` do seed (docs/deploy.md §3) |
 | `LOGIN_MAX_FALHAS_LOGIN`, `LOGIN_MAX_FALHAS_IP` | 10 (3 a 50), 30 (3 a 500) | falhas na janela que bloqueiam; vazio = padrão (spec §14, nº 27) |
 | `LOGIN_JANELA_MIN`, `LOGIN_BLOQUEIO_MIN` | 15, 15 | minutos; vazio = padrão |
 | `IMPORTACAO_PRAZO_LEGADO_DIAS` | 90 (1 a 730) | prazo para regularizar o legado da planilha (RN-09), definido em assembleia; vazio = padrão (spec §14, nº 30) |
-| `ANCORA_EMAILS`, `ANCORA_REMETENTE` | e-mails, vírgula | destinatários da âncora do selo (síndico e conselho); obrigatório em produção (spec §4.6). Dev: os fictícios do compose |
+| `ANCORA_DESTINOS` | `github`, `email` (vírgula) | destinos externos da âncora (spec §4.6). `github` liga `GET /auditoria/selos/publico` para o GitHub Actions. Vazio = `email` se `ANCORA_EMAILS` estiver preenchida. Produção exige ao menos um (o compose de produção usa `github`) |
+| `ANCORA_EMAILS`, `ANCORA_REMETENTE` | e-mails, vírgula | destinatários da âncora por e-mail (opcional; exige `email` em `ANCORA_DESTINOS` quando a lista é explícita). Dev: os fictícios do compose |
 | `ANCORA_SMTP_HOST`, `_PORTA`, `_TLS`, `_USUARIO`, `_SENHA` | host; 587/465; `starttls` \| `implicito` \| `nenhum` | `nenhum` só em dev (Mailpit); produção recusa. Usuário e senha vão juntos |
-| `ANCORA_ARQUIVO` | caminho absoluto | cópia append-only (JSONL) da âncora no volume `ancoras`; só vale se for copiada para fora do servidor |
+| `ANCORA_ARQUIVO` | caminho absoluto | cópia append-only (JSONL) da âncora no volume `ancoras`; cópia local, não conta como destino externo |
 | `JOBS_AGENDADOR`, `JOBS_INTERVALO_MIN`, `RETENCAO_HORA_BRT` | `true`; 10; 3 | agendador interno (selo, âncoras, retenção); `false` desliga (spec §14, nº 32) |
 | `RETENCAO_ANEXO_OCORRENCIA_ANOS` | 1 a 20 | prazo dos anexos de ocorrência, do encerramento; vazio = nenhum sai por prazo (spec §14, nº 31, em aberto) |
 

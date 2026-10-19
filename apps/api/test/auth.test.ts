@@ -17,6 +17,8 @@ describe('auth: login, cookie, sessão e logout', () => {
     const r = await api.http().get('/api/v1/saude');
     expect(r.status).toBe(200);
     expect(r.body.data.status).toBe('ok');
+    // Sem o seq da cadeia: em polling ele mostraria o instante de cada evento da portaria
+    expect(r.body.data).not.toHaveProperty('ultimoSeq');
   });
 
   it('login ok: cookie HttpOnly; Secure; SameSite=Strict; Path=/ com prefixo __Host-, sem hash na resposta', async () => {

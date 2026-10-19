@@ -1,13 +1,18 @@
 // Âncora externa do selo (spec §4.6). Por que existe: o hash encadeado detecta alteração PARCIAL da trilha, mas quem tem
 // superusuário (ou é dono das tabelas) pode desligar os triggers, reescrever eventos e RECALCULAR a cadeia inteira, a
 // cabeça e até os selos gravados no próprio banco; a verificação interna, que só lê o banco, não percebe. O resumo do
-// selo (data, seq, hash) enviado para fora, a quem não administra o servidor, fixa o hash de cada dia num lugar que o
-// atacante não alcança: um hash recebido em D que não coincide mais com o banco prova reescrita depois de D.
+// selo (data, seq, hash) levado para fora, para um lugar que quem administra o servidor não reescreve, fixa o hash de
+// cada dia: um hash ancorado em D que não coincide mais com o banco prova reescrita depois de D.
 //
 // Destinos:
-//  - e-mail (SMTP) para o síndico e o conselho (`ANCORA_EMAILS`). Em dev, o Mailpit do compose (http://localhost:8025).
+//  - github (coleta): o servidor NÃO envia nada. Os selos diários ficam no endpoint público `GET /auditoria/selos/publico`
+//    e um workflow agendado do GitHub Actions (.github/workflows/ancora-selo.yml) os lê e commita, só por append, no
+//    branch `ancoras`. Nenhum segredo na VPS: quem toma o servidor não alcança o histórico já commitado.
+//    Selo MANUAL não vai para o endpoint (só os diários): ele fica coberto pelo próximo selo diário, cujo hash depende
+//    de todos os eventos anteriores, inclusive o do selo manual.
+//  - e-mail (SMTP), opcional, para o síndico e o conselho (`ANCORA_EMAILS`). Em dev, o Mailpit do compose.
 //  - arquivo append-only (`ANCORA_ARQUIVO`), uma linha JSON por selo, num volume separado do banco. Está no mesmo
-//    servidor: só vale como âncora se for copiado para fora (backup externo com retenção imutável).
+//    servidor: é cópia local, não conta como âncora externa.
 // O conteúdo não tem dado pessoal: só data, números de sequência e hashes.
 import { mkdir, open } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -35,6 +40,9 @@ export interface EnvioAncora {
   /** Envia a todos os destinos; devolve o texto de `enviado_para`. Lança se algum falhar (o selo fica pendente). */
   enviar(r: ResumoSelo): Promise<string>;
 }
+
+/** Destino `github`, como aparece em `enviado_para` e na tela: o selo diário fica disponível para a coleta. */
+export const DESTINO_GITHUB = 'GitHub Actions (endpoint público, coleta diária)';
 
 export class SemDestinoAncora extends Error {
   constructor() { super('nenhum destino de âncora configurado'); }
@@ -76,19 +84,28 @@ export class EnvioAncoraReal implements EnvioAncora {
   constructor(@Inject(CONFIG) private readonly config: Config) {}
 
   destinos(): string[] {
-    const { emails, arquivo } = this.config.ancora;
-    return [...(emails.length ? [`e-mail: ${emails.join(', ')}`] : []), ...(arquivo ? ['arquivo append-only'] : [])];
+    const { github, emails, arquivo } = this.config.ancora;
+    return [
+      ...(github ? [DESTINO_GITHUB] : []),
+      ...(emails.length ? [`e-mail: ${emails.join(', ')}`] : []),
+      ...(arquivo ? ['arquivo append-only'] : []),
+    ];
   }
 
   async enviar(r: ResumoSelo): Promise<string> {
-    const { emails, smtp, arquivo, remetente } = this.config.ancora;
-    if (!emails.length && !arquivo) throw new SemDestinoAncora();
+    const { github, emails, smtp, arquivo, remetente } = this.config.ancora;
+    if (!github && !emails.length && !arquivo) throw new SemDestinoAncora();
     if (arquivo) await this.anexarAoArquivo(arquivo, r);
     if (emails.length && smtp) {
       const { assunto, texto } = textoDoEmail(r);
       await this.smtp().sendMail({ from: remetente, to: emails, subject: assunto, text: texto });
     }
-    return this.destinos().join('; ');
+    // github: nada a enviar (coleta). O texto diz o que de fato acontece com cada tipo de selo.
+    return [
+      ...(github ? [r.tipo === 'diario' ? DESTINO_GITHUB : 'GitHub Actions: coberto pelo próximo selo diário'] : []),
+      ...(emails.length ? [`e-mail: ${emails.join(', ')}`] : []),
+      ...(arquivo ? ['arquivo append-only'] : []),
+    ].join('; ');
   }
 
   private smtp(): Transporter {
