@@ -553,9 +553,53 @@ da âncora depende de quem a recebe não ter acesso ao servidor (decisão 2).
 
 Sem a âncora, quem tem superusuário recalcula a cadeia inteira **e reescreve os próprios selos** no banco; a
 verificação interna (4.5), que só lê o banco, passa a dizer "íntegra". Isso está provado em `test:pg`
-(`postgres-real/lgpd-selo.test.ts`): depois da reescrita completa, `GET /auditoria/integridade` acusa
-`selo_divergente`; se o atacante também reescreve o selo, a verificação volta a "válido", e só o hash recebido
-por e-mail denuncia (`POST /auditoria/selos/conferir` → `hash_divergente`).
+(`postgres-real/lgpd-selo.test.ts`) e no `npm test` (`ancora-github.test.ts`): depois da reescrita completa,
+`GET /auditoria/integridade` acusa `selo_divergente`; se o atacante também reescreve o selo, a verificação volta a
+"válido", e só a âncora externa denuncia: a trilha exportada não bate com o `selos.jsonl` do branch `ancoras`
+(`verificar-ancoras` → `divergente`), a coleta seguinte do GitHub Actions falha e abre uma issue, e o hash recebido por
+e-mail, quando esse destino está ligado, também diverge (`POST /auditoria/selos/conferir` → `hash_divergente`).
+
+**Âncora pelo GitHub Actions (2026-10-19, decisão do usuário para o deploy na VPS).** Por que: a âncora só vale se
+ficar onde quem administra o servidor não reescreve. O e-mail exigia SMTP com TLS e credencial na VPS, e uma caixa de
+correio guardada pelo síndico e pelo conselho sem procedimento de conferência. O GitHub Actions troca isso por um
+processo agendado de terceiro que **lê** (o servidor não envia nada e não guarda segredo nenhum) e grava num
+histórico público, só por append. Como funciona:
+
+1. A API publica os selos diários num endpoint público, sem parâmetro: `GET /auditoria/selos/publico` (seção 6.6).
+2. O workflow `.github/workflows/ancora-selo.yml` roda uma vez por dia (05:17 UTC, 02:17 BRT) e lê o endpoint
+   (`vars.ANCORA_URL`). Em seguida, `scripts/ancoras/anexar-selos.mjs` valida o formato, confere os dias já ancorados
+   e **anexa** os novos a `selos.jsonl`, no branch órfão `ancoras`, com o `GITHUB_TOKEN` (`contents: write`). As
+   actions são fixadas por SHA.
+3. Dia já ancorado que volta com seq, hash ou total diferente, selo ancorado que some, seq que regride ou mesmo seq
+   com hash diferente: o job **não grava nada**, falha e abre ou comenta uma issue. VPS fora do ar: o job falha sem
+   tocar no arquivo; como a resposta traz os últimos 31 selos, a próxima coleta recupera os dias perdidos.
+4. Conferência offline (com valor de prova): `node apps/api/dist/cli/verificar-ancoras.js trilha.jsonl selos.jsonl`
+   recalcula a cadeia exportada (4.7) e compara o hash de cada dia ancorado.
+
+O que o Actions prova:
+- **Carimbo de terceiro:** o hash do dia D foi lido e commitado por um runner do GitHub no dia D+1, numa execução com
+  registro próprio (id da execução no commit e na linha). Quem toma a VPS não altera esse registro nem o commit.
+- **Histórico público e só por append:** qualquer pessoa clona o branch e vê quando cada linha entrou. Com o branch
+  protegido contra force-push e deleção, reescrever uma linha deixa de ser possível sem desligar a proteção, e
+  desligá-la fica registrado no log de auditoria do repositório.
+
+O que ele **não** prova:
+- **Que a trilha estava correta antes da âncora:** um servidor já adulterado no dia D tem o hash adulterado ancorado. A
+  âncora prova que nada mudou **depois** de D.
+- **Que o dono do repositório não reescreveu o branch:** quem administra o repositório (hoje, o mesmo responsável
+  técnico da VPS) pode desligar a proteção e forçar um push. A mitigação é externa: clones mantidos por terceiros
+  (orientador, conselho), o log de auditoria e as notificações do GitHub. Isso fica declarado como limite.
+- **Que todo acesso foi registrado:** a âncora protege o que entrou na trilha, e não o que o porteiro deixou de lançar.
+- **Validade jurídica:** não é carimbo do tempo ICP-Brasil (01_requisitos.md, seção 11).
+- **Continuidade:** o GitHub desativa workflow agendado de repositório público depois de 60 dias sem atividade no
+  repositório. O aviso chega por e-mail, e é preciso reativar.
+
+O endpoint público não pode virar oráculo nem relógio da portaria: não aceita parâmetro, só publica selo **diário**
+(o manual sela a cabeça num instante qualquer), não traz instante nem id, e o total é por dia. O que ele revela, e é
+aceito, é o volume diário agregado do condomínio. Os hashes publicados não abrem o conteúdo dos eventos: conferir um
+palpite exigiria o `hash_anterior`, que não é publicado, e os uuids aleatórios do evento. Pelo mesmo motivo, o `/saude`
+público deixou de devolver o `ultimo_seq`, que em polling mostrava o instante de cada evento. A resposta fica em
+cache por 60 s (a consulta ao banco não cresce com o tráfego) e tem limite próprio de 30 consultas por minuto por IP.
 
 Implementação (2026-10-18, `apps/api/src/selo/`):
 
@@ -563,10 +607,10 @@ Implementação (2026-10-18, `apps/api/src/selo/`):
 |---|---|
 | Selo diário | Para o dia D (BRT), sela o último evento com `registrado_em` antes da meia-noite de D+1. `tipo = 'diario'`, um por dia (índice único parcial, migração 0004). Cadeia vazia: sela a gênese. Também é o ponto de corte da retenção (9.1) |
 | Selo manual | `POST /auditoria/selos` (SI, AU: `auditoria.selar`) sela a cabeça naquele momento, `tipo = 'manual'`, e envia a âncora na hora. Se a cabeça não andou desde o último selo, devolve o existente (sem selo nem e-mail repetido) |
-| Âncora | Resumo sem dado pessoal (data, tipo, seq, hash, eventos do dia até o selo, instante, id) por e-mail SMTP a `ANCORA_EMAILS` (síndico e conselho) e, opcionalmente, uma linha JSON num arquivo append-only (`ANCORA_ARQUIVO`, volume `ancoras`). Falha no envio deixa o selo pendente (`enviado_em` nulo); o agendador reenvia. Envio "pelo menos uma vez": a linha do selo fica travada (`FOR UPDATE SKIP LOCKED`) durante o envio |
-| Destinos | Dev: Mailpit do compose (`http://localhost:8025`). Produção: e-mail real, obrigatório e com TLS (a API recusa o boot sem `ANCORA_EMAILS` ou com `ANCORA_SMTP_TLS=nenhum`). O arquivo, sozinho, está no mesmo servidor e só vale como âncora se for copiado para fora |
+| Âncora | Destinos externos em `ANCORA_DESTINOS` (`github`, `email`). `github`: o selo diário fica disponível no endpoint público e o servidor não envia nada; o manual fica "coberto pelo próximo selo diário", cujo hash depende de todos os eventos anteriores. `email`: resumo sem dado pessoal (data, tipo, seq, hash, eventos do dia até o selo, instante, id) por SMTP a `ANCORA_EMAILS`. Opcionalmente, uma linha JSON num arquivo append-only local (`ANCORA_ARQUIVO`, volume `ancoras`). Falha no envio deixa o selo pendente (`enviado_em` nulo), e o agendador reenvia. O envio é "pelo menos uma vez": a linha do selo fica travada (`FOR UPDATE SKIP LOCKED`) durante o envio |
+| Destinos | Dev: `github,email`, com o e-mail no Mailpit do compose (`http://localhost:8025`). Produção: `github` (`docker-compose.prod.yml`), sem SMTP. A API recusa o boot em produção sem destino externo ou com `ANCORA_SMTP_TLS=nenhum`. O arquivo, sozinho, está no mesmo servidor e não conta como âncora |
 | Agendamento | Timer dentro da API (decisão 32), a cada `JOBS_INTERVALO_MIN` (10): sela ontem se faltar, reenvia pendentes, roda a retenção a partir das 3h BRT se ainda não rodou no dia. Trava de job por advisory lock de sessão (`pg_try_advisory_lock`), mais idempotência no banco. CLI: `node dist/cli/jobs.js selo [AAAA-MM-DD] \| ancoras \| retencao` |
-| Conferir âncora | `POST /auditoria/selos/conferir` `{ seq, hash }` (SI, AD, AU) compara o hash recebido com o banco (`confere`, `hash_divergente`, `seq_descartado`, `seq_inexistente`) e grava `auditoria.conferirAncora`. É conveniência: um servidor adulterado pode mentir. A conferência com valor de prova é a offline (4.7: exportação + `verificar.js` + o e-mail guardado). Por isso o hash colado **não** é gravado como "âncora recebida": guardar no banco o que o atacante controla não acrescenta prova |
+| Conferir âncora | `POST /auditoria/selos/conferir` `{ seq, hash }` (SI, AD, AU) compara o hash recebido com o banco (`confere`, `hash_divergente`, `seq_descartado`, `seq_inexistente`) e grava `auditoria.conferirAncora`. É conveniência: um servidor adulterado pode mentir. A conferência com valor de prova é a offline: exportação (4.7) + `verificar-ancoras` + o `selos.jsonl` do branch `ancoras` (ou o e-mail guardado). Por isso o hash colado **não** é gravado como "âncora recebida": guardar no banco o que o atacante controla não acrescenta prova |
 
 ### 4.7 Exportação verificável (RF-32)
 
@@ -773,6 +817,7 @@ Ocorrências implementadas em `apps/api/src/ocorrencias` (2026-10-18). O status 
 | GET | /auditoria/alteracoes?de=&ate=&usuarioId=&acao=&entidade=&limite=&cursor= | SI, AD, AU | audit_log paginado (mais recente primeiro), sem IP |
 | GET | /auditoria/selos | SI, AD, AU | Seção 4.6 (implementado): `{ ultimo, pendentesEnvio, destinos, agendador }`. Substitui `/auditoria/checkpoints` |
 | POST | /auditoria/selos | SI, AU | "Selar agora" (`auditoria.selar`): `{ selo, novo, ancora: 'enviada' \| 'pendente' \| 'sem_destino' }`; 409 `SELO_EM_ANDAMENTO` |
+| GET | /auditoria/selos/publico | **público** | Seção 4.6 (destino `github`; sem ele, 404): `{ formato: 'portaria-parque/selos-diarios', versao: 1, selos: [{ data, seq, hash, totalDoDia }] }`, os 31 selos **diários** mais recentes, do mais antigo ao mais novo. Sem parâmetro, sem selo manual, sem instante. `Cache-Control: public, max-age=60` (cache na API, invalidado por selo diário novo); 30 consultas por minuto por IP (429 `LIMITE_EXCEDIDO` com `Retry-After`) |
 | POST | /auditoria/selos/conferir | SI, AD, AU | `{ seq, hash }` recebidos por fora; `{ confere, motivo, seq, hashNoBanco, seloRegistrado }`; vai para o `audit_log` |
 
 ### 6.7 LGPD
@@ -1245,7 +1290,7 @@ de qualquer compra. Escolher hardware sem essa garantia transfere o risco de dep
 
 | Tema | Especificação | RNF |
 |---|---|---|
-| Backup | `pg_dump` diário (formato custom, `-Fc`) cifrado, com cópia para armazenamento externo ao servidor; retenção sugerida de 30 diários e 12 mensais; backup do storage de documentos junto | RNF-10 |
+| Backup | `pg_dump` diário (formato custom, `-Fc`) cifrado, com cópia para armazenamento externo ao servidor; retenção sugerida de 30 diários e 12 mensais; backup do storage de documentos junto. Implementado em `db/backup/backup-portaria.sh` (2026-10-19): cifra com a chave **pública** age (a privada fica fora da VPS), conjunto atômico (dump + volumes + sha256) e restore na ordem de `docs/deploy.md` | RNF-10 |
 | Teste de restauração | Mensal: restaurar o último dump em ambiente isolado, rodar a verificação de integridade da cadeia (seção 4.5) e conferir contagens; registrar o resultado | RNF-10 |
 | Monitoramento | Endpoint `/saude` (API, banco, storage, adapter); verificação externa de disponibilidade com alerta por e-mail; alerta de falha em backup, job de retenção ou verificação de cadeia; espaço em disco | RNF-05 |
 | Desempenho | Índices da seção 3.5; consulta de restrição < 1 s; registro de visitante já cadastrado em até 30 s de operação, o que depende de busca por documento/nome rápida (trigram) e preenchimento reaproveitado (RF-18) | RNF-06 |
@@ -1360,7 +1405,7 @@ O morador não opera o sistema em nenhuma fase prevista: não há ator novo nem 
 | 23 | Retenção de dados pessoais fora da tabela da seção 7 | — | Em aberto: `encomenda.destinatario`, `importacao_inconsistencia.mensagem` (cita nomes) e `autorizacao_retirada`. (`audit_log.usuario_nome` em `auth.login_falha` sai com a retenção de 3 anos da trilha, implementada em 2026-10-18.) Proposta: mesmo prazo de 3 anos, anonimizados pelo job | Síndico com validação jurídica |
 | 24 | Morador importado sem telefone | Bloquear a importação; permitir e exigir na aprovação | **Resolvida:** `telefone` só pode ser nulo em pessoa importada (`importacao_id`) ou anonimizada; aprovar o vínculo exige telefone (regra da API) | Resolvida |
 | 25 | Modelo da conferência do comprovante (RF-05) | Colunas no vínculo (uma conferência vigente); tabela própria com histórico de conferências; manter o arquivo cifrado em `documento` | **Resolvida (2026-10-17):** colunas `conferencia_*` e `conferido_por_id` em `vinculo_unidade`, sem arquivo. A regra "aprovado exige conferência" fica num CHECK da própria linha, sem trigger entre tabelas, e o histórico de conferências refeitas já está no `audit_log` (`vinculo.conferir`, antes e depois). Uma tabela própria só se justificaria se fosse preciso consultar várias conferências por vínculo, e nenhum RF pede isso. Saíram `documento_id`, o checklist `conferencias` (jsonb de texto livre, que costumava citar nomes e CPF parcial) e o valor `comprovante_vinculo` de `tipo_documento`. Com isso, aprovar "com item que não confere mediante justificativa" deixa de existir: comprovante que não confere não é registrado, e o vínculo é rejeitado (RN-02) | Resolvida |
-| 26 | Deploy do front (Vercel) e da API (VPS) com cookie `SameSite=Strict` | Domínios separados (`*.vercel.app` e domínio da VPS) com `SameSite=None` + CORS + CSRF por cabeçalho; rewrite de `/api/*` pela Vercel para a VPS (mesma origem); domínio próprio com subdomínios (`app.` e `api.` do mesmo site); front servido pela própria VPS | **Resolvida (2026-10-18): rewrite pela Vercel** no `apps/web/vercel.json`, ANTES do fallback da SPA: `{ "source": "/api/:caminho*", "destination": "https://API_DA_VPS/api/:caminho*" }` (placeholder; a VPS ainda não existe). O navegador vê uma origem só, o cookie fica `Strict` e o CORS fica desligado em produção (`CORS_ORIGENS` vazio). Descartado `SameSite=None`: perde a proteção de CSRF sem código, exige CSRF por cabeçalho e CORS exato, e cada combinação parcial falha parecendo bug. **Custo aceito:** o IP do cliente chega à API só pelo `X-Forwarded-For` que a Vercel monta, e quem acessar a VPS direto pode forjar esse cabeçalho. Por isso o limite por IP é auxiliar, e o controle que vale é o limite por login. Configuração: no proxy da VPS (Caddy), confiar no salto da Vercel e repassar o XFF (a Vercel não publica faixa fixa de IP, então na prática é um `trusted_proxies` amplo, e daí vem a possibilidade de forjar), e na API `TRUST_PROXY=2` (Vercel + Caddy). Com `TRUST_PROXY` errado, o IP visto vira o da borda da Vercel, e 30 falhas de qualquer pessoa (o limite por IP) bloqueiam o login de todos por trás daquela borda: conferir com `curl` no deploy. Evolução sem esse custo: domínio próprio com `api.` no mesmo site (IP real pelo Caddy, sem a Vercel no caminho da autenticação) | Responsável técnico |
+| 26 | Deploy do front (Vercel) e da API (VPS) com cookie `SameSite=Strict` | Domínios separados (`*.vercel.app` e domínio da VPS) com `SameSite=None` + CORS + CSRF por cabeçalho; rewrite de `/api/*` pela Vercel para a VPS (mesma origem); domínio próprio com subdomínios (`app.` e `api.` do mesmo site); front servido pela própria VPS | **Resolvida (2026-10-18): rewrite pela Vercel** no `apps/web/vercel.json`, ANTES do fallback da SPA: `{ "source": "/api/:caminho*", "destination": "https://179-197-78-78.sslip.io/api/:caminho*" }` (2026-10-19: VPS da Betech, sem domínio, TLS pelo proxy da VPS; runbook em `docs/deploy.md`). O navegador vê uma origem só, o cookie fica `Strict` e o CORS fica desligado em produção (`CORS_ORIGENS` vazio). Descartado `SameSite=None`: perde a proteção de CSRF sem código, exige CSRF por cabeçalho e CORS exato, e cada combinação parcial falha parecendo bug. **Custo aceito:** o IP do cliente chega à API só pelo `X-Forwarded-For` que a Vercel monta, e quem acessar a VPS direto pode forjar esse cabeçalho. Por isso o limite por IP é auxiliar, e o controle que vale é o limite por login. Configuração: no proxy da VPS (Caddy), confiar no salto da Vercel e repassar o XFF (a Vercel não publica faixa fixa de IP, então na prática é um `trusted_proxies` amplo, e daí vem a possibilidade de forjar), e na API `TRUST_PROXY=2` (Vercel + Caddy). Com `TRUST_PROXY` errado, o IP visto vira o da borda da Vercel, e 30 falhas de qualquer pessoa (o limite por IP) bloqueiam o login de todos por trás daquela borda: conferir com `curl` no deploy. Evolução sem esse custo: domínio próprio com `api.` no mesmo site (IP real pelo Caddy, sem a Vercel no caminho da autenticação) | Responsável técnico |
 | 27 | Limite por IP com a guarita atrás de NAT | Manter 5 falhas por IP (spec); limite por IP maior que o por login; só limite por login | **Resolvida (2026-10-18, decisão do usuário): 30 falhas por IP e 10 por login em 15 min, com bloqueio de 15 min**, configuráveis por ambiente (padrões em `PADROES_LOGIN`, `apps/api/src/config/config.ts`). Justificativa: a guarita sai por um único IP (NAT), então o limite por IP precisa acomodar os erros de digitação de vários operadores, inclusive na troca de turno; o limite por login protege cada conta. Com argon2id e a política de 12 caracteres fora da lista comum, 10 tentativas por login a cada 15 min (cerca de 960 por dia) tornam a força bruta inviável. O limite por IP continua auxiliar (ver nº 26: atrás da Vercel o IP pode ser forjado). Custo aceito: quem conhece um login pode mantê-lo bloqueado errando a senha de propósito; a redefinição de senha pela administração desbloqueia | Resolvida |
 | 28 | Tentativa barrada por restrição (RF-16) | Não gravar nada (v0.1 desta seção); gravar o evento `negado` | **Resolvida (2026-10-18):** grava `negado` com o id da restrição, como o mock (RN-11: "negativa por restrição gera registro imutável"). A checagem da restrição vem ANTES da validação do autorizador, então a tentativa é gravada mesmo sem meio (a tela grava o negado detectado ao escolher a unidade). O negado commita antes do 422 e nunca é repetido pelo retry de 40001: cada tentativa gera exatamente um evento | Resolvida |
 | 29 | Lista de funcionários para o porteiro | Porteiro lista (`pessoa.ver`, como era); só SI/AD/AU | **Resolvida (2026-10-18, decisão do usuário):** `funcionario.ver` = SI, AD, AU. A entrada por escala é validada pela própria API; a tela de entrada lê só a escala da pessoa escolhida (`GET /funcionarios/:id/escala`), sem a lista nem os dados da pessoa | Resolvida |
