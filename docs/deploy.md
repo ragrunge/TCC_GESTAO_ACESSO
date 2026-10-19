@@ -502,6 +502,27 @@ docker compose build && docker compose up -d --wait
 A tag anterior continua em `docker images tcc-portaria-api`. Só o `api`, o `migrate` e o `permissoes` dependem de
 `API_TAG`, e o `db` não é recriado.
 
+**Deploy automático** (`.github/workflows/deploy-api.yml`): push na `main` que mexa em `apps/api`, `packages/domain`
+ou no `package-lock.json` roda typecheck e testes e, se passarem, entra por SSH na VPS com a chave do CI. No
+`authorized_keys` do root essa chave é `restrict,command="/usr/local/sbin/tcc-portaria-deploy"`: ela só executa o
+`scripts/deploy/deploy-vps.sh` (instalado fora do clone, por cópia manual), que faz o passo acima sozinho:
+
+1. recusa (código 2, job vermelho) se a `main` foi reescrita ou se o intervalo muda infra: compose, Dockerfile,
+   `db/bootstrap`, `db/backup`, `scripts/deploy` ou `.env.producao.example`. Esses vão à mão, como acima;
+2. backup: o cifrado (`backup-portaria.sh`) se houver chave age, senão um `pg_dump` local em
+   `/var/backups/tcc-portaria/pre-deploy` (root, 600, os 3 últimos);
+3. build com a tag nova; falhou, nada muda no que está rodando;
+4. troca `API_TAG`, `up -d --wait` (o `migrate` roda antes da API) e confere `/saude`;
+5. falhou: volta commit e tag anteriores. Migração aplicada **não** volta: o log aponta o backup do passo 2.
+
+Configuração (uma vez, pelo dono do repositório): variáveis `DEPLOY_HOST` e `DEPLOY_KNOWN_HOSTS`; environment
+`producao` com regra de branch `main` e o secret `DEPLOY_SSH_KEY`. Sem `DEPLOY_HOST` o job de deploy é pulado.
+Trocar a chave: gerar outra, substituir a linha `tcc-portaria-ci` do `authorized_keys` e o secret.
+
+**Limite do que a chave restrita protege:** ela impede que uma chave vazada vire shell, mas quem faz push na `main`
+continua decidindo o código que sobe. A trava de infra evita que um push troque o compose (volume do host, privilégio)
+sem passar por uma pessoa na VPS.
+
 **Rollback da API** (sem migração nova no meio):
 
 ```bash
