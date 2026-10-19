@@ -34,6 +34,15 @@ export const CHAVES = {
   correcoes: (id: string) => ['eventos', 'correcoes', id] as const,
   operadores: ['eventos', 'operadores'] as const,
   turno: ['turno'] as const,
+  /** Prefixo de tudo que é encomenda: filas por status, contagens das abas/painel e o detalhe da entrega. */
+  encomendas: ['encomendas'] as const,
+  encomendasLista: (status: string) => ['encomendas', 'lista', status] as const,
+  encomendasResumo: ['encomendas', 'resumo'] as const,
+  encomenda: (id: string) => ['encomendas', 'detalhe', id] as const,
+  /** Prefixo de tudo que é ocorrência: lista (por filtro) e detalhe. */
+  ocorrencias: ['ocorrencias'] as const,
+  ocorrenciasLista: (filtro: string) => ['ocorrencias', 'lista', filtro] as const,
+  ocorrencia: (id: string) => ['ocorrencias', 'detalhe', id] as const,
   autorizacoes: ['autorizacoes'] as const,
   autorizacoesHoje: ['autorizacoes', 'hoje'] as const,
   restricoes: ['restricoes'] as const,
@@ -57,6 +66,11 @@ export const APOS_FUNCIONARIO = [CHAVES.funcionarios, CHAVES.pessoas, CHAVES.bus
 export const APOS_EVENTO = [CHAVES.eventos, CHAVES.turno, CHAVES.unidades, CHAVES.pessoas, CHAVES.busca, CHAVES.autorizacoes, CHAVES.integridade, ['auditoria', 'alteracoes']] as const;
 /** Autorização prévia e restrição: o detalhe da unidade, o turno (contagens), as listas de hoje e as pendências. */
 export const APOS_AUTORIZACAO = [...APOS_VINCULO, CHAVES.turno, CHAVES.autorizacoes, CHAVES.restricoes] as const;
+
+/** Receber, entregar ou autorizar retirada: as filas, as contagens, o painel (turno) e a trilha de alterações. */
+export const APOS_ENCOMENDA = [CHAVES.encomendas, CHAVES.turno, ['auditoria', 'alteracoes']] as const;
+/** Abrir, mudar status, vincular eventos ou anexar: a lista, o detalhe, o painel (ocorrências abertas) e a trilha. */
+export const APOS_OCORRENCIA = [CHAVES.ocorrencias, CHAVES.turno, ['auditoria', 'alteracoes']] as const;
 
 /** Invalida os prefixos dados (resolve quando as consultas ativas recarregaram). */
 export function useInvalidar() {

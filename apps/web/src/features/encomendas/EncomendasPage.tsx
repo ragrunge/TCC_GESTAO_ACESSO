@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Ban, Check, TriangleAlert } from 'lucide-react';
 import { useApi, type Autorizador, type EncomendaView, type PessoaBusca } from '../../api';
@@ -19,6 +20,10 @@ import { diasDesde, encomendaAtrasada } from '@portaria/domain/rules';
 import { useCatalogo } from '../../app/catalogo';
 import { fmtDataHora } from '@portaria/domain/time';
 import { mensagemErro, useAgora, useAsync } from '../../app/useAsync';
+import { APOS_ENCOMENDA, CHAVES, useInvalidar } from '../../app/consultas';
+
+/** Encomendas por página: a fila cresce com "Carregar mais" (RF-26: um condomínio de 165 unidades acumula entregues). */
+const POR_PAGINA = 50;
 
 const TRANSPORTADORAS = ['Correios', 'Mercado Livre', 'Amazon', 'Shopee', 'Loggi', 'Jadlog', 'Outra'];
 const COL_AGUARDANDO = '90px minmax(0,1.2fr) 120px minmax(0,1.2fr) 190px 120px 110px';
@@ -38,9 +43,17 @@ export function EncomendasPage() {
   const [receber, setReceber] = useState(false);
   const [entregando, setEntregando] = useState<EncomendaView | null>(null);
   const [autorizando, setAutorizando] = useState<EncomendaView | null>(null);
-  const lista = useAsync(() => api.encomendas.listar({ status: aba }), [aba]);
-  const aguardando = useAsync(() => api.encomendas.listar({ status: 'aguardando' }), [aba, receber, entregando]);
-  const entregues = useAsync(() => api.encomendas.listar({ status: 'entregue' }), [aba, receber, entregando]);
+  const invalidar = useInvalidar();
+  // React Query: receber, entregar e autorizar invalidam o prefixo 'encomendas' (filas e contagens) e o turno (painel)
+  const lista = useInfiniteQuery({
+    queryKey: CHAVES.encomendasLista(aba),
+    queryFn: ({ pageParam }) => api.encomendas.listarPagina({ status: aba, cursor: pageParam, limite: POR_PAGINA }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (p) => (p.temMais && p.cursor ? p.cursor : undefined),
+    staleTime: 0,
+  });
+  const resumo = useQuery({ queryKey: CHAVES.encomendasResumo, queryFn: () => api.encomendas.resumo(), staleTime: 0 });
+  const depoisDeEscrever = () => void invalidar(APOS_ENCOMENDA);
 
   // F3 abre o recebimento direto
   useEffect(() => {
@@ -50,9 +63,9 @@ export function EncomendasPage() {
     }
   }, [params, podeOperar, setParams]);
 
-  const dados = lista.data ?? [];
-  const nAguardando = aguardando.data?.length ?? 0;
-  const nAtrasadas = (aguardando.data ?? []).filter((e) => encomendaAtrasada(e.recebidaEm, agora)).length;
+  const dados = lista.data?.pages.flatMap((p) => p.itens) ?? [];
+  const nAguardando = resumo.data?.aguardando ?? 0;
+  const nAtrasadas = resumo.data?.atrasadas ?? 0;
   return (
     <div className="flex flex-col gap-5">
       <PageHeader titulo="Encomendas"
@@ -61,8 +74,8 @@ export function EncomendasPage() {
 
       <div className="rounded-[10px] border border-[#DCE1E5] bg-white">
         <Tabs rotulo="Situação das encomendas" ativa={aba} onChange={setAba}
-          abas={[{ id: 'aguardando', rotulo: `Aguardando retirada (${nAguardando})` }, { id: 'entregue', rotulo: `Entregues (${entregues.data?.length ?? 0})` }]} />
-        {lista.error && <div className="p-4"><Alert tom="vermelho" role="alert">{lista.error}</Alert></div>}
+          abas={[{ id: 'aguardando', rotulo: `Aguardando retirada (${nAguardando})` }, { id: 'entregue', rotulo: `Entregues (${resumo.data?.entregues ?? 0})` }]} />
+        {lista.error && <div className="p-4"><Alert tom="vermelho" role="alert">{mensagemErro(lista.error)}</Alert></div>}
         {aba === 'aguardando' ? (
           <Lista legenda="Encomendas aguardando retirada" colunas={COL_AGUARDANDO} className="!rounded-none !border-0">
             <ListaCab rotulos={['Unidade', 'Destinatário', 'Transportadora', 'Rastreio', 'Recebida em', 'Recebida por', '']} />
@@ -110,14 +123,19 @@ export function EncomendasPage() {
             ))}
           </Lista>
         )}
-        {!lista.loading && dados.length === 0 && <Vazio>Nenhuma encomenda nesta lista.</Vazio>}
+        {!lista.isLoading && dados.length === 0 && <Vazio>Nenhuma encomenda nesta lista.</Vazio>}
+        {lista.hasNextPage && (
+          <div className="border-t border-[#E6EAED] p-3">
+            <Button carregando={lista.isFetchingNextPage} onClick={() => void lista.fetchNextPage()}>Carregar mais encomendas</Button>
+          </div>
+        )}
       </div>
 
-      {receber && <ReceberModal onClose={() => setReceber(false)} onFeito={(e) => { setReceber(false); avisar({ texto: `Encomenda ${e.codigo} registrada para ${codigo(e.unidadeId)}. Avise a unidade pelo interfone.` }); void lista.recarregar(); }} />}
+      {receber && <ReceberModal onClose={() => setReceber(false)} onFeito={(e) => { setReceber(false); avisar({ texto: `Encomenda ${e.codigo} registrada para ${codigo(e.unidadeId)}. Avise a unidade pelo interfone.` }); depoisDeEscrever(); }} />}
       {entregando && <EntregarModal encomenda={entregando} onClose={() => setEntregando(null)}
-        onFeito={(e, nome) => { setEntregando(null); avisar({ texto: `Encomenda ${e.codigo} entregue a ${nome}.` }); void lista.recarregar(); }} />}
+        onFeito={(e, nome) => { setEntregando(null); avisar({ texto: `Encomenda ${e.codigo} entregue a ${nome}.` }); depoisDeEscrever(); }} />}
       {autorizando && <AutorizarRetiradaModal encomenda={autorizando} onClose={() => setAutorizando(null)}
-        onFeito={(nome) => { setAutorizando(null); avisar({ texto: `${nome} autorizado(a) a retirar a encomenda ${autorizando.codigo}.` }); void lista.recarregar(); }} />}
+        onFeito={(nome) => { setAutorizando(null); avisar({ texto: `${nome} autorizado(a) a retirar a encomenda ${autorizando.codigo}.` }); depoisDeEscrever(); }} />}
     </div>
   );
 }
@@ -250,7 +268,7 @@ function EntregarModal({ encomenda, onClose, onFeito }: { encomenda: EncomendaVi
 
   // RN-08: vínculo válido (aprovado ou legado no prazo, a mesma regra do interfone) ou autorização de retirada; o servidor valida de novo.
   // As autorizações são relidas aqui: a linha da lista pode ser anterior a uma autorização recém-registrada.
-  const atual = useAsync(async () => (await api.encomendas.listar({ status: 'aguardando' })).find((x) => x.id === encomenda.id) ?? encomenda, [encomenda.id]);
+  const atual = useQuery({ queryKey: CHAVES.encomenda(encomenda.id), queryFn: () => api.encomendas.obter(encomenda.id), staleTime: 0 });
   const autorizacoes = (atual.data ?? encomenda).autorizacoes;
   const autorizacao = escolhida ? autorizacoes.find((a) => a.pessoaAutorizadaId === escolhida.id) : undefined;
   const vinculoOk = !!escolhida && escolhida.unidadesVinculadas.includes(encomenda.unidadeId);

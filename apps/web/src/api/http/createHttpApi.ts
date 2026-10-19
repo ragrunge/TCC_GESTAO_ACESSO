@@ -1,21 +1,21 @@
 // Implementação HTTP da interface Api contra o backend NestJS (spec §5.1 e §6). Hoje cobre autenticação, sessão,
 // usuários, unidades, catálogo, busca, pessoas, funcionários, veículos, vínculos, importação, registro de acesso
-// (eventos, presentes, turno), autorizações prévias, restrições, auditoria e relatórios. Encomendas, ocorrências e LGPD
-// lançam 501 até a API real tê-los (a UI mostra "disponível em breve").
+// (eventos, presentes, turno), autorizações prévias, restrições, auditoria, relatórios, encomendas e ocorrências (com
+// anexos cifrados). LGPD lança 501 até a API real tê-la (a UI mostra "disponível em breve").
 // Formatos que o adaptador converte para o domínio: data de calendário 'YYYY-MM-DD' (dia BRT) <-> número do início do
 // dia BRT; placa 'ABC1D23' -> 'ABC-1D23' (como o mock exibe).
 // Formato REST (skill rest-api): todo 2xx com corpo vem em { data }; listas paginadas em
 // { data: [...], pagination: { cursor, hasNextPage } }; 204 sem corpo.
 import type { AxiosRequestConfig } from 'axios';
 import type {
-  AreaComum, AutorizacaoPrevia, ConferenciaComprovante, EventoView, Funcionario, Pessoa, RegistroAlteracao, Restricao, Unidade, UsuarioSistema, Veiculo,
+  AreaComum, AutorizacaoPrevia, AutorizacaoRetirada, ConferenciaComprovante, EventoView, Funcionario, Pessoa, RegistroAlteracao, Restricao, Unidade, UsuarioSistema, Veiculo,
   VinculoUnidade,
 } from '@portaria/domain/types';
 import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
 import type { Rota } from '@portaria/domain/rbac';
 import { brt, toInputDate } from '@portaria/domain/time';
 import type {
-  Api, AutorizacaoView, Autorizador, FichaPessoa, FiltroAlteracoesPagina, FiltroEventos, FiltroEventosPagina, FiltroRelatorio, FuncionarioView,
+  Api, AutorizacaoView, Autorizador, EncomendaView, FichaPessoa, FiltroEncomendas, FiltroOcorrencias, OcorrenciaView, ResumoEncomendas, FiltroAlteracoesPagina, FiltroEventos, FiltroEventosPagina, FiltroRelatorio, FuncionarioView,
   LinhaPlanilha, Pagina, PacoteExportacao, PessoaBusca, PessoaLista, RelatorioImportacao, RelatorioResumo, RestricaoView, ResultadoBuscaGlobal,
   ResultadoImportacao, ResultadoRestricao, ResumoTurno, UnidadeDetalhe, UnidadeResumo, UsuarioComSenhaTemporaria, UsuarioSessao, VinculoView,
 } from '../types';
@@ -25,6 +25,7 @@ import { criarCliente } from './cliente';
 /** Rotas da UI com backend pronto. Atualizar a cada módulo novo implementado na API. */
 export const ROTAS_HTTP: readonly Rota[] = [
   'painel', 'entrada', 'pessoas', 'historico', 'relatorios', 'usuarios', 'unidades', 'cadastro', 'vinculos', 'funcionarios', 'importar',
+  'encomendas', 'ocorrencias',
 ];
 
 /** Operações com backend pronto, para a UI esconder as ações que dariam 501 (`api.suporta`). */
@@ -43,6 +44,10 @@ export const OPERACOES_HTTP: ReadonlySet<string> = new Set([
   'restricoes.verificar', 'restricoes.criar', 'restricoes.aprovar', 'restricoes.revogar', 'restricoes.pendentes',
   'relatorios.resumo', 'relatorios.exportarCsv',
   'auditoria.verificarIntegridade', 'auditoria.alteracoes', 'auditoria.alteracoesPagina', 'auditoria.exportar',
+  'encomendas.listar', 'encomendas.listarPagina', 'encomendas.resumo', 'encomendas.obter', 'encomendas.receber', 'encomendas.entregar',
+  'encomendas.autorizarRetirada',
+  'ocorrencias.listar', 'ocorrencias.listarPagina', 'ocorrencias.obter', 'ocorrencias.criar', 'ocorrencias.alterarStatus',
+  'ocorrencias.vincularEventos', 'ocorrencias.anexar', 'ocorrencias.baixarAnexo',
 ]);
 
 export const MENSAGEM_MODULO_INDISPONIVEL = 'Módulo ainda não disponível na API real';
@@ -173,6 +178,21 @@ function filtroRelatorio(f?: number | FiltroRelatorio): Record<string, string> {
   if (f?.categoria) q.categoria = f.categoria;
   if (f?.meio) q.meio = f.meio;
   return q;
+}
+
+/** A encomenda vem pronta da API (mesma EncomendaView do mock, instantes em epoch ms); aqui só se confere o formato. */
+function encomendaDe(e: EncomendaView): EncomendaView {
+  if (!e || typeof e.id !== 'string' || typeof e.recebidaEm !== 'number' || !Array.isArray(e.autorizacoes)) throw respostaInvalida();
+  return e;
+}
+function ocorrenciaDe(o: OcorrenciaView): OcorrenciaView {
+  if (!o || typeof o.id !== 'string' || typeof o.abertaEm !== 'number' || !Array.isArray(o.historicoStatus) || !Array.isArray(o.eventoIds)) throw respostaInvalida();
+  return { ...o, anexos: Array.isArray(o.anexos) ? o.anexos : [], documentos: Array.isArray(o.documentos) ? o.documentos : [] };
+}
+/** `attachment; filename="anexo-1a2b3c4d.pdf"` -> o nome (só o formato que a API gera; o resto vira "anexo"). */
+export function nomeDoAnexo(disposicao: unknown): string {
+  const m = typeof disposicao === 'string' ? /filename="(anexo-[0-9a-f]{8}\.(?:jpg|png|pdf))"/.exec(disposicao) : null;
+  return m?.[1] ?? 'anexo';
 }
 
 function pacoteDe(corpo: unknown): PacoteExportacao {
@@ -519,8 +539,80 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
         return (await todasAsPaginas<EventoView>('/acessos/presentes')).map(eventoDe).sort((a, b) => b.ocorridoEm - a.ocorridoEm);
       },
     },
-    encomendas: { listar: n(), receber: n(), entregar: n(), autorizarRetirada: n() },
-    ocorrencias: { listar: n(), criar: n(), alterarStatus: n() },
+    encomendas: {
+      async listar(f) { return (await todasAsPaginas<EncomendaView>('/encomendas', f?.status ? { status: f.status } : {})).map(encomendaDe); },
+      async listarPagina(f: FiltroEncomendas = {}) {
+        const params: Record<string, string | number> = { limite: f.limite ?? 50 };
+        if (f.status) params.status = f.status;
+        if (f.unidadeId) params.unidadeId = f.unidadeId;
+        if (f.atrasadasDias !== undefined) params.atrasadasDias = f.atrasadasDias;
+        if (f.cursor) params.cursor = f.cursor;
+        const p = paginaDe<EncomendaView>((await http.get('/encomendas', { params })).data);
+        return { ...p, itens: p.itens.map(encomendaDe) };
+      },
+      async resumo(dias) {
+        const r = dados<ResumoEncomendas>((await http.get('/encomendas/resumo', { params: dias !== undefined ? { dias } : {} })).data);
+        if (typeof r?.aguardando !== 'number' || typeof r.atrasadas !== 'number') throw respostaInvalida();
+        return r;
+      },
+      async obter(eid) { return encomendaDe(dados<EncomendaView>((await http.get(`/encomendas/${id(eid)}`)).data)); },
+      async receber(i) {
+        return encomendaDe(dados<EncomendaView>((await http.post('/encomendas', {
+          unidadeId: i.unidadeId, destinatario: i.destinatario, transportadora: i.transportadora, codigoRastreio: i.codigoRastreio,
+          unidadeConfirmada: i.unidadeConfirmada,
+        })).data));
+      },
+      async entregar(i) {
+        return encomendaDe(dados<EncomendaView>((await http.post(`/encomendas/${id(i.id)}/retirada`, { pessoaId: i.pessoaId })).data));
+      },
+      async autorizarRetirada(i) {
+        const a = dados<AutorizacaoRetirada>((await http.post(`/encomendas/${id(i.encomendaId)}/autorizacoes-retirada`, {
+          pessoaId: i.pessoaId, solicitadaPorPessoaId: i.solicitadaPorPessoaId,
+        })).data);
+        if (!a || typeof a.id !== 'string') throw respostaInvalida();
+        return a;
+      },
+    },
+    ocorrencias: {
+      async listar() { return (await todasAsPaginas<OcorrenciaView>('/ocorrencias')).map(ocorrenciaDe); },
+      async listarPagina(f: FiltroOcorrencias = {}) {
+        const params: Record<string, string | number> = { limite: f.limite ?? 50 };
+        if (f.status?.length) params.status = f.status.join(',');
+        if (f.tipo) params.tipo = f.tipo;
+        if (f.unidadeId) params.unidadeId = f.unidadeId;
+        if (f.cursor) params.cursor = f.cursor;
+        const p = paginaDe<OcorrenciaView>((await http.get('/ocorrencias', { params })).data);
+        return { ...p, itens: p.itens.map(ocorrenciaDe) };
+      },
+      async obter(oid) { return ocorrenciaDe(dados<OcorrenciaView>((await http.get(`/ocorrencias/${id(oid)}`)).data)); },
+      // Os anexos não vão aqui (só nomes, no mock): a tela envia cada arquivo por `anexar` depois de criar.
+      async criar(i) {
+        return ocorrenciaDe(dados<OcorrenciaView>((await http.post('/ocorrencias', {
+          tipo: i.tipo, descricao: i.descricao, unidadeId: i.unidadeId, envolvidos: i.envolvidos ?? '', eventoIds: i.eventoIds ?? [],
+        })).data));
+      },
+      async alterarStatus(oid, status) {
+        return ocorrenciaDe(dados<OcorrenciaView>((await http.post(`/ocorrencias/${id(oid)}/status`, { status })).data));
+      },
+      async vincularEventos(oid, eventoIds) {
+        return ocorrenciaDe(dados<OcorrenciaView>((await http.post(`/ocorrencias/${id(oid)}/eventos`, { eventoIds })).data));
+      },
+      // multipart: o Content-Type explícito evita que o axios converta o FormData em JSON (o padrão do cliente é JSON);
+      // no navegador, o próprio axios o remove para o browser pôr o boundary.
+      async anexar(oid, arquivo) {
+        const fd = new FormData();
+        fd.append('arquivo', arquivo);
+        return ocorrenciaDe(dados<OcorrenciaView>((await http.post(`/ocorrencias/${id(oid)}/anexos`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60_000,
+        })).data));
+      },
+      async baixarAnexo(oid, docId) {
+        const r = await http.get(`/ocorrencias/${id(oid)}/anexos/${id(docId)}`, { responseType: 'blob' });
+        const mime = typeof r.headers['content-type'] === 'string' ? r.headers['content-type'] : 'application/octet-stream';
+        if (!(r.data instanceof Blob)) throw respostaInvalida();
+        return { nome: nomeDoAnexo(r.headers['content-disposition']), mime, conteudo: r.data };
+      },
+    },
     turno: {
       async resumo() {
         const r = dados<ResumoTurno>((await http.get('/turnos/resumo')).data);

@@ -16,6 +16,7 @@ import { CAMPOS_CORRIGIVEIS, ROTULO_CATEGORIA, ROTULO_MEIO, ROTULO_PAPEL } from 
 import { pode, type Acao } from '@portaria/domain/rbac';
 import {
   cadastroCompleto, cpfValido, elegivelRetencao, escalaVigente, estadoAutorizacaoPrevia, justificativaValida, legadoVencido,
+  ANEXO_MAX_BYTES, ANEXO_MAX_POR_OCORRENCIA, ANEXO_TIPOS, DIAS_ENCOMENDA_ATRASADA, diasDesde, ehMimeAnexo,
   MIN_JUSTIFICATIVA, pessoaTemVinculoValido, podeEntregarEncomenda, restricoesVigentes, validarAutorizacaoEntrada,
   validarConferencia, validarDecisaoVinculo, validarEscala, vinculoValido, vinculosValidosDaUnidade,
 } from '@portaria/domain/rules';
@@ -1223,7 +1224,8 @@ export function createMockApi(opts: MockOptions = {}): Api {
           if (i.validaAte < inicioDoDia(agora())) throw new ApiError(422, 'VALIDADE_INVALIDA', 'A validade da restrição não pode estar no passado.');
           if (!d.pessoas.some((p) => p.id === i.pessoaId)) throw new ApiError(404, 'PESSOA_NAO_ENCONTRADA', 'Pessoa não encontrada.');
           if (!paraTodos && !i.unidadeId) throw new ApiError(422, 'UNIDADE_OBRIGATORIA', 'Restrição de unidade exige a unidade.');
-          if (i.unidadeId) unidadeOu404(d, i.unidadeId);
+          // Unidade desativada não recebe restrição nova (2026-10-18, igual à API): UNIDADE_INATIVA
+          if (i.unidadeId) unidadeOu404(d, i.unidadeId, true);
           // CHECK restricao_escopo_unidade_ck: no escopo unidade o solicitante é obrigatório (morador com vínculo válido)
           if (!paraTodos && !i.solicitadaPorPessoaId) throw new ApiError(422, 'SOLICITANTE_OBRIGATORIO', 'Registre o morador que pediu a restrição.');
           if (i.solicitadaPorPessoaId) {
@@ -1497,6 +1499,34 @@ export function createMockApi(opts: MockOptions = {}): Api {
             .map((e) => encomendaView(e, d, ix));
         });
       },
+      async listarPagina(f = {}) {
+        exige('encomenda.ver');
+        return ler((d) => {
+          const ix = indices(d);
+          const n = agora();
+          const sel = d.encomendas.filter((e) => (!f.status || (f.status === 'entregue') === (e.retiradaEm !== null))
+            && (!f.unidadeId || e.unidadeId === f.unidadeId)
+            && (f.atrasadasDias === undefined || (e.retiradaEm === null && diasDesde(e.recebidaEm, n) > f.atrasadasDias)));
+          const p = paginarMemoria(sel, (e) => [-e.recebidaEm, e.id], f);
+          return { ...p, itens: p.itens.map((e) => encomendaView(e, d, ix)) };
+        });
+      },
+      async resumo(dias = DIAS_ENCOMENDA_ATRASADA) {
+        exige('encomenda.ver');
+        return ler((d) => {
+          const n = agora();
+          const pend = d.encomendas.filter((e) => e.retiradaEm === null);
+          return { aguardando: pend.length, atrasadas: pend.filter((e) => diasDesde(e.recebidaEm, n) > dias).length, entregues: d.encomendas.length - pend.length, diasAtraso: dias };
+        });
+      },
+      async obter(id) {
+        exige('encomenda.ver');
+        return ler((d) => {
+          const e = d.encomendas.find((x) => x.id === id);
+          if (!e) throw new ApiError(404, 'ENCOMENDA_NAO_ENCONTRADA', 'Encomenda não encontrada.');
+          return encomendaView(e, d, indices(d));
+        });
+      },
       async receber(i) {
         const u = exige('encomenda.operar');
         return escrever((d) => {
@@ -1566,6 +1596,65 @@ export function createMockApi(opts: MockOptions = {}): Api {
       async listar() {
         exige('ocorrencia.ver');
         return ler((d) => { const ix = indices(d); return [...d.ocorrencias].sort((a, b) => b.abertaEm - a.abertaEm).map((o) => ocorrenciaView(o, ix)); });
+      },
+      async listarPagina(f = {}) {
+        exige('ocorrencia.ver');
+        return ler((d) => {
+          const ix = indices(d);
+          const sel = d.ocorrencias.filter((o) => (!f.status?.length || f.status.includes(o.status)) && (!f.tipo || o.tipo === f.tipo)
+            && (!f.unidadeId || o.unidadeId === f.unidadeId));
+          const p = paginarMemoria(sel, (o) => [-o.abertaEm, o.id], f);
+          return { ...p, itens: p.itens.map((o) => ocorrenciaView(o, ix)) };
+        });
+      },
+      async obter(id) {
+        exige('ocorrencia.ver');
+        return ler((d) => {
+          const o = d.ocorrencias.find((x) => x.id === id);
+          if (!o) throw new ApiError(404, 'OCORRENCIA_NAO_ENCONTRADA', 'Ocorrência não encontrada.');
+          return ocorrenciaView(o, indices(d));
+        });
+      },
+      // RF-28: aditivo (a tabela do banco só aceita INSERT); repetido é ignorado; encerrada é final
+      async vincularEventos(id, eventoIds) {
+        const u = exige('ocorrencia.operar');
+        return escrever((d) => {
+          const o = d.ocorrencias.find((x) => x.id === id);
+          if (!o) throw new ApiError(404, 'OCORRENCIA_NAO_ENCONTRADA', 'Ocorrência não encontrada.');
+          if (o.status === 'encerrada') throw new ApiError(409, 'OCORRENCIA_ENCERRADA', 'Ocorrência encerrada não pode ser alterada.');
+          const ids = new Set(d.eventos.map((e) => e.id));
+          for (const eid of eventoIds) if (!ids.has(eid)) throw new ApiError(404, 'EVENTO_NAO_ENCONTRADO', 'Evento vinculado não encontrado.');
+          const novos = [...new Set(eventoIds)].filter((x) => !o.eventoIds.includes(x));
+          if (novos.length) {
+            o.eventoIds.push(...novos);
+            registrar(d, u, 'ocorrencia.vincularEventos', 'ocorrencia', o.id, null, { eventoIds: novos });
+          }
+          return ocorrenciaView(o, indices(d));
+        });
+      },
+      // O mock guarda só o nome gerado (sem conteúdo); a API real cifra o arquivo. Mesmas regras de tipo, tamanho e quantidade.
+      async anexar(id, arquivo) {
+        const u = exige('ocorrencia.operar');
+        return escrever((d) => {
+          const o = d.ocorrencias.find((x) => x.id === id);
+          if (!o) throw new ApiError(404, 'OCORRENCIA_NAO_ENCONTRADA', 'Ocorrência não encontrada.');
+          if (u.papel === 'porteiro' && o.abertaPorId !== u.id) {
+            negar(u, 'ocorrencia.operar', 'O porteiro só altera ocorrências que ele mesmo abriu.', 'SO_PROPRIA_OCORRENCIA');
+          }
+          if (o.status === 'encerrada') throw new ApiError(409, 'OCORRENCIA_ENCERRADA', 'Ocorrência encerrada não pode ser alterada.');
+          if (o.anexos.length >= ANEXO_MAX_POR_OCORRENCIA) throw new ApiError(422, 'LIMITE_ANEXOS', `Uma ocorrência tem no máximo ${ANEXO_MAX_POR_OCORRENCIA} anexos.`);
+          if (arquivo.size === 0) throw new ApiError(422, 'ARQUIVO_VAZIO', 'O arquivo está vazio.');
+          if (arquivo.size > ANEXO_MAX_BYTES) throw new ApiError(413, 'ARQUIVO_GRANDE_DEMAIS', `O anexo passa de ${ANEXO_MAX_BYTES / 1024 / 1024} MB.`);
+          if (!ehMimeAnexo(arquivo.type)) throw new ApiError(415, 'TIPO_NAO_PERMITIDO', 'Tipo de arquivo não permitido: envie foto (JPEG ou PNG) ou PDF.');
+          const nome = `anexo-${uid('ax').slice(-8)}.${ANEXO_TIPOS[arquivo.type]}`;
+          o.anexos.push(nome);
+          registrar(d, u, 'ocorrencia.anexar', 'ocorrencia', o.id, null, { nome, mime: arquivo.type, tamanhoBytes: arquivo.size });
+          return ocorrenciaView(o, indices(d));
+        });
+      },
+      async baixarAnexo() {
+        exige('documento.ver');
+        throw new ApiError(404, 'ANEXO_SEM_CONTEUDO', 'O modo de demonstração guarda só o nome do anexo.');
       },
       async criar(i) {
         const u = exige('ocorrencia.operar');

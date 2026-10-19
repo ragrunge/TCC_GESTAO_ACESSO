@@ -1,12 +1,12 @@
 // Adaptador HTTP (axios) com o transporte mockado: um `adapter` de teste no lugar da rede. Cobre o desembrulho dos
 // formatos da API, a conversão de erro em ApiError, o aviso único de sessão expirada e o 429 com Retry-After.
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
-import { createHttpApi, diaParaMs, MENSAGEM_MODULO_INDISPONIVEL, msParaDia } from '../api/http/createHttpApi';
+import { createHttpApi, diaParaMs, MENSAGEM_MODULO_INDISPONIVEL, msParaDia, nomeDoAnexo } from '../api/http/createHttpApi';
 import { brt } from '@portaria/domain/time';
 import { segundosRetryAfter } from '../api/http/cliente';
 import { ApiError, type EventoSessao } from '../api/types';
 import { deveRepetir } from '../app/queryClient';
-import { esperaErro } from './helpers';
+import { entrarComo, esperaErro, id, novaApi as novaApiMock, un } from './helpers';
 
 interface Resposta { status: number; data?: unknown; headers?: Record<string, string> }
 type Rota = (c: InternalAxiosRequestConfig) => Resposta | Promise<Resposta>;
@@ -181,18 +181,16 @@ describe('adaptador HTTP (axios)', () => {
 
   it('módulo sem API real: 501 local com mensagem amigável, sem ir à rede', async () => {
     const { api, adapter } = montar(() => ({ status: 200 }));
-    const e = await esperaErro(api.encomendas.listar());
+    const e = await esperaErro(api.lgpd.exportarPessoa('p1'));
     expect(e).toMatchObject({ status: 501, code: 'MODULO_INDISPONIVEL', message: MENSAGEM_MODULO_INDISPONIVEL });
-    expect(await esperaErro(api.ocorrencias.listar())).toMatchObject({ status: 501 });
     expect(adapter).not.toHaveBeenCalled();
     expect(api.modo).toBe('http');
-    expect(api.rotasDisponiveis).toEqual(['painel', 'entrada', 'pessoas', 'historico', 'relatorios', 'usuarios', 'unidades', 'cadastro', 'vinculos', 'funcionarios', 'importar']);
-    expect(api.rotasDisponiveis).not.toContain('encomendas');
-    expect(api.rotasDisponiveis).not.toContain('ocorrencias');
-    for (const op of ['unidades.criar', 'veiculos.criar', 'autorizacoes.criar', 'restricoes.aprovar', 'eventos.criar', 'auditoria.exportar', 'relatorios.exportarCsv']) {
+    expect(api.rotasDisponiveis).toEqual(['painel', 'entrada', 'pessoas', 'historico', 'relatorios', 'usuarios', 'unidades', 'cadastro', 'vinculos', 'funcionarios', 'importar', 'encomendas', 'ocorrencias']);
+    for (const op of ['unidades.criar', 'veiculos.criar', 'autorizacoes.criar', 'restricoes.aprovar', 'eventos.criar', 'auditoria.exportar', 'relatorios.exportarCsv',
+      'encomendas.listarPagina', 'encomendas.entregar', 'encomendas.autorizarRetirada', 'ocorrencias.criar', 'ocorrencias.anexar', 'ocorrencias.baixarAnexo']) {
       expect(api.suporta!(op), op).toBe(true);
     }
-    expect(api.suporta!('encomendas.listar')).toBe(false);
+    expect(api.suporta!('lgpd.exportarPessoa')).toBe(false);
   });
 });
 
@@ -634,5 +632,140 @@ describe('adaptador HTTP: registro de acesso, autorizações, restrições, audi
     await api.relatorios.resumo({ de: brt(2026, 10, 1), ate: brt(2026, 10, 17, 23, 59), unidadeId: 'u-432', meio: 'escala' });
     expect(adapter.mock.calls[4]![0].params).toEqual({ de: '2026-10-01', ate: '2026-10-17', unidadeId: 'u-432', meio: 'escala' });
     expect((await api.relatorios.exportarCsv({})).nomeArquivo).toBe('r.csv');
+  });
+});
+
+describe('adaptador HTTP: encomendas e ocorrências', () => {
+  const corpo = (c: InternalAxiosRequestConfig) => (c.data ? JSON.parse(c.data as string) : undefined);
+  const pagina = (itens: unknown[], cursor: string | null = null) => ({ status: 200, data: { data: itens, pagination: { cursor, hasNextPage: cursor !== null } } });
+  const ENC = {
+    id: 'e1', codigo: 'K12', unidadeId: 'u-432', destinatario: 'Ana', transportadora: 'Correios', codigoRastreio: 'BR1', recebidaPorId: 'u-1',
+    recebidaEm: 1_760_000_000_000, unidadeConfirmada: true, retiradaEm: null, retiradaPorPessoaId: null, retiradaRegistradaPorId: null,
+    retiradaAutorizacaoId: null, unidadeCodigo: 'T4-32', recebidaPorNome: 'João', retiradaPorNome: null, retiradaRegistradaPorNome: null, autorizacoes: [],
+  };
+  const OC = {
+    id: 'o1', codigo: 'OC-2026-001', tipo: 'outro', descricao: 'Portão', unidadeId: null, envolvidos: '', abertaPorId: 'u-1', abertaEm: 1_760_000_000_000,
+    status: 'aberta', abertaPorNome: 'João', historicoStatus: [], anexos: ['anexo-0a1b2c3d.pdf'], eventoIds: [],
+    documentos: [{ id: 'd1', nome: 'anexo-0a1b2c3d.pdf', mime: 'application/pdf', tamanhoBytes: 10, enviadoEm: 1, enviadoPorNome: 'João' }],
+  };
+
+  it('encomendas: filas paginadas com status/atrasadas/cursor na query; resumo; entregar e autorizar pelas rotas de transição', async () => {
+    const { api, adapter } = montar((c) => {
+      if (c.url === '/encomendas' && c.method === 'get') return pagina([ENC], 'c2');
+      if (c.url === '/encomendas/resumo') return { status: 200, data: { data: { aguardando: 3, atrasadas: 1, entregues: 9, diasAtraso: 7 } } };
+      if (c.url === '/encomendas/e1/autorizacoes-retirada') return { status: 201, data: { data: { id: 'ar1', encomendaId: 'e1', pessoaAutorizadaId: 'p3', solicitantePessoaId: 'p2', registradaPorId: 'u-1', registradaEm: 5 } } };
+      return { status: 200, data: { data: ENC } };
+    });
+    const p = await api.encomendas.listarPagina({ status: 'aguardando', atrasadasDias: 7, cursor: 'c1', limite: 20 });
+    expect(p).toMatchObject({ cursor: 'c2', temMais: true, itens: [{ id: 'e1', codigo: 'K12' }] });
+    expect(adapter.mock.calls[0]![0].params).toEqual({ status: 'aguardando', atrasadasDias: 7, cursor: 'c1', limite: 20 });
+    expect(await api.encomendas.resumo()).toEqual({ aguardando: 3, atrasadas: 1, entregues: 9, diasAtraso: 7 });
+    await api.encomendas.receber({ unidadeId: 'u-432', destinatario: 'Ana', transportadora: 'Correios', codigoRastreio: 'BR1', unidadeConfirmada: true });
+    expect(adapter.mock.calls[2]![0]).toMatchObject({ method: 'post', url: '/encomendas' });
+    expect(corpo(adapter.mock.calls[2]![0])).toEqual({ unidadeId: 'u-432', destinatario: 'Ana', transportadora: 'Correios', codigoRastreio: 'BR1', unidadeConfirmada: true });
+    await api.encomendas.entregar({ id: 'e1', pessoaId: 'p2' });
+    expect(adapter.mock.calls[3]![0]).toMatchObject({ method: 'post', url: '/encomendas/e1/retirada' });
+    expect(corpo(adapter.mock.calls[3]![0])).toEqual({ pessoaId: 'p2' });
+    expect(await api.encomendas.autorizarRetirada({ encomendaId: 'e1', pessoaId: 'p3', solicitadaPorPessoaId: 'p2' })).toMatchObject({ id: 'ar1' });
+    expect(corpo(adapter.mock.calls[4]![0])).toEqual({ pessoaId: 'p3', solicitadaPorPessoaId: 'p2' });
+    expect((await api.encomendas.obter('e1')).id).toBe('e1');
+    expect(adapter.mock.calls[5]![0].url).toBe('/encomendas/e1');
+  });
+
+  it('encomendas: erro de regra chega com o código da API; 2xx fora do formato é RESPOSTA_INVALIDA', async () => {
+    const { api } = montar((c) => (c.url === '/encomendas/e1/retirada'
+      ? { status: 422, data: { code: 'PESSOA_SEM_VINCULO', message: 'Esta pessoa não tem vínculo com a T4-32' } }
+      : { status: 200, data: { data: { id: 'e1' } } }));
+    expect(await esperaErro(api.encomendas.entregar({ id: 'e1', pessoaId: 'p9' }))).toMatchObject({ status: 422, code: 'PESSOA_SEM_VINCULO' });
+    expect((await esperaErro(api.encomendas.obter('e1'))).code).toBe('RESPOSTA_INVALIDA');
+  });
+
+  it('ocorrências: lista com status juntos e tipo; criar não manda nomes de anexo; status e eventos pelas rotas de transição', async () => {
+    const { api, adapter } = montar((c) => (c.url === '/ocorrencias' && c.method === 'get' ? pagina([OC]) : { status: 200, data: { data: OC } }));
+    const p = await api.ocorrencias.listarPagina({ status: ['aberta', 'em_andamento'], tipo: 'dano' });
+    expect(p.itens[0]).toMatchObject({ id: 'o1', documentos: [{ id: 'd1' }] });
+    expect(adapter.mock.calls[0]![0].params).toEqual({ status: 'aberta,em_andamento', tipo: 'dano', limite: 50 });
+    await api.ocorrencias.criar({ tipo: 'outro', descricao: 'Portão', unidadeId: null, envolvidos: 'X', anexos: ['foto.png'], eventoIds: ['ev1'] });
+    expect(corpo(adapter.mock.calls[1]![0])).toEqual({ tipo: 'outro', descricao: 'Portão', unidadeId: null, envolvidos: 'X', eventoIds: ['ev1'] });
+    await api.ocorrencias.alterarStatus('o1', 'em_andamento');
+    expect(adapter.mock.calls[2]![0]).toMatchObject({ method: 'post', url: '/ocorrencias/o1/status' });
+    expect(corpo(adapter.mock.calls[2]![0])).toEqual({ status: 'em_andamento' });
+    await api.ocorrencias.vincularEventos('o1', ['ev2']);
+    expect(corpo(adapter.mock.calls[3]![0])).toEqual({ eventoIds: ['ev2'] });
+  });
+
+  it('anexar: multipart com o arquivo no campo "arquivo" (não vira JSON); baixar: blob com o nome do Content-Disposition', async () => {
+    const pdf = new Blob(['%PDF-1.4'], { type: 'application/pdf' });
+    const { api, adapter } = montar((c) => (c.url?.endsWith('/anexos/d1')
+      ? { status: 200, data: pdf, headers: { 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="anexo-0a1b2c3d.pdf"' } }
+      : { status: 201, data: { data: OC } }));
+    const arquivo = new File(['%PDF-1.4'], 'boletim.pdf', { type: 'application/pdf' });
+    await api.ocorrencias.anexar('o1', arquivo);
+    const cfg = adapter.mock.calls[0]![0];
+    expect(cfg).toMatchObject({ method: 'post', url: '/ocorrencias/o1/anexos' });
+    expect(cfg.data).toBeInstanceOf(FormData);
+    expect((cfg.data as FormData).get('arquivo')).toBeInstanceOf(File);
+    const a = await api.ocorrencias.baixarAnexo('o1', 'd1');
+    expect(adapter.mock.calls[1]![0]).toMatchObject({ url: '/ocorrencias/o1/anexos/d1', responseType: 'blob' });
+    expect(a).toMatchObject({ nome: 'anexo-0a1b2c3d.pdf', mime: 'application/pdf' });
+    expect(a.conteudo).toBe(pdf);
+    expect(nomeDoAnexo('attachment; filename="../../etc/passwd"')).toBe('anexo'); // só o formato que a API gera
+  });
+});
+
+describe('mock: encomendas, ocorrências e restrição (mesmo contrato da API)', () => {
+  it('encomendas: listarPagina percorre sem repetir; resumo bate com as filas; obter', async () => {
+    const api = novaApiMock();
+    await entrarComo(api, 'joao.lima');
+    const todos: string[] = [];
+    let cursor: string | null = null;
+    for (let i = 0; i < 20; i++) {
+      const p = await api.encomendas.listarPagina({ status: 'aguardando', limite: 2, cursor });
+      todos.push(...p.itens.map((e) => e.id));
+      if (!p.temMais) break;
+      cursor = p.cursor;
+    }
+    expect(new Set(todos).size).toBe(todos.length);
+    const r = await api.encomendas.resumo();
+    expect(r.aguardando).toBe(todos.length);
+    expect(r.atrasadas).toBe((await api.encomendas.listarPagina({ atrasadasDias: 7, limite: 100 })).itens.length);
+    expect((await api.encomendas.obter(todos[0]!)).id).toBe(todos[0]);
+  });
+
+  it('ocorrências: anexar valida tipo, tamanho e dono; vincular eventos é aditivo; encerrada é final', async () => {
+    const api = novaApiMock();
+    await entrarComo(api, 'joao.lima');
+    const o = await api.ocorrencias.criar({ tipo: 'outro', descricao: 'Portão', unidadeId: null, envolvidos: '' });
+    const png = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'portao.png', { type: 'image/png' });
+    const v = await api.ocorrencias.anexar(o.id, png);
+    expect(v.anexos).toHaveLength(1);
+    expect(v.anexos[0]).toMatch(/^anexo-.+\.png$/);
+    expect((await esperaErro(api.ocorrencias.anexar(o.id, new File(['x'], 'a.txt', { type: 'text/plain' })))).code).toBe('TIPO_NAO_PERMITIDO');
+    expect((await esperaErro(api.ocorrencias.anexar(o.id, new File([], 'v.png', { type: 'image/png' })))).code).toBe('ARQUIVO_VAZIO');
+    expect((await esperaErro(api.ocorrencias.anexar('OC-2026-046', png))).code).toBe('SO_PROPRIA_OCORRENCIA'); // aberta por outro
+    const ev = (await api.eventos.listarPagina({ limite: 1 })).itens[0]!;
+    expect((await api.ocorrencias.vincularEventos(o.id, [ev.id, ev.id])).eventoIds).toEqual([ev.id]);
+    expect((await api.ocorrencias.vincularEventos(o.id, [ev.id])).eventoIds).toEqual([ev.id]);
+    await api.ocorrencias.alterarStatus(o.id, 'em_andamento');
+    await api.ocorrencias.alterarStatus(o.id, 'encerrada');
+    expect((await esperaErro(api.ocorrencias.anexar(o.id, png))).code).toBe('OCORRENCIA_ENCERRADA');
+    expect((await esperaErro(api.ocorrencias.vincularEventos(o.id, [ev.id]))).code).toBe('OCORRENCIA_ENCERRADA');
+    const p = await api.ocorrencias.listarPagina({ status: ['encerrada'], limite: 100 });
+    expect(p.itens.every((x) => x.status === 'encerrada')).toBe(true);
+    expect(p.itens.map((x) => x.id)).toContain(o.id);
+  });
+
+  it('restrição em unidade desativada é UNIDADE_INATIVA (igual à API)', async () => {
+    const api = novaApiMock();
+    await entrarComo(api, 'paula.nogueira');
+    await api.unidades.desativar(un('T4-32'));
+    const e = await esperaErro(api.restricoes.criar({
+      pessoaId: id.marcos, unidadeId: un('T4-32'), motivo: 'Morador não autoriza', validaAte: brt(2026, 12, 31), solicitadaPorPessoaId: id.ana,
+    }));
+    expect(e).toMatchObject({ status: 422, code: 'UNIDADE_INATIVA' });
+    await api.unidades.reativar(un('T4-32'));
+    expect((await api.restricoes.criar({
+      pessoaId: id.marcos, unidadeId: un('T4-32'), motivo: 'Morador não autoriza', validaAte: brt(2026, 12, 31), solicitadaPorPessoaId: id.ana,
+    })).unidadeId).toBe(un('T4-32'));
   });
 });

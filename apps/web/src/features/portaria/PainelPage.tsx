@@ -10,7 +10,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { Cel, CelUnidade, Lista, ListaCab, ListaLinha, Vazio } from '../../components/Table';
 import { useToast } from '../../components/Toast';
 import { ROTULO_CATEGORIA, ROTULO_PAPEL, type EventoView } from '@portaria/domain/types';
-import { descreverJanela, encomendaAtrasada } from '@portaria/domain/rules';
+import { descreverJanela } from '@portaria/domain/rules';
 import { fmtHora, partes } from '@portaria/domain/time';
 import { mensagemErro, useAgora } from '../../app/useAsync';
 import { CHAVES, useInvalidar } from '../../app/consultas';
@@ -42,8 +42,8 @@ export function PainelPage() {
     queryFn: async () => (await api.eventos.listarPagina({ limite: 10, excluirTipos: ['saida'] })).itens,
   });
   const previas = useQuery({ queryKey: CHAVES.autorizacoesHoje, queryFn: () => api.autorizacoes.hoje(), staleTime: 0 });
-  // Encomendas ainda sem API real: sem chamada (nada de 501 em loop); o cartão mostra só o total do turno
-  const encs = useQuery({ queryKey: ['encomendas', 'aguardando'], queryFn: () => api.encomendas.listar({ status: 'aguardando' }), enabled: suporta('encomendas.listar') });
+  // Atrasadas pela contagem da API (sem carregar a fila); sem o módulo, nada de 501 em loop: o cartão mostra só o total do turno
+  const encs = useQuery({ queryKey: CHAVES.encomendasResumo, queryFn: () => api.encomendas.resumo(), enabled: suporta('encomendas.resumo'), staleTime: 0 });
   const pendentes = useQuery({ queryKey: CHAVES.restricoesPendentes, queryFn: () => api.restricoes.pendentes(), staleTime: 0 });
 
   async function aprovar(id: string) {
@@ -59,7 +59,7 @@ export function PainelPage() {
   const turnoTxt = hh >= 6 && hh < 18 ? 'Turno diurno · 06:00 às 18:00' : 'Turno noturno · 18:00 às 06:00';
   const cartoes = [
     { rotulo: 'Pessoas no condomínio', valor: r?.pessoasDentro, sub: 'Ver lista →', para: '/pessoas' },
-    { rotulo: 'Encomendas aguardando', valor: r?.encomendasPendentes, sub: (() => { const n = (encs.data ?? []).filter((e) => encomendaAtrasada(e.recebidaEm, agora)).length; return n > 0 ? `${n} há mais de 7 dias →` : 'Ver encomendas →'; })(), para: '/encomendas' },
+    { rotulo: 'Encomendas aguardando', valor: r?.encomendasPendentes, sub: (() => { const n = encs.data?.atrasadas ?? 0; return n > 0 ? `${n} há mais de ${encs.data!.diasAtraso} dias →` : 'Ver encomendas →'; })(), para: '/encomendas' },
     { rotulo: 'Ocorrências abertas', valor: r?.ocorrenciasAbertas, sub: 'Ver ocorrências →', para: '/ocorrencias' },
   ];
   const cartaoCls = 'flex flex-col gap-1.5 rounded-[10px] border border-[#DCE1E5] bg-white px-5 py-[18px] text-left text-ink hover:border-[#0B5563]';

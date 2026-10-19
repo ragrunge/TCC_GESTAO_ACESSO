@@ -200,7 +200,21 @@ export interface EncomendaView extends Encomenda {
 export interface OcorrenciaView extends Ocorrencia {
   abertaPorNome: string;
   historicoStatus: (MudancaStatusOcorrencia & { porNome: string })[];
+  /**
+   * Anexos com conteúdo guardado (API real: cifrado, spec §9.2). Ausente no mock, que guarda só o nome (`anexos`).
+   * O nome é gerado ("anexo-1a2b3c4d.pdf"): o original não é guardado.
+   */
+  documentos?: AnexoOcorrencia[];
 }
+export interface AnexoOcorrencia { id: string; nome: string; mime: string; tamanhoBytes: number; enviadoEm: number; enviadoPorNome: string }
+/** Conteúdo de um anexo para download (só síndico e administração: `documento.ver`). */
+export interface ArquivoBaixado { nome: string; mime: string; conteudo: Blob }
+
+/** Filas de encomendas (RF-26), paginadas. `atrasadasDias`: só as aguardando há mais de N dias. */
+export interface FiltroEncomendas { status?: 'aguardando' | 'entregue'; unidadeId?: string; atrasadasDias?: number; cursor?: string | null; limite?: number }
+/** Contagens das abas e do painel sem carregar as listas. */
+export interface ResumoEncomendas { aguardando: number; atrasadas: number; entregues: number; diasAtraso: number }
+export interface FiltroOcorrencias { status?: StatusOcorrencia[]; tipo?: TipoOcorrencia; unidadeId?: string; cursor?: string | null; limite?: number }
 
 /** Catálogo leve para a UI: todas as unidades (inclusive inativas, para o histórico) e áreas comuns. */
 export interface Catalogo { unidades: Unidade[]; areasComuns: AreaComum[] }
@@ -386,7 +400,13 @@ export interface Api {
     presentes(): Promise<EventoView[]>;
   };
   encomendas: {
+    /** Lista inteira (mock; no http percorre as páginas). As telas usam `listarPagina`. */
     listar(f?: { status?: 'aguardando' | 'entregue' }): Promise<EncomendaView[]>;
+    /** Uma página, mais recentes primeiro (recebimento). Padrão de 50. */
+    listarPagina(f?: FiltroEncomendas): Promise<Pagina<EncomendaView>>;
+    /** Aguardando, atrasadas (há mais de `dias`, padrão 7) e entregues. */
+    resumo(dias?: number): Promise<ResumoEncomendas>;
+    obter(id: string): Promise<EncomendaView>;
     receber(i: NovaEncomendaInput): Promise<Encomenda>;
     /** RN-08: quem tem vínculo válido na unidade, ou quem foi autorizado (autorizarRetirada). */
     entregar(i: { id: string; pessoaId: string }): Promise<Encomenda>;
@@ -394,8 +414,16 @@ export interface Api {
   };
   ocorrencias: {
     listar(): Promise<OcorrenciaView[]>;
+    /** Uma página, mais recentes primeiro (abertura). Padrão de 50. */
+    listarPagina(f?: FiltroOcorrencias): Promise<Pagina<OcorrenciaView>>;
+    obter(id: string): Promise<OcorrenciaView>;
     criar(i: NovaOcorrenciaInput): Promise<Ocorrencia>;
     alterarStatus(id: string, status: StatusOcorrencia): Promise<Ocorrencia>;
+    /** RF-28: acrescenta eventos (repetidos são ignorados). Encerrada não muda. */
+    vincularEventos(id: string, eventoIds: string[]): Promise<OcorrenciaView>;
+    /** Anexo (JPEG, PNG ou PDF, até 4 MiB, até 5). Porteiro só na que abriu; encerrada não recebe. */
+    anexar(id: string, arquivo: File): Promise<OcorrenciaView>;
+    baixarAnexo(id: string, documentoId: string): Promise<ArquivoBaixado>;
   };
   turno: { resumo(): Promise<ResumoTurno> };
   relatorios: {

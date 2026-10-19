@@ -92,7 +92,7 @@ export function UnidadeDetalhe({ id }: { id: string }) {
         <h1 className="text-[30px] font-semibold">Torre {d?.unidade.torre} · Apartamento {d?.unidade.numero}</h1>
         <div className="flex flex-wrap gap-2">
           {d && ativa && podePrevia && suporta('autorizacoes.criar') && <Button variante="primario" onClick={() => setModo('previa')}>Nova autorização prévia</Button>}
-          {d && podeRestricao && suporta('restricoes.criar') && <Button onClick={() => setModo('restricao')}>Nova restrição</Button>}
+          {d && ativa && podeRestricao && suporta('restricoes.criar') && <Button onClick={() => setModo('restricao')}>Nova restrição</Button>}
           {d && ativa && podeVinculo && suporta('vinculos.criar') && <Button onClick={() => setModo('vinculo')}>Solicitar vínculo</Button>}
           {d && podeEditarUnidade && <Button onClick={() => setModo('editar')}>Editar número</Button>}
           {d && podeEditarUnidade && <Button disabled={acoes.alternarAtivo.isPending} onClick={() => void alternarAtivo()}>{ativa ? 'Desativar unidade' : 'Reativar unidade'}</Button>}
