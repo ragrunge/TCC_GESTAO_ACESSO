@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { Copy, TriangleAlert } from 'lucide-react';
+import { Copy, MessageSquareText, TriangleAlert } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { type NovoUsuarioInput, type UsuarioComSenhaTemporaria } from '../../api';
 import { useAuth, useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
@@ -71,7 +72,9 @@ export function UsuariosPage() {
             <Cel className="text-[14px]">{u.id === eu?.id ? 'Agora (sessão atual)' : u.ultimoAcesso ? fmtDataHora(u.ultimoAcesso) : 'Nunca'}</Cel>
             <Cel className="flex gap-2">
               {u.papel === 'sindico' && !gerenciaSindico ? <span className="self-center text-[13px] text-[#56616B]">Só o síndico gerencia</span> : <>
-              {u.ativo && <button type="button" className={`${botao} border-[#B9C3CA] hover:bg-[#EEF2F4]`} onClick={() => setRedefinir(u)}>Redefinir acesso</button>}
+              {/* A própria senha se troca informando a atual; a API recusa redefinir a si mesmo (AUTO_REDEFINICAO). */}
+              {u.ativo && u.id === eu?.id && <Link to="/trocar-senha" className={`${botao} inline-flex items-center border-[#B9C3CA] hover:bg-[#EEF2F4]`}>Trocar minha senha</Link>}
+              {u.ativo && u.id !== eu?.id && <button type="button" className={`${botao} border-[#B9C3CA] hover:bg-[#EEF2F4]`} onClick={() => setRedefinir(u)}>Redefinir acesso</button>}
               {u.ativo && u.id !== eu?.id && <button type="button" className={`${botao} border-[#FDA29B] text-[#B42318] hover:bg-[#FEF3F2]`} onClick={() => setDesativar(u)}>Desativar</button>}
               {!u.ativo && <button type="button" className={`${botao} border-[#B9C3CA] hover:bg-[#EEF2F4]`} onClick={() => void executar(() => acoes.reativar.mutateAsync(u.id), `${u.nome} reativado(a).`)}>Reativar</button>}
               </>}
@@ -147,9 +150,12 @@ function NovoUsuarioModal({ onClose, onSalvar }: { onClose: () => void; onSalvar
  * (não fica em contexto global, cache do React Query nem storage). A API também não a devolve de novo.
  */
 function SenhaTemporariaModal({ senha, onClose }: { senha: SenhaExibida; onClose: () => void }) {
-  const [copiada, setCopiada] = useState(false);
-  async function copiar() {
-    try { await navigator.clipboard.writeText(senha.senhaTemporaria); setCopiada(true); } catch { setCopiada(false); }
+  const [copiado, setCopiado] = useState<'senha' | 'mensagem' | null>(null);
+  // Texto pronto para colar no WhatsApp/e-mail. A senha é temporária e de troca obrigatória no primeiro acesso.
+  const mensagem = `Acesso ao sistema da portaria\nLogin: ${senha.usuario.login}\nSenha temporária: ${senha.senhaTemporaria}\n`
+    + `Entre em ${window.location.origin} e troque a senha no primeiro acesso.`;
+  async function copiar(texto: string, qual: 'senha' | 'mensagem') {
+    try { await navigator.clipboard.writeText(texto); setCopiado(qual); } catch { setCopiado(null); }
   }
   return (
     <Modal titulo={senha.motivo === 'criado' ? `Usuário ${senha.usuario.nome} criado` : `Acesso de ${senha.usuario.nome} redefinido`}
@@ -169,9 +175,14 @@ function SenhaTemporariaModal({ senha, onClose }: { senha: SenhaExibida; onClose
           <output aria-labelledby="rot-senha-temp" className="flex-1 select-all rounded-lg border border-[#B9C3CA] bg-[#F6F8F9] px-[14px] py-[10px] font-mono text-[18px] tracking-[0.04em]">
             {senha.senhaTemporaria}
           </output>
-          <Button onClick={() => void copiar()}><Copy className="mr-1.5 inline h-4 w-4" aria-hidden />{copiada ? 'Copiada' : 'Copiar'}</Button>
+          <Button onClick={() => void copiar(senha.senhaTemporaria, 'senha')}><Copy className="mr-1.5 inline h-4 w-4" aria-hidden />{copiado === 'senha' ? 'Copiada' : 'Copiar'}</Button>
         </div>
+        <span className="text-[13px] text-[#56616B]">Digite com os hífens, só letras minúsculas e números.</span>
       </div>
+      <Button onClick={() => void copiar(mensagem, 'mensagem')}>
+        <MessageSquareText className="mr-1.5 inline h-4 w-4" aria-hidden />{copiado === 'mensagem' ? 'Mensagem copiada' : 'Copiar mensagem com login, senha e endereço'}
+      </Button>
+      <span className="sr-only" aria-live="polite">{copiado === 'mensagem' ? 'Mensagem copiada.' : copiado === 'senha' ? 'Senha copiada.' : ''}</span>
     </Modal>
   );
 }

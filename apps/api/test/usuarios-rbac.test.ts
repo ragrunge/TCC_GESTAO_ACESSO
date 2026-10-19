@@ -118,7 +118,7 @@ describe('usuários: gestão, síndico protegido, sessões revogadas', () => {
     const r = await api.http().post('/api/v1/usuarios').set('Cookie', cookie).send({ nome: 'Marina Couto', login: 'Marina.Couto', papel: 'porteiro' });
     expect(r.status).toBe(201);
     expect(r.body.data.usuario).toMatchObject({ login: 'marina.couto', deveTrocarSenha: true, ativo: true });
-    expect(r.body.data.senhaTemporaria).toMatch(/^[A-Za-z2-9]{16}$/);
+    expect(r.body.data.senhaTemporaria).toMatch(/^[a-km-np-z2-9]{4}(-[a-km-np-z2-9]{4}){3}$/);
     const dup = await api.http().post('/api/v1/usuarios').set('Cookie', cookie).send({ nome: 'Marina 2', login: 'marina.couto', papel: 'porteiro' });
     expect(dup.status).toBe(409);
     expect(dup.body).toMatchObject({ statusCode: 409, code: 'LOGIN_EXISTENTE', message: 'Já existe um usuário com este login.' });

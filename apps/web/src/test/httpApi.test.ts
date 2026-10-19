@@ -313,8 +313,8 @@ describe('mock cumpre a mesma interface', () => {
     expect((await api.auth.me())?.deveTrocarSenha).toBe(false);
     const r = await api.usuarios.criar({ nome: 'Teste Temp', login: 'teste.temp', papel: 'porteiro' });
     expect(r.usuario.login).toBe('teste.temp');
-    expect(r.senhaTemporaria).toMatch(/^[A-Za-z2-9]{16}$/);
-    expect((await api.usuarios.redefinirAcesso(r.usuario.id)).senhaTemporaria).toHaveLength(16);
+    expect(r.senhaTemporaria).toMatch(/^[a-km-np-z2-9]{4}(-[a-km-np-z2-9]{4}){3}$/);
+    expect((await api.usuarios.redefinirAcesso(r.usuario.id)).senhaTemporaria).toHaveLength(19);
     expect((await esperaErro(api.auth.trocarSenha({ senhaAtual: 'x', novaSenha: 'curta' }))).code).toBe('SENHA_FRACA');
     expect((await api.auth.trocarSenha({ senhaAtual: 'x', novaSenha: 'uma-senha-bem-longa' })).deveTrocarSenha).toBe(false);
   });

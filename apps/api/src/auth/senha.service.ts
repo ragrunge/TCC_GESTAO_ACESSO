@@ -37,8 +37,9 @@ export function problemasDaSenha(senha: string, contexto: { login?: string } = {
   return p;
 }
 
-// Sem 0/O, 1/l/I: a senha temporária é lida em voz alta ou copiada à mão.
-const ALFABETO = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+// A senha temporária é ditada por telefone ou interfone: só minúsculas e dígitos, sem os pares que se confundem
+// (0/o, 1/l). 32 símbolos = 5 bits cada; 16 símbolos = 80 bits, de sobra para senha de uso único com limite de login.
+const ALFABETO = 'abcdefghijkmnpqrstuvwxyz23456789';
 
 @Injectable()
 export class SenhaService {
@@ -97,9 +98,10 @@ export class SenhaService {
     await this.verificar(await this.hashFicticio, senha);
   }
 
+  /** Blocos de 4 separados por hífen (ex.: k7mq-x3rt-w9az-c2hp). O hífen faz parte da senha: digita-se o que se vê. */
   gerarTemporaria(tamanho = 16): string {
     let s = '';
-    for (let i = 0; i < tamanho; i++) s += ALFABETO[randomInt(ALFABETO.length)];
+    for (let i = 0; i < tamanho; i++) s += (i && i % 4 === 0 ? '-' : '') + ALFABETO[randomInt(ALFABETO.length)];
     return s;
   }
 }

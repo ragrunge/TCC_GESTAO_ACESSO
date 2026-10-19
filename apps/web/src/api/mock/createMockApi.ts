@@ -606,11 +606,12 @@ export function createMockApi(opts: MockOptions = {}): Api {
 
   // ===========================================================================================
   /** No mock nenhuma senha é guardada: a temporária só exercita a mesma tela da API real. */
-  const ALFABETO_TEMP = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  // Mesmo formato da API (senha.service.ts): minúsculas e dígitos sem 0/o/1/l, em blocos de 4 com hífen.
+  const ALFABETO_TEMP = 'abcdefghijkmnpqrstuvwxyz23456789';
   const senhaTemporariaDemo = () => {
     const b = new Uint32Array(16);
     globalThis.crypto.getRandomValues(b);
-    return Array.from(b, (n) => ALFABETO_TEMP[n % ALFABETO_TEMP.length]).join('');
+    return Array.from(b, (n, i) => (i && i % 4 === 0 ? '-' : '') + ALFABETO_TEMP[n % ALFABETO_TEMP.length]).join('');
   };
   // O mock nunca exige troca de senha: a demonstração entra com qualquer senha.
   const comSessao = (u: UsuarioSistema) => ({ ...clone(u), deveTrocarSenha: false });
