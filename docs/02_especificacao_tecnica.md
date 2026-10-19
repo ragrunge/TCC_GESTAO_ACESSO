@@ -674,7 +674,7 @@ Respostas da API saem com `Cache-Control: no-store`.
 | POST | /vinculos/:id/encerrar | SI, AD | RF-07, encerramento manual: `{ motivo (15+), data? }`; só aprovado ou legado |
 | POST | /vinculos/:id/regularizar | SI, AD | RN-09 (legado -> aprovado, exige conferência e cadastro completo) |
 | GET | /unidades/:id/autorizadores | SI, AD, PO, AU | moradores com vínculo válido (base do registro de acesso) |
-| GET | /documentos/:id/conteudo | SI, AD | RF-27, RN-10 (foto ou anexo de ocorrência; descriptografa sob demanda; acesso registrado) |
+| GET | /ocorrencias/:id/anexos/:documentoId | SI, AD | RF-27, RN-10 (anexo de ocorrência; decifra sob demanda; acesso registrado em `documento.ler`). Foto de pessoa: ainda não existe |
 | POST/PATCH | /veiculos | SI, AD | RF-08 (a leitura vem no detalhe da unidade; placa ativa única, 409 `PLACA_DUPLICADA`) |
 | GET/POST/PATCH | /funcionarios | SI, AD (GET: AU; o porteiro NÃO lista) | RF-09 (§14 nº 29) |
 | GET | /funcionarios/:id/escala | SI, AD, PO | RF-09: só função, escala, ativo e `emEscalaAgora` da pessoa sendo registrada na entrada (sem dados da pessoa). A validação do meio `escala` é feita pela própria API no `POST /eventos-acesso` |
@@ -717,23 +717,32 @@ segunda entrada simultânea da mesma pessoa ver "já está dentro"; usa advisory
 
 ### 6.4 M3 — Encomendas
 
+Implementado em `apps/api/src/encomendas` (2026-10-18). Mesmas regras do mock; toda escrita grava `audit_log`.
+
 | Método | Rota | Papéis | RF |
 |---|---|---|---|
-| POST | /encomendas | SI, AD, PO | RF-22, RF-23 |
-| GET | /encomendas?status=pendente&unidade_id= | SI, AD, PO, AU | RF-26 |
-| GET | /encomendas/pendentes?dias= | SI, AD, PO, AU | RF-26 |
-| POST | /encomendas/:id/notificar | SI, AD, PO | RF-24 (registra que o interfone foi acionado; fase 2 envia mensagem) |
-| POST | /encomendas/:id/retirada | SI, AD, PO | RF-25, RN-08 |
+| POST | /encomendas | SI, AD, PO | RF-22, RF-23: `unidadeConfirmada` obrigatório (422 `UNIDADE_NAO_CONFIRMADA`); unidade inativa: 422 `UNIDADE_INATIVA` |
+| GET | /encomendas?status=aguardando\|entregue&unidadeId=&atrasadasDias=&limite=&cursor= | SI, AD, PO, AU | RF-26: página por `recebida_em` decrescente |
+| GET | /encomendas/atrasadas?dias=7, /encomendas/resumo?dias=7 | SI, AD, PO, AU | RF-26: atrasada = aguardando há mais de N dias (`encomendaAtrasada` do domain); resumo = `{ aguardando, atrasadas, entregues }` |
+| GET | /encomendas/:id | SI, AD, PO, AU | detalhe com as autorizações de retirada |
+| POST | /encomendas/:id/retirada | SI, AD, PO | RF-25, RN-08: vínculo válido na unidade OU autorização desta encomenda para esta pessoa (422 `PESSOA_SEM_VINCULO`); já retirada: 409 `ENCOMENDA_JA_ENTREGUE` (linha travada; trigger como última barreira) |
+| POST | /encomendas/:id/autorizacoes-retirada | SI, AD, PO | RN-08: solicitante com vínculo válido, retirante com CPF, não a si mesmo, sem duplicar |
+
+`POST /encomendas/:id/notificar` (RF-24) fica para a fase 2 (envio de mensagem); hoje o aviso é pelo interfone.
 
 ### 6.5 M4 — Ocorrências e relatórios
 
+Ocorrências implementadas em `apps/api/src/ocorrencias` (2026-10-18). O status só anda para a frente e encerrada é final
+(também no trigger); o porteiro só altera a ocorrência que abriu (403 `SO_PROPRIA_OCORRENCIA`, gravado em `acesso.negado`).
+
 | Método | Rota | Papéis | RF |
 |---|---|---|---|
-| POST | /ocorrencias | SI, AD, PO | RF-27 |
-| GET | /ocorrencias | SI, AD, PO, AU | RF-27 |
-| PATCH | /ocorrencias/:id | SI, AD, PO (própria, aberta) | RF-27 |
-| PUT | /ocorrencias/:id/eventos | SI, AD, PO | RF-28 |
-| POST | /ocorrencias/:id/anexos | SI, AD, PO | RF-27 |
+| POST | /ocorrencias | SI, AD, PO | RF-27, RF-28 (`eventoIds` na abertura: o link do negado na entrada) |
+| GET | /ocorrencias?status=a,b&tipo=&unidadeId=&limite=&cursor=, /ocorrencias/:id, /ocorrencias/:id/historico | SI, AD, PO, AU | RF-27 |
+| POST | /ocorrencias/:id/status | SI, AD, PO (própria) | RF-27: `{ status }`; pular etapa ou repetir: 422 `TRANSICAO_INVALIDA`; encerrada: 409 |
+| POST | /ocorrencias/:id/eventos | SI, AD, PO | RF-28: **aditivo** (o `app_rw` não tem DELETE em `ocorrencia_evento`); repetido é ignorado. Substitui o `PUT` |
+| POST | /ocorrencias/:id/anexos | SI, AD, PO (própria, não encerrada) | RF-27, RNF-03: multipart, campo `arquivo`; JPEG, PNG ou PDF **pelo conteúdo**, até 4 MiB, até 5 por ocorrência; cifrado (§9.2). O nome original não é guardado |
+| GET | /ocorrencias/:id/anexos/:documentoId | SI, AD (`documento.ver`) | RN-10: download (`attachment`, CSP sandbox), conteúdo decifrado e conferido (GCM + SHA-256); cada leitura grava `documento.ler`. Substitui `GET /documentos/:id/conteudo` |
 | GET | /turnos/resumo | SI, AD, PO | RF-29 (implementado) |
 | GET | /relatorios/resumo?de=&ate=&unidadeId=&categoria=&meio= | SI, AD, AU | RF-30, RF-31 (implementado): acessos por dia e por meio, exceções por responsável, encomendas pendentes por idade, cadastro completo e totais, pelos valores efetivos. Datas `'AAAA-MM-DD'`; padrão: últimos 30 dias; máximo 366 |
 | GET | /relatorios/resumo/csv | SI, AD, AU | O mesmo resumo em CSV (UTF-8 com BOM, `;`), gerado pelo construtor de `@portaria/domain/relatorio` (o mesmo do mock) |
@@ -1089,7 +1098,8 @@ Apagar o texto e o sal mantém a cadeia verificável. Isso seria um `formato_has
 | Algoritmo | AES-256-GCM, nonce de 96 bits único por arquivo (`documento.nonce`) |
 | Chave | Chave-mestra (KEK) fora do banco: variável de ambiente injetada por cofre do provedor ou arquivo com permissão restrita no servidor; nunca no repositório |
 | Hierarquia | Opção recomendada: chave por arquivo (DEK) cifrada pela KEK, armazenada junto aos metadados, para permitir rotação sem recifrar tudo |
-| Rotação | `chave_versao` identifica a KEK usada; recifrar arquivos sob demanda em rotação |
+| Rotação | `chave_versao` identifica a KEK usada; recifrar arquivos sob demanda em rotação (não implementado: documento de outra versão responde 500 `CHAVE_INDISPONIVEL`) |
+| Implementação | `apps/api/src/documentos/cofre.ts`: DEK de 32 bytes por arquivo; `dek_cifrada` = nonce (12) + DEK cifrada pela KEK (32) + tag (16); AAD com o id do documento no conteúdo e na DEK (trocar arquivo entre registros falha); arquivo `<uuid>.bin` no volume `documentos` (`PORTARIA_DOCUMENTOS_DIR`), gravado por arquivo temporário exclusivo + rename |
 | Integridade | O GCM autentica o conteúdo; `sha256_conteudo` permite conferência independente |
 | Em trânsito | TLS 1.2 ou superior; HSTS; cookies `Secure` |
 | Banco | Disco do servidor com criptografia do volume quando o provedor oferecer; backups cifrados antes de sair do servidor |
