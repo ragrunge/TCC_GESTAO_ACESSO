@@ -13,7 +13,10 @@
 # up --wait (migrate roda antes da API) -> /saude. Falhou depois da troca: volta a tag e o commit anteriores.
 # Saída: 0 ok ou nada a fazer; 1 falha (com rollback da imagem); 2 mudança de infra, deploy manual; 75 outro em curso.
 set -euo pipefail
-umask 077
+# 022, não 077: o git checkout grava os arquivos do clone com este umask, e o build copia esses arquivos para imagens
+# que rodam como `node` (o migrate lê drizzle/ em runtime). Com 077 saíram 600 do root e o migrate deu EACCES.
+# O que é sigiloso protege-se pela pasta: o dump local vai para um diretório 700, e o backup-portaria.sh tem umask próprio.
+umask 022
 
 PORTARIA_DIR="${PORTARIA_DIR:-/opt/tcc-portaria}"
 PRE_DEPLOY_DIR="${PRE_DEPLOY_DIR:-/var/backups/tcc-portaria/pre-deploy}"
@@ -70,7 +73,7 @@ if [ -s "$RECIPIENTES" ] && command -v age >/dev/null; then
   "$PORTARIA_DIR/db/backup/backup-portaria.sh"
   BACKUP="ver /var/backups/tcc-portaria/diario"
 else
-  mkdir -p "$PRE_DEPLOY_DIR"
+  install -d -m 700 "$PRE_DEPLOY_DIR"
   BACKUP="$PRE_DEPLOY_DIR/portaria-$(date -u +%Y%m%dT%H%M%SZ)-$TAG_ATUAL.dump"
   log "dump local antes do deploy (sem chave age): $BACKUP"
   docker compose exec -T db pg_dump -U postgres -d portaria -Fc --no-password >"$BACKUP"
