@@ -43,8 +43,8 @@ async function escolherPessoa(page: Page, nome: string) {
   await page.getByRole('option', { name: new RegExp(nome) }).first().click();
   await expect(page.getByRole('button', { name: 'Trocar', exact: true })).toBeVisible();
 }
-async function escolherUnidade(page: Page, torre: string, apto: string) {
-  await page.getByRole('radio', { name: torre, exact: true }).click();
+async function escolherUnidade(page: Page, bloco: string, apto: string) {
+  await page.getByRole('radio', { name: bloco, exact: true }).click();
   await page.getByLabel('Ou digite o apartamento', { exact: false }).fill(apto);
   await expect(page.getByRole('button', { name: 'Alterar', exact: true })).toBeVisible();
 }
@@ -61,7 +61,7 @@ test.describe.serial('API real: registro de acesso na portaria', () => {
   test.beforeAll(async ({ request, playwright }) => {
     test.skip(!(await apiDePe(request)), 'API local fora do ar (docker compose up)');
     test.skip(!SENHA, 'SEED_SENHA_DEV ausente');
-    // Cadastros pela API (administração): os quatro visitantes e a restrição do terceiro na T4-32, a pedido da Ana
+    // Cadastros pela API (administração): os quatro visitantes e a restrição do terceiro na D-32, a pedido da Ana
     const ctx = await playwright.request.newContext();
     try {
       expect((await ctx.post(`${API}/auth/login`, { data: { login: 'paula.nogueira', senha: SENHA } })).ok()).toBe(true);
@@ -72,7 +72,7 @@ test.describe.serial('API real: registro de acesso na portaria', () => {
         ids[nome] = (await r.json()).data.id;
       }
       const ana = (await (await ctx.post(`${API}/pessoas/busca`, { data: { q: 'Ana Ribeiro' } })).json()).data.pessoas[0];
-      const t432 = (await (await ctx.get(`${API}/unidades/T4-32`)).json()).data.unidade.id;
+      const t432 = (await (await ctx.get(`${API}/unidades/D-32`)).json()).data.unidade.id;
       const validaAte = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
       const rest = await ctx.post(`${API}/restricoes`, { data: { pessoaId: ids[V.restrita], unidadeId: t432, motivo: 'Morador não autoriza visitas', validaAte, solicitadaPorPessoaId: ana.id } });
       expect(rest.status()).toBe(201);
@@ -84,7 +84,7 @@ test.describe.serial('API real: registro de acesso na portaria', () => {
     await entrar(page, 'joao.lima', SENHA!, /\/painel$/);
     await page.goto('/entrada');
     await escolherPessoa(page, V.interfone);
-    await escolherUnidade(page, '4', '32');
+    await escolherUnidade(page, 'D', '32');
     await escolherMeio(page, 'Interfone');
     await escolherMorador(page, 'Ana Ribeiro');
     await confirmar(page).click();
@@ -98,7 +98,7 @@ test.describe.serial('API real: registro de acesso na portaria', () => {
     // Já dentro: a segunda entrada é recusada pela API (409)
     await page.goto('/entrada');
     await escolherPessoa(page, V.interfone);
-    await escolherUnidade(page, '4', '32');
+    await escolherUnidade(page, 'D', '32');
     await escolherMeio(page, 'Interfone');
     await escolherMorador(page, 'Ana Ribeiro');
     await confirmar(page).click();
@@ -109,7 +109,7 @@ test.describe.serial('API real: registro de acesso na portaria', () => {
     await entrar(page, 'joao.lima', SENHA!, /\/painel$/);
     await page.goto('/entrada');
     await escolherPessoa(page, V.excecao);
-    await escolherUnidade(page, '4', '32');
+    await escolherUnidade(page, 'D', '32');
     await escolherMeio(page, 'Interfone');
     await escolherMorador(page, 'Ana Ribeiro');
     await page.getByRole('button', { name: 'Morador recusou' }).click();
@@ -117,7 +117,7 @@ test.describe.serial('API real: registro de acesso na portaria', () => {
     await expect(page.getByRole('combobox', { name: /Buscar por nome/ })).toBeVisible();
 
     await escolherPessoa(page, V.excecao);
-    await escolherUnidade(page, '4', '32');
+    await escolherUnidade(page, 'D', '32');
     await escolherMeio(page, 'Exceção do porteiro');
     await page.getByLabel(/Justificativa \(obrigatória/).fill('Morador não atende o interfone');
     await confirmar(page).click();
@@ -134,10 +134,10 @@ test.describe.serial('API real: registro de acesso na portaria', () => {
     await entrar(page, 'joao.lima', SENHA!, /\/painel$/);
     await page.goto('/entrada');
     await escolherPessoa(page, V.restrita);
-    await escolherUnidade(page, '4', '32');
+    await escolherUnidade(page, 'D', '32');
     const modal = page.getByRole('alertdialog');
     await expect(modal).toBeVisible();
-    await expect(modal).toContainText('Entrada não permitida para T4-32');
+    await expect(modal).toContainText('Entrada não permitida para D-32');
     await expect(modal).toContainText('Morador não autoriza visitas');
     await expect(modal.getByRole('button')).toHaveText([/Registrar ocorrência/, /Cancelar/]); // não há como liberar
     await modal.getByRole('button', { name: 'Cancelar' }).click();
@@ -153,7 +153,7 @@ test.describe.serial('API real: registro de acesso na portaria', () => {
     await entrar(page, 'joao.lima', SENHA!, /\/painel$/);
     await page.goto('/entrada?retroativo=1');
     await escolherPessoa(page, V.retro);
-    await escolherUnidade(page, '4', '32');
+    await escolherUnidade(page, 'D', '32');
     await escolherMeio(page, 'Interfone');
     await escolherMorador(page, 'Ana Ribeiro');
     await page.getByLabel('Data real do acesso').fill(ontemSP());
@@ -196,7 +196,7 @@ test.describe.serial('API real: registro de acesso na portaria', () => {
     expect(download.suggestedFilename()).toMatch(/^evento-EV-\d{6}-\d{8}-\d{4}\.jsonl$/);
     const conteudo = readFileSync(await download.path(), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     expect(conteudo[0]).toMatchObject({ tipo: 'manifesto', versao: 2, modo: 'evento_isolado', quantidade: 1 });
-    expect(conteudo[1]).toMatchObject({ tipo: 'evento', evento: { hash }, exibicao: { pessoa: V.interfone, unidade: 'T4-32' } });
+    expect(conteudo[1]).toMatchObject({ tipo: 'evento', evento: { hash }, exibicao: { pessoa: V.interfone, unidade: 'D-32' } });
     expect(conteudo[2]).toMatchObject({ tipo: 'resumo', quantidade: 1, ultimoHash: hash });
   });
 });

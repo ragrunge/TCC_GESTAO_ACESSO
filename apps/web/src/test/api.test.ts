@@ -12,7 +12,7 @@ describe('restrição (RF-16)', () => {
     await entrarComo(api, 'joao.lima');
     const antes = (await api.eventos.listar()).length;
     const erro = await esperaErro(api.eventos.criar({
-      pessoaId: id.bruno, unidadeDestinoId: un('T4-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana,
+      pessoaId: id.bruno, unidadeDestinoId: un('D-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana,
     }));
     expect(erro.status).toBe(422);
     expect(erro.code).toBe('PESSOA_EM_RESTRICAO');
@@ -28,21 +28,21 @@ describe('restrição (RF-16)', () => {
     const api = novaApi();
     await entrarComo(api, 'paula.nogueira');
     const r = await api.restricoes.criar({
-      pessoaId: id.marcos, unidadeId: un('T4-32'), motivo: 'Teste', validaAte: brt(2026, 12, 31), solicitadaPorPessoaId: id.ana, paraTodoCondominio: true,
+      pessoaId: id.marcos, unidadeId: un('D-32'), motivo: 'Teste', validaAte: brt(2026, 12, 31), solicitadaPorPessoaId: id.ana, paraTodoCondominio: true,
     });
     expect(r.escopo).toBe('condominio');
-    expect((await api.restricoes.verificar(id.marcos, un('T7-11'))).restrita).toBe(false);
+    expect((await api.restricoes.verificar(id.marcos, un('G-11'))).restrita).toBe(false);
     expect((await esperaErro(api.restricoes.aprovar(r.id))).status).toBe(403);
     await entrarComo(api, 'roberto.faria');
     await api.restricoes.aprovar(r.id);
-    expect((await api.restricoes.verificar(id.marcos, un('T7-11'))).restrita).toBe(true);
+    expect((await api.restricoes.verificar(id.marcos, un('G-11'))).restrita).toBe(true);
   });
 
   it('restrição para todo o condomínio barra funcionário que entra sem unidade de destino', async () => {
     const api = novaApi();
     await entrarComo(api, 'paula.nogueira');
     const r = await api.restricoes.criar({
-      pessoaId: id.valter, unidadeId: un('T4-32'), motivo: 'Funcionário desligado', validaAte: brt(2026, 12, 31), solicitadaPorPessoaId: null, paraTodoCondominio: true,
+      pessoaId: id.valter, unidadeId: un('D-32'), motivo: 'Funcionário desligado', validaAte: brt(2026, 12, 31), solicitadaPorPessoaId: null, paraTodoCondominio: true,
     });
     await entrarComo(api, 'roberto.faria');
     await api.restricoes.aprovar(r.id);
@@ -58,10 +58,10 @@ describe('entrada de não morador', () => {
   it('RN-01: rejeita sem autorizador (422)', async () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
-    const e1 = await esperaErro(api.eventos.criar({ pessoaId: id.marcos, unidadeDestinoId: un('T4-32') }));
+    const e1 = await esperaErro(api.eventos.criar({ pessoaId: id.marcos, unidadeDestinoId: un('D-32') }));
     expect(e1.status).toBe(422);
     expect(e1.code).toBe('AUTORIZADO_POR_OBRIGATORIO');
-    const e2 = await esperaErro(api.eventos.criar({ pessoaId: id.marcos, unidadeDestinoId: un('T4-32'), autorizadoPorTipo: 'interfone' }));
+    const e2 = await esperaErro(api.eventos.criar({ pessoaId: id.marcos, unidadeDestinoId: un('D-32'), autorizadoPorTipo: 'interfone' }));
     expect(e2.status).toBe(422);
     expect(e2.code).toBe('AUTORIZADO_POR_SEM_IDENTIFICACAO');
   });
@@ -69,7 +69,7 @@ describe('entrada de não morador', () => {
   it('registra entrada por interfone com morador de vínculo válido', async () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
-    const ev = await api.eventos.criar({ pessoaId: id.marcos, unidadeDestinoId: un('T4-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana });
+    const ev = await api.eventos.criar({ pessoaId: id.marcos, unidadeDestinoId: un('D-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana });
     expect(ev.tipo).toBe('entrada');
     expect(ev.autorizadoPorNome).toBe('Ana Ribeiro');
     expect(ev.operadorNome).toBe('João Lima');
@@ -78,7 +78,7 @@ describe('entrada de não morador', () => {
   it('exceção sem justificativa de 15+ caracteres é rejeitada (RF-17)', async () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
-    const base = { pessoaId: id.enel, unidadeDestinoId: un('T2-24'), autorizadoPorTipo: 'excecao_porteiro' as const };
+    const base = { pessoaId: id.enel, unidadeDestinoId: un('B-24'), autorizadoPorTipo: 'excecao_porteiro' as const };
     expect((await esperaErro(api.eventos.criar({ ...base }))).code).toBe('JUSTIFICATIVA_OBRIGATORIA');
     expect((await esperaErro(api.eventos.criar({ ...base, justificativa: 'curta demais' }))).code).toBe('JUSTIFICATIVA_OBRIGATORIA');
     const ok = await api.eventos.criar({ ...base, justificativa: 'Serviço público (luz, água, gás)' });
@@ -88,9 +88,9 @@ describe('entrada de não morador', () => {
   it('autorização prévia fora da janela de horário não vale; dentro da janela vale (RN-07)', async () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
-    const ap = (await api.autorizacoes.vigentes(id.lumen, un('T6-52')))[0];
+    const ap = (await api.autorizacoes.vigentes(id.lumen, un('F-04')))[0];
     expect(ap.estado).toBe('fora_da_janela'); // 14:32, janela 15h–17h
-    const dados = { pessoaId: id.lumen, unidadeDestinoId: un('T6-52'), autorizadoPorTipo: 'autorizacao_previa' as const, autorizacaoPreviaId: ap.id };
+    const dados = { pessoaId: id.lumen, unidadeDestinoId: un('F-04'), autorizadoPorTipo: 'autorizacao_previa' as const, autorizacaoPreviaId: ap.id };
     expect((await esperaErro(api.eventos.criar(dados))).code).toBe('AUTORIZACAO_PREVIA_INVALIDA');
     relogio.congelar(brt(2026, 10, 9, 15, 30));
     const ev = await api.eventos.criar(dados);
@@ -100,10 +100,10 @@ describe('entrada de não morador', () => {
   it('autorização prévia vencida não vale', async () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
-    const ap = (await api.autorizacoes.vigentes(id.lumen, un('T6-52')))[0];
+    const ap = (await api.autorizacoes.vigentes(id.lumen, un('F-04')))[0];
     relogio.congelar(brt(2026, 10, 10, 15, 30)); // dia seguinte: validade era 09/10
     expect((await esperaErro(api.eventos.criar({
-      pessoaId: id.lumen, unidadeDestinoId: un('T6-52'), autorizadoPorTipo: 'autorizacao_previa', autorizacaoPreviaId: ap.id,
+      pessoaId: id.lumen, unidadeDestinoId: un('F-04'), autorizadoPorTipo: 'autorizacao_previa', autorizacaoPreviaId: ap.id,
     }))).code).toBe('AUTORIZACAO_PREVIA_INVALIDA');
   });
 
@@ -111,7 +111,7 @@ describe('entrada de não morador', () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
     const e = await esperaErro(api.autorizacoes.criar({
-      unidadeId: un('T4-32'), pessoaId: id.marcos, validaAte: null, diasSemana: null, horaInicio: null, horaFim: null, solicitadaPorPessoaId: id.ana,
+      unidadeId: un('D-32'), pessoaId: id.marcos, validaAte: null, diasSemana: null, horaInicio: null, horaFim: null, solicitadaPorPessoaId: id.ana,
     }));
     expect(e.code).toBe('VALIDADE_OBRIGATORIA');
   });
@@ -119,8 +119,8 @@ describe('entrada de não morador', () => {
   it('vínculo legado vale para interfone e para retirada de encomenda', async () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
-    // Lúcia Ribeiro é dependente com vínculo LEGADO na T4-32
-    const ev = await api.eventos.criar({ pessoaId: id.marcia, unidadeDestinoId: un('T4-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.lucia });
+    // Lúcia Ribeiro é dependente com vínculo LEGADO na D-32
+    const ev = await api.eventos.criar({ pessoaId: id.marcia, unidadeDestinoId: un('D-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.lucia });
     expect(ev.autorizadoPorNome).toBe('Lúcia Ribeiro');
     const enc = await api.encomendas.entregar({ id: 'K108', pessoaId: id.lucia });
     expect(enc.retiradaPorPessoaId).toBe(id.lucia);
@@ -129,7 +129,7 @@ describe('entrada de não morador', () => {
   it('funcionário do condomínio entra por Escala; diarista (prestador) não pode usar Escala', async () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
-    const e = await esperaErro(api.eventos.criar({ pessoaId: 'pe-juliana-costa', unidadeDestinoId: un('T4-32'), autorizadoPorTipo: 'escala' }));
+    const e = await esperaErro(api.eventos.criar({ pessoaId: 'pe-juliana-costa', unidadeDestinoId: un('D-32'), autorizadoPorTipo: 'escala' }));
     expect(e.code).toBe('MEIO_INVALIDO_PARA_TIPO');
     // Válter já está dentro (seed): registra saída e entrada de novo via escala
     const presente = (await api.eventos.presentes()).find((p) => p.pessoaId === id.valter)!;
@@ -143,7 +143,7 @@ describe('entrada de não morador', () => {
     await entrarComo(api, 'joao.lima');
     const real = brt(2026, 10, 9, 12, 0);
     const ev = await api.eventos.criar({
-      pessoaId: id.marcos, unidadeDestinoId: un('T4-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana,
+      pessoaId: id.marcos, unidadeDestinoId: un('D-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana,
       retroativo: true, ocorridoEm: real, formularioContingencia: '12',
     });
     expect(ev.retroativo).toBe(true);
@@ -151,7 +151,7 @@ describe('entrada de não morador', () => {
     expect(ev.ocorridoEm).toBe(real);
     expect(ev.registradoEm).toBeGreaterThan(ev.ocorridoEm);
     const futuro = await esperaErro(api.eventos.criar({
-      pessoaId: id.marcia, unidadeDestinoId: un('T4-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana,
+      pessoaId: id.marcia, unidadeDestinoId: un('D-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana,
       retroativo: true, ocorridoEm: brt(2026, 10, 9, 18, 0),
     }));
     expect(futuro.code).toBe('DATA_INCONSISTENTE');
@@ -162,7 +162,7 @@ describe('trilha append-only (RN-04, RNF-01)', () => {
   it('saída cria um NOVO evento ligado à entrada e não altera a entrada', async () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
-    const entrada = await api.eventos.criar({ pessoaId: id.marcos, unidadeDestinoId: un('T4-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana });
+    const entrada = await api.eventos.criar({ pessoaId: id.marcos, unidadeDestinoId: un('D-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana });
     const antes = JSON.stringify(await api.eventos.obter(entrada.id));
     const total = (await api.eventos.listar()).length;
     const saida = await api.eventos.registrarSaida(entrada.id);
@@ -227,7 +227,7 @@ describe('vínculos (RN-03, RF-06)', () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
     const e = await esperaErro(api.vinculos.criar({
-      pessoaId: id.marcos, unidadeId: un('T4-32'), tipo: 'dependente', vigenciaInicio: brt(2026, 10, 9), vigenciaFim: null,
+      pessoaId: id.marcos, unidadeId: un('D-32'), tipo: 'dependente', vigenciaInicio: brt(2026, 10, 9), vigenciaFim: null,
       solicitadoPor: 'portaria',
     }));
     expect(e.status).toBe(403);
@@ -268,7 +268,7 @@ describe('vínculos (RN-03, RF-06)', () => {
     const e = await esperaErro(api.encomendas.entregar({ id: 'K102', pessoaId: id.rodrigo }));
     expect(e.code).toBe('PESSOA_SEM_VINCULO');
     // sem vínculo válido não há acesso de morador: segue a regra de visitante (RN-01)
-    expect((await esperaErro(api.eventos.criar({ pessoaId: id.rodrigo, unidadeDestinoId: un('T9-13') }))).code).toBe('AUTORIZADO_POR_OBRIGATORIO');
+    expect((await esperaErro(api.eventos.criar({ pessoaId: id.rodrigo, unidadeDestinoId: un('I-13') }))).code).toBe('AUTORIZADO_POR_OBRIGATORIO');
   });
 });
 
@@ -284,7 +284,7 @@ describe('encomendas (RN-08, RF-23)', () => {
   it('recebimento exige confirmação da unidade', async () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
-    const base = { unidadeId: un('T7-11'), destinatario: 'Carla Mendes', transportadora: 'Correios', codigoRastreio: 'X1' };
+    const base = { unidadeId: un('G-11'), destinatario: 'Carla Mendes', transportadora: 'Correios', codigoRastreio: 'X1' };
     expect((await esperaErro(api.encomendas.receber({ ...base, unidadeConfirmada: false }))).code).toBe('UNIDADE_NAO_CONFIRMADA');
     const ok = await api.encomendas.receber({ ...base, unidadeConfirmada: true });
     expect(ok.recebidaPorId).toBe('u1');
@@ -296,7 +296,7 @@ describe('RBAC e usuários', () => {
   it('auditor é somente leitura; administração gerencia usuários, exceto síndico (RNF-04); síndico tudo', async () => {
     const api = novaApi();
     await entrarComo(api, 'luiza.campos');
-    expect((await esperaErro(api.eventos.criar({ pessoaId: id.marcos, unidadeDestinoId: un('T4-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana }))).status).toBe(403);
+    expect((await esperaErro(api.eventos.criar({ pessoaId: id.marcos, unidadeDestinoId: un('D-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana }))).status).toBe(403);
     expect((await esperaErro(api.usuarios.listar())).status).toBe(403);
     await entrarComo(api, 'paula.nogueira');
     expect((await api.usuarios.listar()).length).toBeGreaterThan(0); // spec 5.2: administração gerencia usuários

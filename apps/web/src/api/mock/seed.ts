@@ -1,9 +1,9 @@
 // Dados simulados. Reaproveitam os seeds do protótipo aprovado (Portaria.dc.html), com as correções do arquivo 04:
-//  - 165 unidades (torres 1–8: 5 andares x 4 aptos; torre 9: 11–15) e remapeamento das unidades inexistentes;
+//  - unidades da estrutura configurada (ESTRUTURA_PADRAO de @portaria/domain/units: 9 blocos, A a I, 162 unidades);
 //  - diaristas como Prestador; funcionário do condomínio Válter Souza (zelador) entrando por Escala;
 //  - vínculos sempre solicitados pela administração (RN-03); saída como novo evento (RN-04).
-// Remapeamento de unidades (protótipo -> app): T1-73->T1-33, T3-91->T3-51, T5-63->T5-43, T5-81->T5-51,
-// T2-104->T2-24, T2-61->T2-41, T9-21->T9-13, T9-33->T9-14. Mantidas: T4-32, T7-11, T6-52, T3-42, T8-42 (existe), etc.
+// Unidades do protótipo (torres numéricas) -> blocos: torre N vira a N-ésima letra (T4-32 -> D-32); números que não
+// existem na estrutura foram remapeados (tabela em apps/web/README.md, "Remapeamento de unidades").
 // Alinhado ao schema (v3): unidade, área comum e ponto de acesso têm id uuid (determinístico, ver seedUtil); as
 // entidades guardam ids de usuário, não nomes; telefone só com dígitos; documentoBusca = HMAC-SHA256 do CPF.
 import type {
@@ -32,8 +32,8 @@ interface Rascunho {
 
 export async function criarSeed(): Promise<DbData> {
   const rand = prng(20261009);
-  const unidades: Unidade[] = gerarUnidades().map((u) => ({ id: idUnidadeSeed(u.torre, u.numero), torre: u.torre, numero: u.numero, ativo: true }));
-  /** Código "T4-32" -> id da unidade (o seed é escrito com os códigos do protótipo). */
+  const unidades: Unidade[] = gerarUnidades().map((u) => ({ id: idUnidadeSeed(u.bloco, u.numero), bloco: u.bloco, numero: u.numero, ativo: true }));
+  /** Código "D-32" -> id da unidade (o seed é escrito com os códigos do protótipo, já em blocos). */
   const U = (codigo: string) => {
     const u = unidades.find((x) => codigoUnidade(x) === codigo);
     if (!u) throw new Error(`unidade do seed não encontrada: ${codigo}`);
@@ -106,47 +106,47 @@ export async function criarSeed(): Promise<DbData> {
   }
 
   // Moradores e pedidos de vínculo do protótipo (unidades remapeadas)
-  vinculo('Ana Ribeiro', 'T4-32', 'proprietario', 'aprovado');
-  vinculo('Paulo Ribeiro', 'T4-32', 'dependente', 'aprovado');
-  vinculo('Lúcia Ribeiro', 'T4-32', 'dependente', 'legado');
-  vinculo('Carla Mendes', 'T7-11', 'inquilino', 'aprovado', { vigenciaFim: dt('31/07/2027') });
-  vinculo('Helena Duarte', 'T2-24', 'proprietario', 'aprovado');
-  vinculo('Otávio Duarte', 'T2-24', 'dependente', 'legado');
-  vinculo('Marta Siqueira', 'T9-13', 'proprietario', 'aprovado');
-  vinculo('Sílvia Prado', 'T6-52', 'proprietario', 'aprovado');
-  vinculo('Hugo Prado', 'T6-52', 'dependente', 'aprovado');
-  vinculo('Patrícia Ramos', 'T3-14', 'proprietario', 'aprovado');
-  vinculo('Sandra Ferraz Teles', 'T3-42', 'proprietario', 'legado');
-  vinculo('Hélio Prates', 'T5-51', 'proprietario', 'encerrado', {
+  vinculo('Ana Ribeiro', 'D-32', 'proprietario', 'aprovado');
+  vinculo('Paulo Ribeiro', 'D-32', 'dependente', 'aprovado');
+  vinculo('Lúcia Ribeiro', 'D-32', 'dependente', 'legado');
+  vinculo('Carla Mendes', 'G-11', 'inquilino', 'aprovado', { vigenciaFim: dt('31/07/2027') });
+  vinculo('Helena Duarte', 'B-24', 'proprietario', 'aprovado');
+  vinculo('Otávio Duarte', 'B-24', 'dependente', 'legado');
+  vinculo('Marta Siqueira', 'I-13', 'proprietario', 'aprovado');
+  vinculo('Sílvia Prado', 'F-04', 'proprietario', 'aprovado');
+  vinculo('Hugo Prado', 'F-04', 'dependente', 'aprovado');
+  vinculo('Patrícia Ramos', 'C-14', 'proprietario', 'aprovado');
+  vinculo('Sandra Ferraz Teles', 'C-42', 'proprietario', 'legado');
+  vinculo('Hélio Prates', 'E-03', 'proprietario', 'encerrado', {
     vigenciaFim: dt('15/09/2026'), decididoPorId: ID_PAULA, decididoEm: dt('10/09/2026 09:30'), encerradoEm: dt('15/09/2026 09:00'),
     justificativa: 'Venda do imóvel registrada em matrícula.',
   });
   // Autorizadores citados nos eventos do protótipo
-  vinculo('Ricardo Gomes', 'T1-33', 'proprietario', 'aprovado');
-  vinculo('Teresa Almeida', 'T8-42', 'proprietario', 'aprovado');
-  vinculo('Cecília Batista', 'T2-41', 'proprietario', 'aprovado');
-  vinculo('Mônica Vieira', 'T3-51', 'proprietario', 'aprovado');
-  vinculo('Renato Farias', 'T1-12', 'proprietario', 'aprovado');
-  vinculo('Gustavo Lins', 'T6-22', 'proprietario', 'aprovado');
-  vinculo('Rita Sampaio', 'T5-43', 'proprietario', 'aprovado');
+  vinculo('Ricardo Gomes', 'A-33', 'proprietario', 'aprovado');
+  vinculo('Teresa Almeida', 'H-42', 'proprietario', 'aprovado');
+  vinculo('Cecília Batista', 'B-41', 'proprietario', 'aprovado');
+  vinculo('Mônica Vieira', 'C-03', 'proprietario', 'aprovado');
+  vinculo('Renato Farias', 'A-12', 'proprietario', 'aprovado');
+  vinculo('Gustavo Lins', 'F-22', 'proprietario', 'aprovado');
+  vinculo('Rita Sampaio', 'E-43', 'proprietario', 'aprovado');
 
   const T = (hhmm: string, dia = '09/10/2026') => dt(`${dia} ${hhmm}`);
 
   // Pedidos de vínculo pendentes (V1–V4). RN-03: sempre criados pela administração. Sem conferência registrada:
   // a administração confere o comprovante (recebido por e-mail) e registra na tela de Vínculos antes de aprovar (RF-05).
-  vinculo('Rodrigo Alves', 'T9-13', 'inquilino', 'pendente', {
+  vinculo('Rodrigo Alves', 'I-13', 'inquilino', 'pendente', {
     id: 'V1', vigenciaInicio: dt('01/10/2026'), vigenciaFim: dt('30/09/2027'), solicitadoEm: dt('01/10/2026 18:40'),
     solicitadoPor: 'Paula Nogueira (Administração), a partir de documento entregue na administração em 01/10',
     nota: 'Relacionado à ocorrência OC-2026-044: o solicitante pediu cópia das chaves na portaria em 01/10 e foi orientado a procurar a administração.',
   });
-  vinculo('Rafael Mendes', 'T7-11', 'dependente', 'pendente', {
+  vinculo('Rafael Mendes', 'G-11', 'dependente', 'pendente', {
     id: 'V2', vigenciaInicio: dt('06/10/2026'), solicitadoEm: dt('06/10/2026 10:05'),
-    solicitadoPor: 'Paula Nogueira (Administração), a pedido de Carla Mendes (inquilina, T7-11)',
+    solicitadoPor: 'Paula Nogueira (Administração), a pedido de Carla Mendes (inquilina, G-11)',
   });
-  vinculo('Beatriz Okada', 'T5-51', 'proprietario', 'pendente', {
+  vinculo('Beatriz Okada', 'E-03', 'proprietario', 'pendente', {
     id: 'V3', vigenciaInicio: dt('15/09/2026'), solicitadoEm: dt('03/10/2026 14:20'), solicitadoPor: 'Paula Nogueira (Administração)',
   });
-  vinculo('Lucas Ferraz', 'T3-42', 'inquilino', 'pendente', {
+  vinculo('Lucas Ferraz', 'C-42', 'inquilino', 'pendente', {
     id: 'V4', vigenciaInicio: dt('01/11/2026'), vigenciaFim: dt('31/10/2028'), solicitadoEm: dt('08/10/2026 09:30'),
     solicitadoPor: 'Paula Nogueira (Administração), a partir de e-mail da Imobiliária Vértice',
   });
@@ -199,7 +199,7 @@ export async function criarSeed(): Promise<DbData> {
   // - visitante cadastrado em 2023 que nunca mais voltou (mais de 3 anos sem acesso);
   // - ex-morador cujo único vínculo terminou em 31/05/2023 (mais de 3 anos).
   pessoa('Osvaldo Brandão', 'visitante', { criadoEm: dt('10/03/2023 15:20') });
-  vinculo('Jurema Castilho', 'T8-24', 'proprietario', 'encerrado', {
+  vinculo('Jurema Castilho', 'H-24', 'proprietario', 'encerrado', {
     id: 'V-JUREMA', vigenciaInicio: dt('01/02/2019'), vigenciaFim: dt('31/05/2023'), solicitadoEm: dt('01/02/2019 10:00'),
     solicitadoPor: 'Cadastro anterior ao sistema (livro da administração)', decididoPorId: ID_PAULA, decididoEm: dt('01/02/2019 10:00'),
     encerradoEm: dt('31/05/2023 18:00'), justificativa: 'Mudança registrada pela administração.',
@@ -221,10 +221,10 @@ export async function criarSeed(): Promise<DbData> {
   });
 
   // ----- Veículos (~175) ----------------------------------------------------------------------
-  const veic = (u: string, placa: string, modelo: string, cor: string) => veiculos.push({ id: `ve-${placa.replace('-', '')}`, unidadeId: /^T\d/.test(u) ? U(u) : u, placa, modelo, cor });
-  veic('T4-32', 'FKR-2C41', 'Honda Fit', 'prata'); veic('T4-32', 'GHT-8J20', 'VW T-Cross', 'branco');
-  veic('T7-11', 'EQP-4B77', 'Fiat Argo', 'cinza'); veic('T2-24', 'DXA-1F03', 'Jeep Renegade', 'verde');
-  veic('T9-13', 'BRA-2E19', 'Toyota Corolla', 'preto'); veic('T3-14', 'FJT-6H22', 'Hyundai HB20', 'branco');
+  const veic = (u: string, placa: string, modelo: string, cor: string) => veiculos.push({ id: `ve-${placa.replace('-', '')}`, unidadeId: /^[A-Z0-9]{1,3}-\d+$/.test(u) ? U(u) : u, placa, modelo, cor });
+  veic('D-32', 'FKR-2C41', 'Honda Fit', 'prata'); veic('D-32', 'GHT-8J20', 'VW T-Cross', 'branco');
+  veic('G-11', 'EQP-4B77', 'Fiat Argo', 'cinza'); veic('B-24', 'DXA-1F03', 'Jeep Renegade', 'verde');
+  veic('I-13', 'BRA-2E19', 'Toyota Corolla', 'preto'); veic('C-14', 'FJT-6H22', 'Hyundai HB20', 'branco');
   const letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   for (let i = 0; veiculos.length < 175; i++) {
     const u = unidades[(i * 7 + 3) % unidades.length].id;
@@ -242,21 +242,21 @@ export async function criarSeed(): Promise<DbData> {
       semSolicitante: false, justificativa: null, revogadaEm: null, revogadaPorId: null,
     });
   };
-  AP('ap-juliana', 'T4-32', 'Juliana Costa', 'Ana Ribeiro', '30/11/2026', [1, 2, 3, 4, 5], '08:00', '18:00');
-  AP('ap-claudia', 'T3-51', 'Cláudia Rocha', 'Mônica Vieira', '30/11/2026', [1, 2, 3, 4, 5], '08:00', '17:00');
-  AP('ap-gilberto', 'T1-12', 'Gilberto Nascimento', 'Renato Farias', '30/10/2026', [1, 2, 3, 4, 5, 6], '05:30', '19:00');
-  AP('ap-lumen', 'T6-52', 'Dedetizadora Lumen — Ivo Paes', 'Sílvia Prado', '09/10/2026', null, '15:00', '17:00');
-  AP('ap-anapaula', 'T8-42', 'Ana Paula Reis', 'Teresa Almeida', '09/10/2026', null, '19:00', '23:00');
-  AP('ap-agil', 'T5-43', 'Transportes Ágil — equipe de mudança', 'Rita Sampaio', '09/10/2026', null, '08:00', '16:00');
+  AP('ap-juliana', 'D-32', 'Juliana Costa', 'Ana Ribeiro', '30/11/2026', [1, 2, 3, 4, 5], '08:00', '18:00');
+  AP('ap-claudia', 'C-03', 'Cláudia Rocha', 'Mônica Vieira', '30/11/2026', [1, 2, 3, 4, 5], '08:00', '17:00');
+  AP('ap-gilberto', 'A-12', 'Gilberto Nascimento', 'Renato Farias', '30/10/2026', [1, 2, 3, 4, 5, 6], '05:30', '19:00');
+  AP('ap-lumen', 'F-04', 'Dedetizadora Lumen — Ivo Paes', 'Sílvia Prado', '09/10/2026', null, '15:00', '17:00');
+  AP('ap-anapaula', 'H-42', 'Ana Paula Reis', 'Teresa Almeida', '09/10/2026', null, '19:00', '23:00');
+  AP('ap-agil', 'E-43', 'Transportes Ágil — equipe de mudança', 'Rita Sampaio', '09/10/2026', null, '08:00', '16:00');
 
   // ----- Restrições ---------------------------------------------------------------------------
   restricoes.push({
-    id: 'rs-bruno', escopo: 'unidade', unidadeId: U('T4-32'), pessoaId: P('Bruno Teixeira').id, motivo: 'Morador não autoriza a entrada',
+    id: 'rs-bruno', escopo: 'unidade', unidadeId: U('D-32'), pessoaId: P('Bruno Teixeira').id, motivo: 'Morador não autoriza a entrada',
     validaAte: dt('31/12/2026') + DIA - 1, cadastradaPorId: ID_PAULA, cadastradaEm: dt('12/08/2026 10:14'),
     solicitadaPorPessoaId: P('Ana Ribeiro').id, aprovadaPorId: null, aprovadaEm: null, revogadaEm: null, revogadaPorId: null,
   });
   restricoes.push({
-    id: 'rs-edu', escopo: 'condominio', unidadeId: U('T6-22'), pessoaId: P('Edu Barreto').id,
+    id: 'rs-edu', escopo: 'condominio', unidadeId: U('F-22'), pessoaId: P('Edu Barreto').id,
     motivo: 'Tentativas repetidas de acesso sem autorização em várias unidades', validaAte: dt('31/12/2026') + DIA - 1,
     cadastradaPorId: ID_PAULA, cadastradaEm: dt('08/10/2026 16:20'),
     solicitadaPorPessoaId: P('Gustavo Lins').id, aprovadaPorId: null, aprovadaEm: null, revogadaEm: null, revogadaPorId: null,
@@ -286,39 +286,39 @@ export async function criarSeed(): Promise<DbData> {
   }
 
   // Hoje
-  entrada('e4818', T('14:18'), 'Juliana Costa', 'T4-32', 'autorizacao_previa', ID_JOAO, { apId: 'ap-juliana', auth: 'Ana Ribeiro' });
-  entrada('e4817', T('13:55'), 'Marcelo Antunes', 'T6-52', 'interfone', ID_JOAO, { auth: 'Sílvia Prado' });
-  entrada('e4816', T('13:40'), 'Larissa Gomes', 'T1-33', 'morador_presente', ID_JOAO, { auth: 'Ricardo Gomes' });
+  entrada('e4818', T('14:18'), 'Juliana Costa', 'D-32', 'autorizacao_previa', ID_JOAO, { apId: 'ap-juliana', auth: 'Ana Ribeiro' });
+  entrada('e4817', T('13:55'), 'Marcelo Antunes', 'F-04', 'interfone', ID_JOAO, { auth: 'Sílvia Prado' });
+  entrada('e4816', T('13:40'), 'Larissa Gomes', 'A-33', 'morador_presente', ID_JOAO, { auth: 'Ricardo Gomes' });
   saida('e4816s', 'e4816', T('13:52'));
-  entrada('e4815', T('12:10'), 'Pedro Almeida', 'T8-42', 'interfone', ID_JOAO, { auth: 'Teresa Almeida' });
-  entrada('e4814', T('11:02'), 'Cláudia Rocha', 'T3-51', 'autorizacao_previa', ID_JOAO, { apId: 'ap-claudia', auth: 'Mônica Vieira' });
-  entrada('e4813', T('09:30'), 'Vitor Sampaio', 'T5-43', 'excecao_porteiro', ID_JOAO, { just: 'Morador não atende o interfone' });
-  entrada('e4812', T('07:45'), 'Rogério Batista', 'T2-41', 'interfone', ID_JOAO, { auth: 'Cecília Batista' });
+  entrada('e4815', T('12:10'), 'Pedro Almeida', 'H-42', 'interfone', ID_JOAO, { auth: 'Teresa Almeida' });
+  entrada('e4814', T('11:02'), 'Cláudia Rocha', 'C-03', 'autorizacao_previa', ID_JOAO, { apId: 'ap-claudia', auth: 'Mônica Vieira' });
+  entrada('e4813', T('09:30'), 'Vitor Sampaio', 'E-43', 'excecao_porteiro', ID_JOAO, { just: 'Morador não atende o interfone' });
+  entrada('e4812', T('07:45'), 'Rogério Batista', 'B-41', 'interfone', ID_JOAO, { auth: 'Cecília Batista' });
   saida('e4812s', 'e4812', T('09:10'));
   entrada('e4819', T('07:05'), 'Válter Souza', null, 'escala', ID_JOAO);
-  entrada('e4811', T('05:40'), 'Gilberto Nascimento', 'T1-12', 'autorizacao_previa', ID_SERGIO, { apId: 'ap-gilberto', auth: 'Renato Farias' });
+  entrada('e4811', T('05:40'), 'Gilberto Nascimento', 'A-12', 'autorizacao_previa', ID_SERGIO, { apId: 'ap-gilberto', auth: 'Renato Farias' });
   // Contingência: papel durante queda do sistema, lançado às 06:05 (retroativo)
-  entrada('e4810', T('03:10'), 'Fernanda Lins', 'T6-22', 'morador_presente', ID_SERGIO, {
+  entrada('e4810', T('03:10'), 'Fernanda Lins', 'F-22', 'morador_presente', ID_SERGIO, {
     auth: 'Gustavo Lins', retro: true, registrado: T('06:05'), formulario: '0031',
   });
   saida('e4810s', 'e4810', T('04:02'), { registrado: T('06:06') });
-  entrada('e4809', T('01:20'), 'Diego Ramos', 'T3-14', 'interfone', ID_SERGIO, { auth: 'Patrícia Ramos' });
+  entrada('e4809', T('01:20'), 'Diego Ramos', 'C-14', 'interfone', ID_SERGIO, { auth: 'Patrícia Ramos' });
   saida('e4809s', 'e4809', T('02:15'));
   // Ontem e antes
-  entrada('e4808', T('22:47', '08/10/2026'), 'Thiago Moura', 'T9-14', 'excecao_porteiro', ID_SERGIO, { just: 'Emergência médica: moradora passou mal e chamou o filho' });
+  entrada('e4808', T('22:47', '08/10/2026'), 'Thiago Moura', 'I-14', 'excecao_porteiro', ID_SERGIO, { just: 'Emergência médica: moradora passou mal e chamou o filho' });
   saida('e4808s', 'e4808', T('23:30', '08/10/2026'));
-  entrada('e4807', T('19:12', '08/10/2026'), 'Adriano Melo', 'T7-11', 'interfone', ID_SERGIO, { auth: 'Carla Mendes' });
+  entrada('e4807', T('19:12', '08/10/2026'), 'Adriano Melo', 'G-11', 'interfone', ID_SERGIO, { auth: 'Carla Mendes' });
   saida('e4807s', 'e4807', T('19:18', '08/10/2026'));
-  entrada('e4806', T('16:05', '08/10/2026'), 'Juliana Costa', 'T4-32', 'autorizacao_previa', ID_JOAO, { apId: 'ap-juliana', auth: 'Ana Ribeiro' });
+  entrada('e4806', T('16:05', '08/10/2026'), 'Juliana Costa', 'D-32', 'autorizacao_previa', ID_JOAO, { apId: 'ap-juliana', auth: 'Ana Ribeiro' });
   saida('e4806s', 'e4806', T('17:58', '08/10/2026'));
   rascunhos.push({
-    id: 'e4805', tipo: 'negado', pessoaId: P('Bruno Teixeira').id, categoria: 'visitante', unidadeId: U('T4-32'), meio: null, autPessoaId: null,
+    id: 'e4805', tipo: 'negado', pessoaId: P('Bruno Teixeira').id, categoria: 'visitante', unidadeId: U('D-32'), meio: null, autPessoaId: null,
     apId: null, just: null, restricaoId: 'rs-bruno', opId: ID_JOAO,
     ocorrido: T('10:40', '08/10/2026'), registrado: T('10:40', '08/10/2026'), retro: false, refere: null, obs: null,
   });
-  entrada('e4804', T('15:20', '07/10/2026'), 'Técnico Sabesp — Caio Lemos', 'T8-13', 'excecao_porteiro', ID_MARINA, { just: 'Serviço público (luz, água, gás): vazamento no hidrômetro' });
+  entrada('e4804', T('15:20', '07/10/2026'), 'Técnico Sabesp — Caio Lemos', 'H-13', 'excecao_porteiro', ID_MARINA, { just: 'Serviço público (luz, água, gás): vazamento no hidrômetro' });
   saida('e4804s', 'e4804', T('16:05', '07/10/2026'));
-  entrada('e4803', T('09:05', '07/10/2026'), 'Marcos Pereira', 'T4-32', 'interfone', ID_JOAO, { auth: 'Ana Ribeiro' });
+  entrada('e4803', T('09:05', '07/10/2026'), 'Marcos Pereira', 'D-32', 'interfone', ID_JOAO, { auth: 'Ana Ribeiro' });
   saida('e4803s', 'e4803', T('11:40', '07/10/2026'));
 
   // Histórico sintético: 08/09 a 06/10 (para os gráficos de 30 dias). Determinístico.
@@ -401,16 +401,16 @@ export async function criarSeed(): Promise<DbData> {
     retiradaRegistradaPorId: ret ? ID_POR_NOME[ret.por] : null, retiradaAutorizacaoId: null,
   });
   const encomendas: Encomenda[] = [
-    K(108, 'T4-32', 'Ana Ribeiro', 'Mercado Livre', 'MLB-88231904', '09/10/2026 10:22', 'João Lima'),
-    K(107, 'T8-42', 'Teresa Almeida', 'Loggi', 'LG-55210983', '09/10/2026 08:47', 'João Lima'),
-    K(106, 'T7-11', 'Carla Mendes', 'Correios', 'QB 482 913 775 BR', '08/10/2026 15:31', 'João Lima'),
-    K(105, 'T2-24', 'Helena Duarte', 'Amazon', 'TBA309281882100', '07/10/2026 11:02', 'Marina Couto'),
-    K(104, 'T6-22', 'Gustavo Lins', 'Jadlog', '10822339410', '06/10/2026 17:44', 'Sérgio Matos'),
-    K(103, 'T5-43', 'Rita Sampaio', 'Shopee', 'BR254988332197', '04/10/2026 13:15', 'João Lima'),
-    K(102, 'T9-13', 'Marta Siqueira', 'Shopee', 'BR254988330041', '30/09/2026 16:20', 'Marina Couto'),
-    K(101, 'T1-12', 'Renato Farias', 'Correios', 'QA 119 554 120 BR', '28/09/2026 09:58', 'João Lima'),
-    K(100, 'T3-14', 'Patrícia Ramos', 'Correios', 'QB 401 223 908 BR', '08/10/2026 12:40', 'João Lima', { quem: 'Patrícia Ramos', em: '09/10/2026 10:15', por: 'João Lima' }),
-    K(99, 'T4-32', 'Paulo Ribeiro', 'Amazon', 'TBA309112450200', '07/10/2026 14:05', 'Marina Couto', { quem: 'Paulo Ribeiro', em: '08/10/2026 19:02', por: 'Sérgio Matos' }),
+    K(108, 'D-32', 'Ana Ribeiro', 'Mercado Livre', 'MLB-88231904', '09/10/2026 10:22', 'João Lima'),
+    K(107, 'H-42', 'Teresa Almeida', 'Loggi', 'LG-55210983', '09/10/2026 08:47', 'João Lima'),
+    K(106, 'G-11', 'Carla Mendes', 'Correios', 'QB 482 913 775 BR', '08/10/2026 15:31', 'João Lima'),
+    K(105, 'B-24', 'Helena Duarte', 'Amazon', 'TBA309281882100', '07/10/2026 11:02', 'Marina Couto'),
+    K(104, 'F-22', 'Gustavo Lins', 'Jadlog', '10822339410', '06/10/2026 17:44', 'Sérgio Matos'),
+    K(103, 'E-43', 'Rita Sampaio', 'Shopee', 'BR254988332197', '04/10/2026 13:15', 'João Lima'),
+    K(102, 'I-13', 'Marta Siqueira', 'Shopee', 'BR254988330041', '30/09/2026 16:20', 'Marina Couto'),
+    K(101, 'A-12', 'Renato Farias', 'Correios', 'QA 119 554 120 BR', '28/09/2026 09:58', 'João Lima'),
+    K(100, 'C-14', 'Patrícia Ramos', 'Correios', 'QB 401 223 908 BR', '08/10/2026 12:40', 'João Lima', { quem: 'Patrícia Ramos', em: '09/10/2026 10:15', por: 'João Lima' }),
+    K(99, 'D-32', 'Paulo Ribeiro', 'Amazon', 'TBA309112450200', '07/10/2026 14:05', 'Marina Couto', { quem: 'Paulo Ribeiro', em: '08/10/2026 19:02', por: 'Sérgio Matos' }),
   ];
 
   // ----- Ocorrências --------------------------------------------------------------------------
@@ -420,10 +420,10 @@ export async function criarSeed(): Promise<DbData> {
   });
   const ocorrencias: Ocorrencia[] = [
     O(47, '09/10/2026 08:12', 'dano', null, '—', 'Portão da garagem B travando ao fechar. Zeladoria avisada.', 'aberta', 'João Lima'),
-    O(46, '08/10/2026 22:50', 'conflito', 'T9-14', 'Thiago Moura', 'Discussão entre visitante e vizinho no hall da Torre 9 durante atendimento de emergência.', 'aberta', 'Sérgio Matos', ['e4808']),
-    O(45, '05/10/2026 17:30', 'encomenda', 'T7-11', 'Carla Mendes', 'Moradora relatou encomenda de agosto entregue na T7-12. Registro feito para histórico.', 'encerrada', 'Marina Couto'),
-    O(44, '01/10/2026 18:55', 'tentativa_acesso_indevido', 'T9-13', 'Rodrigo Alves', 'Homem apresentou contrato de locação da T9-13 e pediu cópia das chaves. Orientado a procurar a administração; o pedido de vínculo foi aberto pela administração e aguarda análise.', 'em_andamento', 'Sérgio Matos'),
-    O(43, '14/09/2026 10:02', 'tentativa_acesso_indevido', 'T4-32', 'Bruno Teixeira', 'Tentativa de entrada sem autorização. Moradora solicitou restrição.', 'encerrada', 'João Lima'),
+    O(46, '08/10/2026 22:50', 'conflito', 'I-14', 'Thiago Moura', 'Discussão entre visitante e vizinho no hall do Bloco I durante atendimento de emergência.', 'aberta', 'Sérgio Matos', ['e4808']),
+    O(45, '05/10/2026 17:30', 'encomenda', 'G-11', 'Carla Mendes', 'Moradora relatou encomenda de agosto entregue na G-12. Registro feito para histórico.', 'encerrada', 'Marina Couto'),
+    O(44, '01/10/2026 18:55', 'tentativa_acesso_indevido', 'I-13', 'Rodrigo Alves', 'Homem apresentou contrato de locação da I-13 e pediu cópia das chaves. Orientado a procurar a administração; o pedido de vínculo foi aberto pela administração e aguarda análise.', 'em_andamento', 'Sérgio Matos'),
+    O(43, '14/09/2026 10:02', 'tentativa_acesso_indevido', 'D-32', 'Bruno Teixeira', 'Tentativa de entrada sem autorização. Moradora solicitou restrição.', 'encerrada', 'João Lima'),
   ];
 
   const Usr = (id: string, nome: string, login: string, papel: UsuarioSistema['papel'], ativo: boolean, ult: string): UsuarioSistema =>

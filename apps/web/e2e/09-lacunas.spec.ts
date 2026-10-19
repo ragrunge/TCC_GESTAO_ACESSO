@@ -50,15 +50,15 @@ test.describe('9. Lacunas do MVP', () => {
     await entrarComo(page, 'Porteiro');
     await page.goto('/entrada');
     await page.getByRole('combobox', { name: /Buscar por nome/ }).fill('Ana Ribeiro');
-    await expect(page.getByRole('option', { name: /Ana Ribeiro/ }).first()).toContainText('Morador da T4-32');
+    await expect(page.getByRole('option', { name: /Ana Ribeiro/ }).first()).toContainText('Morador da D-32');
     await page.getByRole('option', { name: /Ana Ribeiro/ }).first().click();
 
-    await escolherUnidade(page, 'T4-32');
+    await escolherUnidade(page, 'D-32');
     await expect(page.getByText('Morador não registra entrada na própria unidade no MVP')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Confirmar entrada', exact: true })).toBeDisabled();
 
     await page.getByRole('button', { name: 'Alterar', exact: true }).click();
-    await escolherUnidade(page, 'T1-12');
+    await escolherUnidade(page, 'A-12');
     await expect(page.getByText('Morador não registra entrada na própria unidade no MVP')).toHaveCount(0);
   });
 

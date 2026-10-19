@@ -8,13 +8,13 @@ import { PaginacaoDto } from '../comum/pagina';
 import { uuidParam, ZodPipe } from '../comum/zod.pipe';
 import { UnidadesService } from './unidades.service';
 
-const ListarUnidadesDto = PaginacaoDto.extend({ torre: z.coerce.number().int().min(1).max(99).optional() });
+const ListarUnidadesDto = PaginacaoDto.extend({ bloco: z.string().trim().regex(/^[A-Za-z0-9]{1,3}$/).optional() });
 
-/** Corpo de criar/editar. A estrutura (torre 1..99, número de 1 a 4 dígitos) é validada no serviço com a regra do
- *  domain e responde 422 UNIDADE_INVALIDA, como o mock; aqui só o tipo. */
-const UnidadeDto = z.strictObject({ torre: z.number().int(), numero: z.string().max(10) });
+/** Corpo de criar/editar. A estrutura (bloco de 1 a 3 letras/dígitos, número de até 4 dígitos) é normalizada e
+ *  validada no serviço com a regra do domain e responde 422 UNIDADE_INVALIDA, como o mock; aqui só o tipo. */
+const UnidadeDto = z.strictObject({ bloco: z.string().max(10), numero: z.string().max(10) });
 
-/** uuid ou código legível ("T4-32"). */
+/** uuid ou código legível ("A-32"). */
 const refParam = new ZodPipe(z.string().trim().min(1).max(40));
 
 @Controller()

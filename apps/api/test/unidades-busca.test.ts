@@ -1,6 +1,7 @@
 // Unidades (RF-01), catálogo, contagem de vínculos e busca (RF-18, RF-34) pela API real (HTTP + PGlite + migrações).
-// Dados: seed de estrutura (165 unidades) + usuários + pessoas fictícias do seed de dev (as mesmas do Docker).
+// Dados: seed de estrutura (162 unidades) + usuários + pessoas fictícias do seed de dev (as mesmas do Docker).
 import { MATRIZ, pode, type Acao } from '@portaria/domain/rbac';
+import { compararBlocos } from '@portaria/domain/units';
 import type { Papel } from '@portaria/domain/types';
 import { and, count, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -29,8 +30,8 @@ const post = (papel: PapelTeste, url: string, corpo?: object) => api.http().post
 const patch = (papel: PapelTeste, url: string, corpo: object) => api.http().patch(`${V1}${url}`).set('Cookie', cookies[papel]).send(corpo);
 
 async function idDe(codigo: string) {
-  const m = /^T(\d+)-(\d+)$/.exec(codigo)!;
-  const [u] = await api.db.select().from(s.unidade).where(and(eq(s.unidade.torre, Number(m[1])), eq(s.unidade.numero, m[2]!)));
+  const m = /^([A-Z0-9]+)-(\d+)$/.exec(codigo)!;
+  const [u] = await api.db.select().from(s.unidade).where(and(eq(s.unidade.bloco, m[1]!), eq(s.unidade.numero, m[2]!)));
   return u!.id;
 }
 const nomes = (r: { body: { data: { pessoas: { nome: string }[] } } }) => r.body.data.pessoas.map((p) => p.nome);
@@ -52,17 +53,18 @@ describe('seed de dev (pessoas fictícias)', () => {
 });
 
 describe('catálogo', () => {
-  it('qualquer papel logado recebe as 165 unidades (com código e rótulo), as áreas comuns e a portaria', async () => {
+  it('qualquer papel logado recebe as 162 unidades (com código e rótulo), o agrupamento, as áreas comuns e a portaria', async () => {
     for (const p of PAPEIS) {
       const r = await get(p, '/catalogo');
       expect(r.status).toBe(200);
-      expect(r.body.data.unidades).toHaveLength(165);
+      expect(r.body.data.unidades).toHaveLength(162);
+      expect(r.body.data.agrupamento).toBe('Bloco');
       expect(r.body.data.areasComuns.map((a: { nome: string }) => a.nome)).toContain('Salão de festas');
       expect(r.body.data.pontosAcesso).toEqual([expect.objectContaining({ nome: 'Portaria social', ativo: true })]);
     }
     const r = await get('porteiro', '/catalogo');
-    expect(r.body.data.unidades[0]).toEqual({ id: expect.any(String), torre: 1, numero: '11', ativo: true, codigo: 'T1-11', rotulo: 'Torre 1 · AP 11' });
-    expect(r.body.data.unidades.at(-1)).toMatchObject({ codigo: 'T9-15' });
+    expect(r.body.data.unidades[0]).toEqual({ id: expect.any(String), bloco: 'A', numero: '03', ativo: true, codigo: 'A-03', rotulo: 'Bloco A · AP 03' });
+    expect(r.body.data.unidades.at(-1)).toMatchObject({ codigo: 'I-44' });
   });
 
   it('sem sessão: 401', async () => {
@@ -71,36 +73,57 @@ describe('catálogo', () => {
 });
 
 describe('unidades: listagem paginada com resumo', () => {
-  it('percorre as 165 por cursor sem repetir nem pular, na ordem torre/número, mesmo com INSERT no meio', async () => {
+  it('percorre as 162 por cursor sem repetir nem pular, na ordem bloco/número, mesmo com INSERT no meio', async () => {
     const vistos: string[] = [];
     let cursor: string | null = null;
     let paginas = 0;
     do {
       const r = await get('porteiro', `/unidades?limite=7${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
       expect(r.status).toBe(200);
-      vistos.push(...r.body.data.map((x: { unidade: { torre: number; numero: string } }) => `T${x.unidade.torre}-${x.unidade.numero}`));
+      vistos.push(...r.body.data.map((x: { unidade: { bloco: string; numero: string } }) => `${x.unidade.bloco}-${x.unidade.numero}`));
       cursor = r.body.pagination.cursor;
       expect(r.body.pagination.hasNextPage).toBe(cursor !== null);
       // Depois da 1ª página, entra uma unidade que ordena ANTES do cursor: keyset não a repete nem desloca as outras.
-      if (++paginas === 1) await api.db.insert(s.unidade).values({ torre: 1, numero: '1' });
+      if (++paginas === 1) await api.db.insert(s.unidade).values({ bloco: 'A', numero: '01' });
     } while (cursor);
-    expect(vistos).toHaveLength(165);
-    expect(new Set(vistos).size).toBe(165);
-    expect(vistos.slice(0, 3)).toEqual(['T1-11', 'T1-12', 'T1-13']);
-    expect(vistos.at(-1)).toBe('T9-15');
-    await api.db.delete(s.unidade).where(and(eq(s.unidade.torre, 1), eq(s.unidade.numero, '1')));
+    expect(vistos).toHaveLength(162);
+    expect(new Set(vistos).size).toBe(162);
+    expect(vistos.slice(0, 3)).toEqual(['A-03', 'A-04', 'A-11']);
+    expect(vistos.at(-1)).toBe('I-44');
+    await api.db.delete(s.unidade).where(and(eq(s.unidade.bloco, 'A'), eq(s.unidade.numero, '01')));
   });
 
-  it('filtro por torre e resumo igual ao do mock', async () => {
-    const r = await get('auditor', '/unidades?torre=4');
+  it('ordem natural dos blocos no SQL, igual à do domain (mock): "2" antes de "10", "B2" antes de "B10"', async () => {
+    const extras = ['10', '2', 'B10', 'B2', 'Z'].map((bloco) => ({ bloco, numero: '11' }));
+    await api.db.insert(s.unidade).values(extras);
+    try {
+      const vistos: string[] = [];
+      let cursor: string | null = null;
+      do { // páginas de 5: o cursor cai no meio dos blocos novos
+        const r = await get('porteiro', `/unidades?limite=5${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+        vistos.push(...r.body.data.map((x: { unidade: { bloco: string; numero: string } }) => `${x.unidade.bloco}-${x.unidade.numero}`));
+        cursor = r.body.pagination.cursor;
+      } while (cursor);
+      const blocos = [...new Set(vistos.map((c) => c.split('-')[0]!))];
+      expect(blocos).toEqual(['2', '10', 'A', 'B', 'B2', 'B10', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'Z']);
+      expect(blocos).toEqual([...blocos].sort(compararBlocos));
+      const cat = (await get('porteiro', '/catalogo')).body.data.unidades.map((u: { codigo: string }) => u.codigo);
+      expect(cat).toEqual(vistos);
+    } finally {
+      for (const e of extras) await api.db.delete(s.unidade).where(and(eq(s.unidade.bloco, e.bloco), eq(s.unidade.numero, e.numero)));
+    }
+  });
+
+  it('filtro por bloco (maiúscula ou minúscula) e resumo igual ao do mock', async () => {
+    const r = await get('auditor', '/unidades?bloco=d');
     expect(r.status).toBe(200);
-    expect(r.body.data).toHaveLength(20);
+    expect(r.body.data).toHaveLength(18);
     expect(r.body.pagination).toEqual({ cursor: null, hasNextPage: false });
-    const t432 = r.body.data.find((x: { unidade: { numero: string } }) => x.unidade.numero === '32');
-    expect(t432).toMatchObject({ moradoresValidos: 3, pendentes: 0, restricoes: 0, cadastroCompleto: true }); // 2 aprovados + 1 legado
-    const t7 = (await get('auditor', '/unidades?torre=7')).body.data.find((x: { unidade: { numero: string } }) => x.unidade.numero === '11');
+    const d32 = r.body.data.find((x: { unidade: { numero: string } }) => x.unidade.numero === '32');
+    expect(d32).toMatchObject({ moradoresValidos: 3, pendentes: 0, restricoes: 0, cadastroCompleto: true }); // 2 aprovados + 1 legado
+    const t7 = (await get('auditor', '/unidades?bloco=G')).body.data.find((x: { unidade: { numero: string } }) => x.unidade.numero === '11');
     expect(t7).toMatchObject({ moradoresValidos: 1, pendentes: 1, cadastroCompleto: true });
-    const t3 = (await get('auditor', '/unidades?torre=3')).body.data.find((x: { unidade: { numero: string } }) => x.unidade.numero === '42');
+    const t3 = (await get('auditor', '/unidades?bloco=C')).body.data.find((x: { unidade: { numero: string } }) => x.unidade.numero === '42');
     expect(t3).toMatchObject({ moradoresValidos: 1, pendentes: 1, cadastroCompleto: false }); // só legado: não é cadastro completo
   });
 
@@ -108,16 +131,20 @@ describe('unidades: listagem paginada com resumo', () => {
     expect((await get('porteiro', '/unidades?cursor=xyz')).body.code).toBe('CURSOR_INVALIDO');
     expect((await get('porteiro', '/unidades?ordem=numero')).status).toBe(400);
     expect((await get('porteiro', '/unidades?limite=101')).status).toBe(400);
+    expect((await get('porteiro', '/unidades?bloco=ABCD')).status).toBe(400);
+    expect((await get('porteiro', '/unidades?torre=4')).status).toBe(400); // parâmetro antigo
   });
 
   it('detalhe por uuid ou pelo código legível; veículos ativos da unidade', async () => {
-    const id = await idDe('T4-32');
+    const id = await idDe('D-32');
     const r = await get('porteiro', `/unidades/${id}`);
     expect(r.status).toBe(200);
-    expect(r.body.data.unidade).toEqual({ id, torre: 4, numero: '32', ativo: true });
+    expect(r.body.data.unidade).toEqual({ id, bloco: 'D', numero: '32', ativo: true });
     expect(r.body.data.veiculos.map((v: { placa: string }) => v.placa)).toEqual(['FKR2C41', 'GHT8J20']);
-    expect((await get('porteiro', '/unidades/T4-32')).body.data.unidade.id).toBe(id);
-    expect((await get('porteiro', '/unidades/T99-1')).body.code).toBe('UNIDADE_NAO_ENCONTRADA');
+    expect((await get('porteiro', '/unidades/D-32')).body.data.unidade.id).toBe(id);
+    expect((await get('porteiro', '/unidades/d%2032')).body.data.unidade.id).toBe(id);
+    expect((await get('porteiro', '/unidades/D32')).body.code).toBe('UNIDADE_NAO_ENCONTRADA'); // sem separador não é código
+    expect((await get('porteiro', '/unidades/Z-99')).body.code).toBe('UNIDADE_NAO_ENCONTRADA');
   });
 });
 
@@ -125,8 +152,8 @@ describe('RBAC pela MATRIZ (403 por papel)', () => {
   const rotas: { acao: Acao | 'autenticado'; chamar: (p: PapelTeste) => Promise<{ status: number }> }[] = [
     { acao: 'autenticado', chamar: (p) => get(p, '/catalogo') },
     { acao: 'unidade.ver', chamar: (p) => get(p, '/unidades?limite=1') },
-    { acao: 'unidade.ver', chamar: (p) => get(p, '/unidades/T1-11') },
-    { acao: 'unidade.editar', chamar: (p) => post(p, '/unidades', { torre: 4, numero: '32' }) }, // 409 para quem pode
+    { acao: 'unidade.ver', chamar: (p) => get(p, '/unidades/A-11') },
+    { acao: 'unidade.editar', chamar: (p) => post(p, '/unidades', { bloco: 'D', numero: '32' }) }, // 409 para quem pode
     { acao: 'vinculo.ver', chamar: (p) => get(p, '/vinculos/contagem?status=pendente') },
     { acao: 'pessoa.ver', chamar: (p) => post(p, '/busca', { q: 'ana' }) },
     { acao: 'pessoa.ver', chamar: (p) => post(p, '/pessoas/busca', { q: 'ana' }) },
@@ -150,8 +177,8 @@ describe('RBAC pela MATRIZ (403 por papel)', () => {
   });
 
   it('porteiro não altera, desativa nem reativa unidade', async () => {
-    const id = await idDe('T1-11');
-    expect((await patch('porteiro', `/unidades/${id}`, { torre: 1, numero: '99' })).status).toBe(403);
+    const id = await idDe('A-11');
+    expect((await patch('porteiro', `/unidades/${id}`, { bloco: 'A', numero: '99' })).status).toBe(403);
     expect((await post('porteiro', `/unidades/${id}/desativar`)).status).toBe(403);
     expect((await post('auditor', `/unidades/${id}/reativar`)).status).toBe(403);
   });
@@ -161,37 +188,42 @@ describe('unidades: criar, editar, desativar e reativar (regras do mock)', () =>
   let novaId = '';
 
   it('cria (201), audita e recusa duplicata (409) e estrutura inválida (422)', async () => {
-    const r = await post('administracao', '/unidades', { torre: 10, numero: ' 101 ' });
+    const r = await post('administracao', '/unidades', { bloco: ' j ', numero: ' 0101 ' });
     expect(r.status).toBe(201);
-    expect(r.body.data).toEqual({ id: expect.any(String), torre: 10, numero: '101', ativo: true });
+    expect(r.body.data).toEqual({ id: expect.any(String), bloco: 'J', numero: '101', ativo: true }); // normalizados
     novaId = r.body.data.id;
     const a = (await trilha(api, 'unidade.criar')).at(-1)!;
     expect(a).toMatchObject({ registroId: novaId, usuarioPapel: 'administracao', entidade: 'unidade' });
-    expect(a.depois).toMatchObject({ torre: 10, numero: '101', ativo: true });
+    expect(a.depois).toMatchObject({ bloco: 'J', numero: '101', ativo: true });
 
-    expect((await post('sindico', '/unidades', { torre: 10, numero: '101' })).body.code).toBe('UNIDADE_DUPLICADA');
-    expect((await post('sindico', '/unidades', { torre: 4, numero: '3a' })).body).toMatchObject({ statusCode: 422, code: 'UNIDADE_INVALIDA' });
-    expect((await post('sindico', '/unidades', { torre: 0, numero: '11' })).status).toBe(422);
-    expect((await post('sindico', '/unidades', { torre: '4', numero: '11' })).status).toBe(400);
-    expect((await get('porteiro', '/catalogo')).body.data.unidades).toHaveLength(166);
+    expect((await post('sindico', '/unidades', { bloco: 'J', numero: '101' })).body.code).toBe('UNIDADE_DUPLICADA');
+    const d3 = await post('sindico', '/unidades', { bloco: 'D', numero: '3' }); // "3" é a D-03, não uma unidade nova
+    expect(d3.body).toMatchObject({ statusCode: 409, code: 'UNIDADE_DUPLICADA', message: expect.stringContaining('D-03') });
+    expect((await post('sindico', '/unidades', { bloco: 'D', numero: '3a' })).body).toMatchObject({ statusCode: 422, code: 'UNIDADE_INVALIDA' });
+    expect((await post('sindico', '/unidades', { bloco: 'D', numero: '0' })).status).toBe(422);
+    expect((await post('sindico', '/unidades', { bloco: 'D-1', numero: '11' })).status).toBe(422);
+    expect((await post('sindico', '/unidades', { bloco: '', numero: '11' })).status).toBe(422);
+    expect((await post('sindico', '/unidades', { bloco: 4, numero: '11' })).status).toBe(400);
+    expect((await post('sindico', '/unidades', { torre: 4, numero: '11' })).status).toBe(400); // contrato antigo
+    expect((await get('porteiro', '/catalogo')).body.data.unidades).toHaveLength(163);
   });
 
   it('edita unidade sem registros (com antes/depois); referenciada não muda de número (422)', async () => {
-    const r = await patch('sindico', `/unidades/${novaId}`, { torre: 10, numero: '102' });
+    const r = await patch('sindico', `/unidades/${novaId}`, { bloco: 'J', numero: '102' });
     expect(r.status).toBe(200);
-    expect(r.body.data).toMatchObject({ torre: 10, numero: '102' });
+    expect(r.body.data).toMatchObject({ bloco: 'J', numero: '102' });
     const a = (await trilha(api, 'unidade.editar')).at(-1)!;
     expect(a.antes).toMatchObject({ numero: '101' });
     expect(a.depois).toMatchObject({ numero: '102' });
     // sem mudança: 200 sem nova linha de auditoria
     const n = (await trilha(api, 'unidade.editar')).length;
-    expect((await patch('sindico', `/unidades/${novaId}`, { torre: 10, numero: '102' })).status).toBe(200);
+    expect((await patch('sindico', `/unidades/${novaId}`, { bloco: 'j', numero: '102' })).status).toBe(200);
     expect((await trilha(api, 'unidade.editar')).length).toBe(n);
 
-    const t432 = await idDe('T4-32');
-    expect((await patch('sindico', `/unidades/${t432}`, { torre: 4, numero: '99' })).body).toMatchObject({ statusCode: 422, code: 'UNIDADE_REFERENCIADA' });
-    expect((await patch('sindico', `/unidades/${novaId}`, { torre: 4, numero: '31' })).body.code).toBe('UNIDADE_DUPLICADA');
-    expect((await patch('sindico', `/unidades/00000000-0000-4000-8000-000000000000`, { torre: 4, numero: '31' })).status).toBe(404);
+    const d32 = await idDe('D-32');
+    expect((await patch('sindico', `/unidades/${d32}`, { bloco: 'D', numero: '99' })).body).toMatchObject({ statusCode: 422, code: 'UNIDADE_REFERENCIADA' });
+    expect((await patch('sindico', `/unidades/${novaId}`, { bloco: 'D', numero: '31' })).body.code).toBe('UNIDADE_DUPLICADA');
+    expect((await patch('sindico', `/unidades/00000000-0000-4000-8000-000000000000`, { bloco: 'D', numero: '31' })).status).toBe(404);
   });
 
   it('desativa e reativa (409 se repetir); inativa continua no catálogo e na busca, e barra novos usos', async () => {
@@ -202,8 +234,8 @@ describe('unidades: criar, editar, desativar e reativar (regras do mock)', () =>
     expect((await trilha(api, 'unidade.desativar')).at(-1)).toMatchObject({ registroId: novaId, antes: { ativo: true }, depois: { ativo: false } });
 
     const cat = (await get('porteiro', '/catalogo')).body.data.unidades.find((u: { id: string }) => u.id === novaId);
-    expect(cat).toMatchObject({ codigo: 'T10-102', ativo: false });
-    expect((await post('porteiro', '/busca', { q: 'T10-102' })).body.data.unidades).toEqual([{ id: novaId, motivo: 'Unidade (desativada)' }]);
+    expect(cat).toMatchObject({ codigo: 'J-102', ativo: false });
+    expect((await post('porteiro', '/busca', { q: 'J-102' })).body.data.unidades).toEqual([{ id: novaId, motivo: 'Unidade (desativada)' }]);
 
     const servico = api.app.get(UnidadesService);
     await expect(servico.paraNovoUso(api.db, novaId)).rejects.toMatchObject({ status: 422, response: { codigo: 'UNIDADE_INATIVA' } });
@@ -254,8 +286,9 @@ describe('busca de pessoas (mesmo comportamento do mock)', () => {
   });
 
   it('por unidade: vínculos pendente, aprovado e legado da unidade', async () => {
-    expect(nomes(await buscar('4-32')).sort()).toEqual(['Ana Ribeiro', 'Lúcia Ribeiro', 'Paulo Ribeiro']);
-    expect(nomes(await buscar('T7-11')).sort()).toEqual(['Carla Mendes', 'Rafael Mendes']);
+    expect(nomes(await buscar('d 32')).sort()).toEqual(['Ana Ribeiro', 'Lúcia Ribeiro', 'Paulo Ribeiro']);
+    expect(nomes(await buscar('Bloco D · AP 32')).sort()).toEqual(['Ana Ribeiro', 'Lúcia Ribeiro', 'Paulo Ribeiro']);
+    expect(nomes(await buscar('G-11')).sort()).toEqual(['Carla Mendes', 'Rafael Mendes']);
   });
 
   it('por placa: só quem tem vínculo VÁLIDO na unidade do veículo', async () => {
@@ -276,7 +309,7 @@ describe('busca de pessoas (mesmo comportamento do mock)', () => {
     const ana = (await buscar('Ana Ribeiro')).body.data.pessoas[0];
     expect(ana).toEqual({
       id: expect.any(String), nome: 'Ana Ribeiro', documentoTipo: 'cpf', documentoMascarado: '***.982.247-**', semCpf: false,
-      categoria: 'morador', ultimoAcesso: 'Sem acessos', unidadesVinculadas: [await idDe('T4-32')], unidadesVinculadasCodigos: ['T4-32'],
+      categoria: 'morador', ultimoAcesso: 'Sem acessos', unidadesVinculadas: [await idDe('D-32')], unidadesVinculadasCodigos: ['D-32'],
     });
     const claudia = (await buscar('Cláudia')).body.data.pessoas[0];
     expect(claudia).toMatchObject({ semCpf: true, documentoMascarado: '(sem CPF)', empresa: 'Autônoma' });
@@ -289,11 +322,11 @@ describe('busca de pessoas (mesmo comportamento do mock)', () => {
     const [ana] = await api.db.select().from(s.pessoa).where(eq(s.pessoa.nome, 'Ana Ribeiro'));
     const [ponto] = await api.db.select().from(s.pontoAcesso);
     await api.db.insert(s.eventoAcesso).values({
-      tipo: 'entrada', categoriaPessoa: 'visitante', pessoaId: marcos!.id, unidadeDestinoId: await idDe('T4-32'), pontoAcessoId: ponto!.id,
+      tipo: 'entrada', categoriaPessoa: 'visitante', pessoaId: marcos!.id, unidadeDestinoId: await idDe('D-32'), pontoAcessoId: ponto!.id,
       autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: ana!.id, operadorId: api.usuarios[LOGINS.porteiro]!.id, operadorPapel: 'porteiro',
     });
     const r = (await buscar('Marcos Pereira')).body.data.pessoas[0];
-    expect(r.ultimoAcesso).toMatch(/^(Hoje \d{2}:\d{2}|\d{2}\/\d{2}) · T4-32$/);
+    expect(r.ultimoAcesso).toMatch(/^(Hoje \d{2}:\d{2}|\d{2}\/\d{2}) · D-32$/);
   });
 
   it('pessoa anonimizada não aparece, nem por nome nem por unidade', async () => {
@@ -307,11 +340,11 @@ describe('busca de pessoas (mesmo comportamento do mock)', () => {
 
 describe('busca global (topo)', () => {
   it('unidade pelo código, pessoas (até 6, com 2+ caracteres) e unidade pela placa', async () => {
-    const r = await post('auditor', '/busca', { q: 'T4-32' });
-    expect(r.body.data.unidades[0]).toEqual({ id: await idDe('T4-32'), motivo: 'Unidade' });
+    const r = await post('auditor', '/busca', { q: 'D-32' });
+    expect(r.body.data.unidades[0]).toEqual({ id: await idDe('D-32'), motivo: 'Unidade' });
     expect(nomes(r).sort()).toEqual(['Ana Ribeiro', 'Lúcia Ribeiro', 'Paulo Ribeiro']);
     const p = await post('auditor', '/busca', { q: 'bra2e' });
-    expect(p.body.data.unidades).toEqual([{ id: await idDe('T9-13'), motivo: 'Placa BRA-2E19 · Toyota Corolla' }]);
+    expect(p.body.data.unidades).toEqual([{ id: await idDe('I-13'), motivo: 'Placa BRA-2E19 · Toyota Corolla' }]);
     expect((await post('auditor', '/busca', { q: 'a' })).body.data).toEqual({ pessoas: [], unidades: [], temMaisPessoas: false });
     const ri = await post('auditor', '/busca', { q: 'ri' });
     expect(nomes(ri)).toEqual(['Ana Ribeiro', 'Lúcia Ribeiro', 'Paulo Ribeiro', 'Rodrigo Alves']); // todos "contém": alfabética

@@ -2,14 +2,14 @@
 //   nome     sem acento e sem caixa, por substring (ILIKE; a spec §3.5 deixa pg_trgm para quando a medição pedir);
 //   CPF      11 dígitos: igualdade pelo HMAC (documento_busca, chave PORTARIA_HMAC_CPF_KEY); 3 a 10 dígitos: parcial nos
 //            6 dígitos visíveis do mascarado (o mesmo que a tela já mostra);
-//   unidade  "4-32", "T4-32": pessoas com vínculo pendente, aprovado ou legado nela;
+//   unidade  "A-32", "a 32" (e o antigo "T4-32"): pessoas com vínculo pendente, aprovado ou legado nela;
 //   placa    4+ caracteres: pessoas com vínculo VÁLIDO na unidade do veículo ativo;
 //   ordem    nome exato, começa com, contém, outros critérios; depois alfabética.
 // Anonimizada nunca aparece. O CPF digitado só existe nesta requisição: vem no CORPO de um POST (não na URL, que
 // proxies e a borda da Vercel registram), não é logado (log em allowlist) e leitura não grava trilha.
 import { Inject, Injectable } from '@nestjs/common';
 import { fmtData, fmtHora } from '@portaria/domain/time';
-import { codigoUnidade, parseCodigoUnidade } from '@portaria/domain/units';
+import { codigoUnidade, leiturasDoCodigo } from '@portaria/domain/units';
 import { and, asc, desc, eq, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import { CONFIG, type Config } from '../config/config';
 import { diaBrt } from '../comum/datas';
@@ -18,6 +18,7 @@ import { DB, type Db } from '../database/database.module';
 import { documentoBusca } from '../db/cpf';
 import { areaComum, eventoAcesso, pessoa, unidade, veiculo, vinculoUnidade } from '../db/schema';
 import { vinculoValidoSql } from '../vinculos/vinculo-valido';
+import { ORDEM_UNIDADES } from '../unidades/ordem';
 
 /** Pessoa como a busca devolve: sem telefone e sem documento_busca (minimização; a ficha completa é outra rota). */
 export interface PessoaBusca {
@@ -85,12 +86,13 @@ export class BuscaService {
     } else if (digitos.length >= 3) {
       criterios.push(sql`regexp_replace(coalesce(${pessoa.documentoMascarado}, ''), '[^0-9]', '', 'g') LIKE ${`%${digitos}%`}`);
     }
-    const cod = parseCodigoUnidade(consulta);
-    if (cod) {
+    // "A-32"; o antigo "T4-32" também casa com o bloco "4" (todas as leituras do código, como no mock).
+    const cods = leiturasDoCodigo(consulta);
+    if (cods.length) {
+      const pares = or(...cods.map((c) => and(eq(unidade.bloco, c.bloco), eq(unidade.numero, c.numero))));
       criterios.push(sql`${pessoa.id} IN (SELECT ${vinculoUnidade.pessoaId} FROM ${vinculoUnidade}
         JOIN ${unidade} ON ${unidade.id} = ${vinculoUnidade.unidadeId}
-        WHERE ${unidade.torre} = ${cod.torre} AND ${unidade.numero} = ${cod.numero}
-          AND ${vinculoUnidade.status} IN ('pendente', 'aprovado', 'legado'))`);
+        WHERE ${pares} AND ${vinculoUnidade.status} IN ('pendente', 'aprovado', 'legado'))`);
     }
     if (placa.length >= 4) {
       criterios.push(sql`${pessoa.id} IN (SELECT ${vinculoUnidade.pessoaId} FROM ${vinculoUnidade}
@@ -137,11 +139,10 @@ export class BuscaService {
     const consulta = q.trim();
     const { pessoas, temMais } = consulta.length >= 2 ? await this.pessoas(consulta, { limite: 6 }) : { pessoas: [], temMais: false };
     const unidades: { id: string; motivo: string }[] = [];
-    const cod = parseCodigoUnidade(consulta);
-    if (cod) {
+    for (const cod of leiturasDoCodigo(consulta)) { // a primeira leitura que existir ("T4-32": bloco "T4", senão "4")
       const [u] = await this.db.select({ id: unidade.id, ativo: unidade.ativo }).from(unidade)
-        .where(and(eq(unidade.torre, cod.torre), eq(unidade.numero, cod.numero)));
-      if (u) unidades.push({ id: u.id, motivo: u.ativo ? 'Unidade' : 'Unidade (desativada)' });
+        .where(and(eq(unidade.bloco, cod.bloco), eq(unidade.numero, cod.numero)));
+      if (u) { unidades.push({ id: u.id, motivo: u.ativo ? 'Unidade' : 'Unidade (desativada)' }); break; }
     }
     const placa = consulta.toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (placa.length >= 3) {
@@ -155,13 +156,13 @@ export class BuscaService {
 
   /** Unidades com vínculo válido de cada pessoa (uma consulta para a página toda, sem N+1). */
   async unidadesValidas(ids: string[], hoje: string) {
-    const mapa = new Map<string, { id: string; torre: number; numero: string }[]>();
+    const mapa = new Map<string, { id: string; bloco: string; numero: string }[]>();
     if (!ids.length) return mapa;
-    const linhas = await this.db.select({ pessoaId: vinculoUnidade.pessoaId, id: unidade.id, torre: unidade.torre, numero: unidade.numero })
+    const linhas = await this.db.select({ pessoaId: vinculoUnidade.pessoaId, id: unidade.id, bloco: unidade.bloco, numero: unidade.numero })
       .from(vinculoUnidade).innerJoin(unidade, eq(unidade.id, vinculoUnidade.unidadeId))
       .where(and(inArray(vinculoUnidade.pessoaId, ids), vinculoValidoSql(hoje)))
-      .orderBy(asc(unidade.torre), asc(sql`${unidade.numero}::numeric`));
-    for (const l of linhas) mapa.set(l.pessoaId, [...(mapa.get(l.pessoaId) ?? []), { id: l.id, torre: l.torre, numero: l.numero }]);
+      .orderBy(...ORDEM_UNIDADES);
+    for (const l of linhas) mapa.set(l.pessoaId, [...(mapa.get(l.pessoaId) ?? []), { id: l.id, bloco: l.bloco, numero: l.numero }]);
     return mapa;
   }
 
@@ -171,12 +172,12 @@ export class BuscaService {
    * registro de acesso traz a view de valores efetivos).
    */
   async ultimosAcessos(ids: string[]) {
-    type Ultimo = { tipo: string; ocorridoEm: Date; torre: number | null; numero: string | null; area: string | null };
+    type Ultimo = { tipo: string; ocorridoEm: Date; bloco: string | null; numero: string | null; area: string | null };
     const mapa = new Map<string, Ultimo>();
     if (!ids.length) return mapa;
     const linhas = await this.db.selectDistinctOn([eventoAcesso.pessoaId], {
       pessoaId: eventoAcesso.pessoaId, tipo: eventoAcesso.tipo, ocorridoEm: eventoAcesso.ocorridoEm,
-      torre: unidade.torre, numero: unidade.numero, area: areaComum.nome,
+      bloco: unidade.bloco, numero: unidade.numero, area: areaComum.nome,
     }).from(eventoAcesso)
       .leftJoin(unidade, eq(unidade.id, eventoAcesso.unidadeDestinoId))
       .leftJoin(areaComum, eq(areaComum.id, eventoAcesso.areaComumId))
@@ -186,12 +187,12 @@ export class BuscaService {
     return mapa;
   }
 
-  /** "Hoje 14:32 · T4-32", "08/10 · Salão de festas (negado)" ou "Sem acessos" (mesmo texto do mock). */
-  textoUltimoAcesso(u: { tipo: string; ocorridoEm: Date; torre: number | null; numero: string | null; area: string | null } | undefined, agora: Date) {
+  /** "Hoje 14:32 · D-32", "08/10 · Salão de festas (negado)" ou "Sem acessos" (mesmo texto do mock). */
+  textoUltimoAcesso(u: { tipo: string; ocorridoEm: Date; bloco: string | null; numero: string | null; area: string | null } | undefined, agora: Date) {
     if (!u) return 'Sem acessos';
     const t = u.ocorridoEm.getTime();
     const quando = fmtData(agora.getTime()) === fmtData(t) ? `Hoje ${fmtHora(t)}` : fmtData(t).slice(0, 5);
-    const destino = u.torre !== null && u.numero !== null ? codigoUnidade({ torre: u.torre, numero: u.numero }) : u.area;
+    const destino = u.bloco !== null && u.numero !== null ? codigoUnidade({ bloco: u.bloco, numero: u.numero }) : u.area;
     return `${quando}${destino ? ` · ${destino}` : ''}${u.tipo === 'negado' ? ' (negado)' : u.tipo === 'recusado' ? ' (recusado)' : ''}`;
   }
 }

@@ -48,17 +48,22 @@ export const tipoInconsistencia = pgEnum('tipo_inconsistencia', ['aviso', 'erro'
 
 // ----- Estrutura do condomínio (RF-01) -------------------------------------------------------------
 
+/**
+ * Bloco: 1 a 3 maiúsculas ou dígitos ("A", "4", "B2"); número canônico com 2 dígitos no mínimo ("03", não "3" nem "003"),
+ * para "3" e "03" não virarem duas unidades. A API normaliza antes de gravar (@portaria/domain/units); o CHECK é a rede.
+ * O CHECK aceita "00" (dado antigo "0" migrado); o cadastro novo recusa no domain.
+ */
 export const unidade = pgTable('unidade', {
   id: pk(),
-  torre: smallint('torre').notNull(),
+  bloco: text('bloco').notNull(),
   numero: text('numero').notNull(),
   ativo: boolean('ativo').notNull().default(true),
   criadoEm: criadoEm(),
   atualizadoEm: atualizadoEm(),
 }, (t) => [
-  unique('unidade_torre_numero_uq').on(t.torre, t.numero),
-  check('unidade_torre_ck', sql`torre > 0`),
-  check('unidade_numero_ck', sql`numero ~ '^[0-9]+$'`),
+  unique('unidade_bloco_numero_uq').on(t.bloco, t.numero),
+  check('unidade_bloco_ck', sql`bloco ~ '^[A-Z0-9]{1,3}$'`),
+  check('unidade_numero_ck', sql`numero ~ '^(0[0-9]|[1-9][0-9]+)$'`),
 ]);
 
 /** Áreas comuns atendidas por prestador (RF-36): salão, piscina, casa de máquinas... */

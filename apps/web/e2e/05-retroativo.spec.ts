@@ -11,7 +11,7 @@ test.describe('5. Lançamento retroativo (contingência em papel)', () => {
     await expect(page.getByRole('heading', { name: 'Lançar registro retroativo' })).toBeVisible();
 
     await escolherPessoa(page, 'Márcia Pereira');
-    await escolherUnidade(page, 'T4-32');
+    await escolherUnidade(page, 'D-32');
     await escolherMeio(page, 'Interfone');
     await escolherMorador(page, 'Ana Ribeiro');
 
@@ -41,7 +41,7 @@ test.describe('5. Lançamento retroativo (contingência em papel)', () => {
   test('hora real no futuro não é aceita', async ({ page }) => {
     await page.goto('/entrada?retroativo=1');
     await escolherPessoa(page, 'Márcia Pereira');
-    await escolherUnidade(page, 'T4-32');
+    await escolherUnidade(page, 'D-32');
     await escolherMeio(page, 'Interfone');
     await escolherMorador(page, 'Ana Ribeiro');
     await page.getByLabel(/Nº do formulário de papel/).fill('0124');

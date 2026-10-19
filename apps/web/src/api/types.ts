@@ -8,6 +8,7 @@ import type {
 import type { EstadoAutorizacao } from '@portaria/domain/rules';
 import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
 import type { Rota } from '@portaria/domain/rbac';
+import type { Agrupamento } from '@portaria/domain/units';
 
 /** Erro de API no formato da spec: status HTTP + código estável + mensagem para o operador. */
 export class ApiError extends Error {
@@ -132,7 +133,8 @@ export interface NovaOcorrenciaInput {
 
 export interface NovoUsuarioInput { nome: string; login: string; papel: Papel }
 
-export interface NovaUnidadeInput { torre: number; numero: string }
+/** Bloco e número como digitados: a API (e o mock) normalizam ("a" -> "A", "3" -> "03") e validam. */
+export interface NovaUnidadeInput { bloco: string; numero: string }
 
 /** RF-09: funcionário do condomínio = pessoa (mesmas regras de CPF e telefone) + função e escala. */
 export interface NovoFuncionarioInput { nome: string; documento: string; telefone: string; funcao: string; escala: Escala; ativo?: boolean }
@@ -141,7 +143,7 @@ export interface FuncionarioView extends Funcionario { pessoa: Pessoa; emEscalaA
 
 export interface AutorizarRetiradaInput { encomendaId: string; pessoaId: string; solicitadaPorPessoaId: string }
 
-export interface LinhaPlanilha { linha: number; torre: string; unidade: string; nome: string; documento: string; telefone: string; tipo?: string }
+export interface LinhaPlanilha { linha: number; bloco: string; unidade: string; nome: string; documento: string; telefone: string; tipo?: string }
 
 // ----- Saídas ---------------------------------------------------------------------------------
 /** Usuário da sessão: o de sistema + a marca de troca obrigatória (senha temporária). */
@@ -158,7 +160,7 @@ export type EventoSessao = 'expirada' | 'troca_obrigatoria';
 
 export interface PessoaBusca extends Pessoa {
   ultimoAcesso: string;
-  /** Ids das unidades com vínculo válido, e os códigos correspondentes ("T4-32") na mesma ordem. */
+  /** Ids das unidades com vínculo válido, e os códigos correspondentes ("D-32") na mesma ordem. */
   unidadesVinculadas: string[]; unidadesVinculadasCodigos: string[];
 }
 
@@ -217,11 +219,12 @@ export interface ResumoEncomendas { aguardando: number; atrasadas: number; entre
 export interface FiltroOcorrencias { status?: StatusOcorrencia[]; tipo?: TipoOcorrencia; unidadeId?: string; cursor?: string | null; limite?: number }
 
 /** Catálogo leve para a UI: todas as unidades (inclusive inativas, para o histórico) e áreas comuns. */
-export interface Catalogo { unidades: Unidade[]; areasComuns: AreaComum[] }
+/** `agrupamento`: como o condomínio chama o bloco ("Bloco"/"Torre"), configurado na API; só muda os rótulos. */
+export interface Catalogo { agrupamento: Agrupamento; unidades: Unidade[]; areasComuns: AreaComum[] }
 
 /** Página de uma listagem por cursor (o envelope REST `{ data, pagination }` já desembrulhado). */
 export interface Pagina<T> { itens: T[]; cursor: string | null; temMais: boolean }
-export interface FiltroUnidades { torre?: number; cursor?: string | null; limite?: number }
+export interface FiltroUnidades { bloco?: string; cursor?: string | null; limite?: number }
 
 /** Busca do topo: pessoas (até 6) e unidades pelo código ou pela placa. */
 export interface ResultadoBuscaGlobal {
@@ -374,12 +377,12 @@ export interface Api {
   unidades: {
     /** Todas as unidades com resumo (percorre as páginas). A tela usa `listarPagina`. */
     listar(): Promise<UnidadeResumo[]>;
-    /** Uma página (cursor), na ordem torre/número; `torre` filtra. Padrão de 50 por página. */
+    /** Uma página (cursor), na ordem bloco/número; `bloco` filtra. Padrão de 50 por página. */
     listarPagina(f?: FiltroUnidades): Promise<Pagina<UnidadeResumo>>;
-    /** `id` aceita o uuid ou o código "T4-32". */
+    /** `id` aceita o uuid ou o código "D-32". */
     detalhe(id: string): Promise<UnidadeDetalhe>;
     criar(i: NovaUnidadeInput): Promise<Unidade>;
-    /** Só torre/número; unidade já referenciada (vínculo, evento etc.) não muda de número (422 UNIDADE_REFERENCIADA). */
+    /** Só bloco/número; unidade já referenciada (vínculo, evento etc.) não muda de número (422 UNIDADE_REFERENCIADA). */
     editar(i: NovaUnidadeInput & { id: string }): Promise<Unidade>;
     desativar(id: string): Promise<Unidade>;
     reativar(id: string): Promise<Unidade>;

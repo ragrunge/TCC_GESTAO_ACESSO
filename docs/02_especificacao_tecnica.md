@@ -8,7 +8,7 @@
 |---|---|
 | Versão | 0.1 (rascunho) |
 | Data | 2026-10-09; seções 3, 4 e 14 revisadas em 2026-10-17 (schema implementado) |
-| Contexto | 165 unidades, 9 torres, 500 a 600 moradores, ~175 veículos, portaria social 24h |
+| Contexto | 162 unidades (provisório: confirmar o térreo), 9 blocos (A a I), 500 a 600 moradores, ~175 veículos, portaria social 24h |
 | Premissas já decididas | Portaria presencial (porteiro opera, morador não usa o sistema no MVP); software primeiro, sem hardware no MVP; API e front separados |
 | Stack | Backend NestJS (TypeScript), PostgreSQL 16+, Drizzle ORM; frontend React + Vite (SPA) |
 
@@ -196,11 +196,11 @@ citados existem no banco e aparecem na mensagem de erro.
 
 | Tabela | Colunas | Restrições |
 |---|---|---|
-| unidade | id, torre smallint, numero text, ativo, criado_em, atualizado_em | UQ (torre, numero); torre > 0; numero só dígitos. Nunca excluída: FKs sem cascade e sem DELETE para app_rw |
+| unidade | id, bloco text, numero text, ativo, criado_em, atualizado_em | UQ (bloco, numero); bloco `^[A-Z0-9]{1,3}$` ("A", "4", "B2"); numero só dígitos, mínimo 2 e sem zero à esquerda além da dezena ("03", "32"; a API normaliza "3" -> "03"). Nunca excluída: FKs sem cascade e sem DELETE para app_rw (exceção: `unidade_descartar_estrutura()`, só sem nenhuma referência) |
 | area_comum | id, nome, ativo | UQ nome. Destino de prestador e de autorização prévia de área comum |
 | ponto_acesso | id, nome, ativo | UQ nome. Seed com a única "Portaria social"; tabela pronta para garagem e dispositivos (fase 3) |
 
-O seed (`apps/api/src/db/seed.ts`) cria as 165 unidades, o ponto de acesso e as áreas comuns a partir de `@portaria/domain/units` (o mesmo que o mock usa). Usuários e pessoas não entram no seed.
+A estrutura inicial é declarativa (`ESTRUTURA_PADRAO` em `@portaria/domain/units`): agrupamento ("Bloco" ou "Torre", só muda o rótulo: "BLOCO A · AP 32"; o código é "A-32"), blocos, andares (0 = térreo), finais por andar e unidades ausentes ("01" em todos os blocos, "A-01" só num). Número = andar × 10 + final. Padrão: blocos A a I, andares 0 a 4, finais 1 a 4, sem 01 e 02 no térreo (162 unidades, provisório). O seed (`apps/api/src/db/seed.ts`) cria essas unidades, o ponto de acesso e as áreas comuns (o mesmo que o mock usa). Usuários e pessoas não entram no seed. Exceções à grade entram pelo CRUD (RF-01) ou pela importação. Banco sem nenhum uso de unidade e com outra estrutura: CLI `recriar-estrutura` (substitui as unidades e grava no audit_log; recusa se houver qualquer referência).
 
 #### usuario_sistema (RN-05, RF-33)
 
@@ -719,9 +719,9 @@ Respostas da API saem com `Cache-Control: no-store`.
 
 | Método | Rota | Papéis | RF |
 |---|---|---|---|
-| GET/POST/PATCH | /unidades | SI, AD (GET: todos) | RF-01. `GET /unidades?torre=&limite=&cursor=` pagina com o resumo (moradores válidos, pendentes, restrições vigentes, cadastro completo); `GET /unidades/:ref` aceita o uuid ou o código "T4-32"; `PATCH` só torre e número (422 `UNIDADE_REFERENCIADA` se já houver registro); 409 `UNIDADE_DUPLICADA` |
+| GET/POST/PATCH | /unidades | SI, AD (GET: todos) | RF-01. `GET /unidades?bloco=&limite=&cursor=` pagina com o resumo (moradores válidos, pendentes, restrições vigentes, cadastro completo); `GET /unidades/:ref` aceita o uuid ou o código "A-32" (separador obrigatório; aceita "a 32", "A/32" e o antigo "T4-32"); `PATCH` só bloco e número (422 `UNIDADE_REFERENCIADA` se já houver registro); 409 `UNIDADE_DUPLICADA` |
 | POST | /unidades/:id/desativar, /reativar | SI, AD | RF-01 (nunca exclui; inativa barra novos usos com 422 `UNIDADE_INATIVA`) |
-| GET | /catalogo | todos | RF-01, RF-36: todas as unidades (inclusive inativas, com código e rótulo), áreas comuns e pontos de acesso, num objeto só (conjunto limitado: não pagina) |
+| GET | /catalogo | todos | RF-01, RF-36: o nome do agrupamento (`agrupamento`: "Bloco" ou "Torre", usado nos rótulos do front), todas as unidades (inclusive inativas, com código e rótulo), áreas comuns e pontos de acesso, num objeto só (conjunto limitado: não pagina) |
 | POST | /pessoas/busca | SI, AD, PO, AU | RF-02, RF-18. `{ q, limite?, semMoradores? }` -> `{ pessoas, temMais }`. POST com o termo no corpo, não `GET ?busca=`: o termo pode ser CPF, e a query string fica nos logs de proxy e da borda da Vercel, fora do controle da API |
 | POST | /busca | SI, AD, PO, AU | RF-34: busca do topo (`{ q }` -> `{ pessoas, unidades: [{ id, motivo }], temMaisPessoas }`), por nome, CPF, unidade ou placa |
 | GET | /vinculos/contagem?status= | SI, AD, AU | badge de vínculos pendentes (`{ status, total }`) |
@@ -1044,7 +1044,7 @@ sequenceDiagram
 
     T->>P: Entrega a encomenda
     P->>W: Informa unidade, destinatário, transportadora e rastreio
-    W-->>P: Exibe torre e número para conferência (RF-23)
+    W-->>P: Exibe bloco e número para conferência (RF-23)
     P->>W: Confirma a unidade
     W->>A: POST /encomendas
     A->>D: Insere encomenda com unidade_confirmada true
@@ -1069,7 +1069,7 @@ sequenceDiagram
 
 A planilha atual (Excel) é exportada pelo usuário como CSV (UTF-8, separador `;` ou `,`, detectado). O
 layout real da planilha ainda não foi analisado; o mapeamento de colunas é configurado na tela de
-importação e salvo em `importacao_planilha`. Premissa: uma linha por morador, com torre, unidade, nome e
+importação e salvo em `importacao_planilha`. Premissa: uma linha por morador, com bloco (ou torre), unidade, nome e
 ao menos um documento ou telefone.
 
 ### 8.1 Processo
@@ -1078,7 +1078,7 @@ ao menos um documento ou telefone.
 |---|---|
 | 1. Leitura e envio | O navegador lê o .csv/.xlsx e manda as linhas em JSON (`POST /importacoes`, até 3.000 linhas, corpo de até 1 MB). O arquivo não sobe nem é guardado; as linhas também não (só o HMAC delas em `arquivo_sha256`) |
 | 2. Pré-análise (dry-run) | Valida e grava só o relatório (`importacao` analisada e `importacao_inconsistencia`), sem pessoa nem vínculo; só após a revisão, `POST /importacoes/:id/confirmar` (com as mesmas linhas) grava, reprocessando contra o banco do momento |
-| 3. Normalização | Torre e número em formato canônico; nome com trim; telefone só dígitos; documento sem pontuação |
+| 3. Normalização | Bloco e número em formato canônico ("bloco a" -> "A", "3" -> "03"); nome com trim; telefone só dígitos; documento sem pontuação |
 | 4. Validação | Regras da tabela 8.2 |
 | 5. Gravação | Em transação única por lote: cria `unidade` (se ausente, a critério de configuração), `pessoa` e `vinculo_unidade` |
 | 6. Relatório | Contagens (lidas, importadas, rejeitadas, avisos) e lista de inconsistências, exportável em CSV |
@@ -1087,7 +1087,7 @@ ao menos um documento ou telefone.
 
 | Código | Condição | Tratamento |
 |---|---|---|
-| UNIDADE_INEXISTENTE | Torre/número não corresponde a unidade cadastrada | Erro; linha não importada, salvo opção de criar unidade |
+| UNIDADE_INEXISTENTE | Bloco/número não corresponde a unidade cadastrada | Erro; linha não importada, salvo opção de criar unidade |
 | DOC_INVALIDO | CPF com dígito verificador inválido | Aviso; o número não é gravado: importa como `sem_cpf`, legado, para regularização |
 | DOC_AUSENTE | Sem documento | Aviso; importa, pendente de completar |
 | DUPLICIDADE_PLANILHA | Mesma pessoa duas vezes no arquivo | Aviso; consolida o que for idêntico, reporta o restante |
@@ -1105,7 +1105,7 @@ assembleia (RN-09) e sem conferência do comprovante registrada. Enquanto o praz
 
 - Quando a conferência do comprovante é registrada e o vínculo é aprovado, `status` muda para `aprovado`.
 - O job diário lista os legados vencidos para revisão da administração (RN-09); o sistema não bloqueia automaticamente o acesso ao fim do prazo (decisão em aberto, seção 14).
-- Relatório: contagem de legados por torre, vencendo em 30 dias e vencidos.
+- Relatório: contagem de legados por bloco, vencendo em 30 dias e vencidos.
 
 A importação é idempotente por (documento_busca, unidade): reimportar o mesmo arquivo não duplica.
 

@@ -9,13 +9,13 @@ describe('mock: unidade desativada barra a aprovação do vínculo', () => {
     const api = novaApi();
     await entrarComo(api, 'paula.nogueira');
     const p = await api.pessoas.criar({ nome: 'Teste Inativa', documento: '390.533.447-05', telefone: '11955550000', categoria: 'visitante' });
-    const v = await api.vinculos.criar({ pessoaId: p.id, unidadeId: un('T1-11'), tipo: 'proprietario', vigenciaInicio: Date.now(), vigenciaFim: null, solicitadoPor: 'x' });
+    const v = await api.vinculos.criar({ pessoaId: p.id, unidadeId: un('A-11'), tipo: 'proprietario', vigenciaInicio: Date.now(), vigenciaFim: null, solicitadoPor: 'x' });
     await api.vinculos.registrarConferencia(v.id, { tipo: 'escritura' });
-    await api.unidades.desativar(un('T1-11'));
+    await api.unidades.desativar(un('A-11'));
     const e = await esperaErro(api.vinculos.decidir({ id: v.id, decisao: 'aprovar' }));
     expect(e).toMatchObject({ status: 422, code: 'UNIDADE_INATIVA' });
     expect((await api.vinculos.listar({ status: 'pendente' })).some((x) => x.id === v.id)).toBe(true);
-    await api.unidades.reativar(un('T1-11'));
+    await api.unidades.reativar(un('A-11'));
     expect((await api.vinculos.decidir({ id: v.id, decisao: 'aprovar' })).status).toBe('aprovado');
   });
 
@@ -66,8 +66,8 @@ describe('mock: listagens paginadas com os filtros da API real', () => {
   it('trilha de alterações por cursor e por ação', async () => {
     const api = novaApi();
     await entrarComo(api, 'paula.nogueira');
-    await api.unidades.desativar(un('T1-11'));
-    await api.unidades.reativar(un('T1-11'));
+    await api.unidades.desativar(un('A-11'));
+    await api.unidades.reativar(un('A-11'));
     const p = await api.auditoria.alteracoesPagina({ acao: 'unidade.reativar', limite: 1 });
     expect(p.itens).toHaveLength(1);
     expect(p.itens[0]!.acao).toBe('unidade.reativar');

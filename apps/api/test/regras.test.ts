@@ -127,7 +127,7 @@ describe('pessoa', () => {
 
 describe('vínculo', () => {
   const novo = (extra: Partial<typeof s.vinculoUnidade.$inferInsert> = {}) => db.insert(s.vinculoUnidade).values({
-    pessoaId: fx.visitante.id, unidadeId: fx.t111.id, tipo: 'dependente', registradoPorId: fx.admin.id, ...extra,
+    pessoaId: fx.visitante.id, unidadeId: fx.a11.id, tipo: 'dependente', registradoPorId: fx.admin.id, ...extra,
   }).returning().then((r) => r[0]);
   const mudar = (id: string, set: Partial<typeof s.vinculoUnidade.$inferInsert>) =>
     db.update(s.vinculoUnidade).set(set).where(eq(s.vinculoUnidade.id, id));
@@ -148,7 +148,7 @@ describe('vínculo', () => {
     await novo(); // rejeitado não bloqueia novo pedido
   });
   it('legado: regulariza (vira aprovado) ou encerra', async () => {
-    const v = await novo({ unidadeId: fx.t432.id, status: 'legado', prazoRegularizacao: '2027-03-31' });
+    const v = await novo({ unidadeId: fx.d32.id, status: 'legado', prazoRegularizacao: '2027-03-31' });
     await mudar(v.id, { ...conferencia(fx.admin.id), status: 'aprovado', decididoPorId: fx.admin.id, decididoEm: new Date() });
     await mudar(v.id, { status: 'encerrado', encerradoEm: new Date() });
     await falha(mudar(v.id, { status: 'aprovado' }), /estado final/);
@@ -162,7 +162,7 @@ describe('vínculo', () => {
       await mudar(v.id, { ...conferencia(fx.admin.id), status: 'aprovado', ...decidido() });
     });
     it('regularizar legado sem conferência falha', async () => {
-      const v = await novo({ pessoaId: fx.prestador.id, unidadeId: fx.t432.id, status: 'legado', prazoRegularizacao: '2027-03-31' });
+      const v = await novo({ pessoaId: fx.prestador.id, unidadeId: fx.d32.id, status: 'legado', prazoRegularizacao: '2027-03-31' });
       await falha(mudar(v.id, { status: 'aprovado', ...decidido() }), /vinculo_aprovado_conferido_ck/);
       await mudar(v.id, { ...conferencia(fx.sindico.id), status: 'aprovado', ...decidido() });
     });
@@ -182,12 +182,12 @@ describe('vínculo', () => {
       await mudar(v.id, conferencia(fx.admin.id, { conferenciaObservacao: 'Recebido por e-mail em 01/10/2026; firma reconhecida.' }));
     });
     it('data da conferência não pode ser depois da decisão', async () => {
-      const v = await novo({ pessoaId: fx.morador.id, unidadeId: fx.t111.id });
+      const v = await novo({ pessoaId: fx.morador.id, unidadeId: fx.a11.id });
       await falha(mudar(v.id, { ...conferencia(fx.admin.id, { conferenciaData: '2999-01-01' }), status: 'aprovado', ...decidido() }),
         /vinculo_conferencia_antes_decisao_ck/);
     });
     it('pendente pode refazer a conferência; depois de aprovado ela é imutável', async () => {
-      const v = await novo({ pessoaId: fx.visitante.id, unidadeId: fx.t432.id });
+      const v = await novo({ pessoaId: fx.visitante.id, unidadeId: fx.d32.id });
       await mudar(v.id, conferencia(fx.admin.id));
       await mudar(v.id, conferencia(fx.sindico.id, { conferenciaTipoDocumento: 'contrato_compra_venda' }));
       await mudar(v.id, { status: 'aprovado', ...decidido() });
@@ -200,7 +200,7 @@ describe('vínculo', () => {
 
 describe('autorização prévia e restrição', () => {
   const base = () => ({
-    pessoaId: fx.visitante.id, unidadeId: fx.t432.id, validaDe: new Date(), validaAte: amanha(), cadastradaPorId: fx.porteiro.id,
+    pessoaId: fx.visitante.id, unidadeId: fx.d32.id, validaDe: new Date(), validaAte: amanha(), cadastradaPorId: fx.porteiro.id,
     solicitadaPorPessoaId: fx.morador.id,
   });
   it('autorização: solicitante ou (sem solicitante + justificativa); destino único; janela completa', async () => {
@@ -222,7 +222,7 @@ describe('autorização prévia e restrição', () => {
   });
   it('restrição: escopo unidade exige unidade e solicitante e não tem aprovação; aprovação e revogação únicas', async () => {
     const r = { pessoaId: fx.visitante.id, motivo: 'Pedido do morador', validaAte: amanha(), cadastradaPorId: fx.porteiro.id };
-    await falha(db.insert(s.restricao).values({ ...r, escopo: 'unidade', unidadeId: fx.t432.id }), /restricao_escopo_unidade_ck/);
+    await falha(db.insert(s.restricao).values({ ...r, escopo: 'unidade', unidadeId: fx.d32.id }), /restricao_escopo_unidade_ck/);
     const [cond] = await db.insert(s.restricao).values({ ...r, escopo: 'condominio' }).returning();
     const set = (v: Partial<typeof s.restricao.$inferInsert>) => db.update(s.restricao).set(v).where(eq(s.restricao.id, cond.id));
     await falha(set({ aprovadaPorId: fx.sindico.id }), /restricao_aprovacao_ck/);
@@ -235,7 +235,7 @@ describe('autorização prévia e restrição', () => {
 
 describe('encomenda e autorização de retirada (RN-08)', () => {
   it('unidade conferida, retirada completa, autorização da mesma encomenda e pessoa, retirada única', async () => {
-    const enc = { unidadeId: fx.t432.id, destinatario: 'Joana', recebidaPorId: fx.porteiro.id };
+    const enc = { unidadeId: fx.d32.id, destinatario: 'Joana', recebidaPorId: fx.porteiro.id };
     await falha(db.insert(s.encomenda).values({ ...enc, unidadeConfirmada: false }), /encomenda_unidade_confirmada_ck/);
     const [e] = await db.insert(s.encomenda).values({ ...enc, unidadeConfirmada: true }).returning();
     const [aut] = await db.insert(s.autorizacaoRetirada).values({
@@ -274,8 +274,14 @@ describe('outros cadastros', () => {
     await falha(db.update(s.funcionario).set({ diasSemana: [] }).where(eq(s.funcionario.pessoaId, fx.funcionarioPessoa.id)), /funcionario_dias_ck/);
     await falha(db.update(s.funcionario).set({ horaFim: '22:00:00' }).where(eq(s.funcionario.pessoaId, fx.funcionarioPessoa.id)), /funcionario_escala_ck/);
   });
-  it('unidade: torre + número únicos', async () => {
-    await falha(db.insert(s.unidade).values({ torre: 4, numero: '32' }), /unidade_torre_numero_uq/);
+  it('unidade: bloco + número únicos; bloco de 1 a 3 maiúsculas/dígitos; número canônico com 2 dígitos no mínimo', async () => {
+    await falha(db.insert(s.unidade).values({ bloco: 'D', numero: '32' }), /unidade_bloco_numero_uq/);
+    await falha(db.insert(s.unidade).values({ bloco: 'd', numero: '32' }), /unidade_bloco_ck/);
+    await falha(db.insert(s.unidade).values({ bloco: 'ABCD', numero: '32' }), /unidade_bloco_ck/);
+    await falha(db.insert(s.unidade).values({ bloco: '', numero: '32' }), /unidade_bloco_ck/);
+    await falha(db.insert(s.unidade).values({ bloco: 'Z', numero: '3' }), /unidade_numero_ck/);
+    await falha(db.insert(s.unidade).values({ bloco: 'Z', numero: '032' }), /unidade_numero_ck/);
+    await falha(db.insert(s.unidade).values({ bloco: 'Z', numero: '3a' }), /unidade_numero_ck/);
   });
   it('audit_log: ação no formato entidade.acao; usuário e papel juntos', async () => {
     await falha(db.insert(s.auditLog).values({ usuarioNome: 'x', acao: 'apagou tudo', entidade: 'pessoa' }), /audit_log_acao_ck/);

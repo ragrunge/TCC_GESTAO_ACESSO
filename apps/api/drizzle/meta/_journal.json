@@ -36,6 +36,13 @@
       "when": 1792376703108,
       "tag": "0004_lgpd_selo_ancora",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792428205203,
+      "tag": "0005_unidade_bloco",
+      "breakpoints": true
     }
   ]
 }

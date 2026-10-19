@@ -7,7 +7,7 @@ test.describe('6. Vínculo', () => {
   });
 
   test('administração solicita vínculo sem campo de documento; fica pendente', async ({ page }) => {
-    await page.goto('/unidades/T3-14');
+    await page.goto('/unidades/C-14');
     await page.getByRole('button', { name: 'Solicitar vínculo' }).click();
     const modal = page.getByRole('dialog', { name: 'Solicitar vínculo' });
     await expect(modal).toBeVisible();
@@ -40,7 +40,7 @@ test.describe('6. Vínculo', () => {
     await expect(toast(page, 'Ximena Sem Documento cadastrado(a).')).toBeVisible();
 
     // 2) Solicita o vínculo na unidade
-    await page.goto('/unidades/T3-14');
+    await page.goto('/unidades/C-14');
     await page.getByRole('button', { name: 'Solicitar vínculo' }).click();
     const modal = page.getByRole('dialog', { name: 'Solicitar vínculo' });
     await modal.getByLabel('Pessoa', { exact: true }).fill('Ximena Sem');
@@ -60,7 +60,7 @@ test.describe('6. Vínculo', () => {
 
   test('aprovar vínculo de cadastro completo funciona', async ({ page }) => {
     await page.goto('/vinculos');
-    // Seed V4: Lucas Ferraz (T3-42), todas as conferências OK e cadastro completo
+    // Seed V4: Lucas Ferraz (C-42), todas as conferências OK e cadastro completo
     await page.getByRole('list', { name: 'Fila' }).getByRole('button', { name: /Lucas Ferraz/ }).click();
     await expect(page.getByRole('heading', { name: /Lucas Ferraz/ })).toBeVisible();
     await expect(page.getByText(/Cadastro incompleto/)).toHaveCount(0);
@@ -73,7 +73,7 @@ test.describe('6. Vínculo', () => {
     await expect(page.getByText(/Conferido por/)).toBeVisible();
 
     await aprovar.click();
-    await expect(toast(page, /Vínculo de Lucas Ferraz \(T3-42\) aprovado/)).toBeVisible();
+    await expect(toast(page, /Vínculo de Lucas Ferraz \(C-42\) aprovado/)).toBeVisible();
 
     // Saiu da fila de pendentes e foi para "Decididos" com o aprovador
     await expect(page.getByRole('list', { name: 'Fila' }).getByRole('button', { name: /Lucas Ferraz/ })).toHaveCount(0);
@@ -117,7 +117,7 @@ test.describe('6. Vínculo', () => {
     await registrarConferencia(page, 'Outro', 'Certidão de nascimento');
     await expect(regularizar).toBeEnabled();
     await regularizar.click();
-    await expect(toast(page, /Vínculo legado de Lúcia Ribeiro \(T4-32\) regularizado/)).toBeVisible();
+    await expect(toast(page, /Vínculo legado de Lúcia Ribeiro \(D-32\) regularizado/)).toBeVisible();
   });
 });
 

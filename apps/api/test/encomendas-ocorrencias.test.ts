@@ -1,7 +1,7 @@
 // Encomendas (RF-22 a RF-26, RN-08) e ocorrências (RF-27, RF-28, anexos cifrados da spec §9.2) pela API real
 // (HTTP + PGlite + migrações). Relógio da API fixo em 17/10/2026 09:00 BRT; os nomes vêm do seed de pessoas de dev:
-// Ana Ribeiro (proprietária aprovada da T4-32), Paulo Ribeiro (dependente aprovado da T4-32), Rafael Mendes (pendente
-// na T7-11), Marcos Pereira (visitante com CPF, sem vínculo) e Cláudia Rocha (sem CPF).
+// Ana Ribeiro (proprietária aprovada da D-32), Paulo Ribeiro (dependente aprovado da D-32), Rafael Mendes (pendente
+// na G-11), Marcos Pereira (visitante com CPF, sem vínculo) e Cláudia Rocha (sem CPF).
 import { createHash } from 'node:crypto';
 import { readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -28,9 +28,9 @@ beforeAll(async () => {
   for (const nome of ['Ana Ribeiro', 'Paulo Ribeiro', 'Rafael Mendes', 'Marcos Pereira', 'Cláudia Rocha', 'Bruno Teixeira', 'Carla Mendes']) {
     ids[nome] = (await api.db.select().from(s.pessoa).where(eq(s.pessoa.nome, nome)))[0]!.id;
   }
-  for (const c of ['T4-32', 'T7-11', 'T1-11', 'T2-24']) {
-    const m = /^T(\d+)-(\d+)$/.exec(c)!;
-    ids[c] = (await api.db.select().from(s.unidade).where(and(eq(s.unidade.torre, Number(m[1])), eq(s.unidade.numero, m[2]!))))[0]!.id;
+  for (const c of ['D-32', 'G-11', 'A-11', 'B-24']) {
+    const m = /^([A-Z0-9]+)-(\d+)$/.exec(c)!;
+    ids[c] = (await api.db.select().from(s.unidade).where(and(eq(s.unidade.bloco, m[1]!), eq(s.unidade.numero, m[2]!))))[0]!.id;
   }
 });
 afterAll(async () => {
@@ -41,7 +41,7 @@ afterAll(async () => {
 
 const get = (papel: PapelTeste, url: string) => api.http().get(`${V1}${url}`).set('Cookie', cookies[papel]);
 const post = (papel: PapelTeste, url: string, corpo?: object) => api.http().post(`${V1}${url}`).set('Cookie', cookies[papel]).send(corpo);
-const receber = (papel: PapelTeste, unidade = 'T4-32', extra: object = {}) =>
+const receber = (papel: PapelTeste, unidade = 'D-32', extra: object = {}) =>
   post(papel, '/encomendas', { unidadeId: ids[unidade], destinatario: 'Ana Ribeiro', transportadora: 'Correios', codigoRastreio: 'BR123', unidadeConfirmada: true, ...extra });
 const negadosDe = async (acao: string) => (await trilha(api, 'acesso.negado')).filter((l) => (l.depois as { acao?: string }).acao === acao).length;
 
@@ -50,7 +50,7 @@ describe('encomendas: receber (RF-22, RF-23)', () => {
     const r = await receber('porteiro');
     expect(r.status).toBe(201);
     expect(r.body.data).toMatchObject({
-      codigo: expect.stringMatching(/^K\d+$/), unidadeCodigo: 'T4-32', destinatario: 'Ana Ribeiro', transportadora: 'Correios', codigoRastreio: 'BR123',
+      codigo: expect.stringMatching(/^K\d+$/), unidadeCodigo: 'D-32', destinatario: 'Ana Ribeiro', transportadora: 'Correios', codigoRastreio: 'BR123',
       recebidaPorNome: 'João Lima', retiradaEm: null, retiradaPorNome: null, autorizacoes: [], unidadeConfirmada: true,
       recebidaEm: api.relogio.agora().getTime(),
     });
@@ -59,22 +59,22 @@ describe('encomendas: receber (RF-22, RF-23)', () => {
   });
 
   it('sem conferência da unidade, sem destinatário ou unidade inexistente: 422/404; transportadora e rastreio opcionais', async () => {
-    expect((await receber('porteiro', 'T4-32', { unidadeConfirmada: false })).body.code).toBe('UNIDADE_NAO_CONFIRMADA');
-    expect((await receber('porteiro', 'T4-32', { destinatario: '   ' })).body.code).toBe('DESTINATARIO_OBRIGATORIO');
+    expect((await receber('porteiro', 'D-32', { unidadeConfirmada: false })).body.code).toBe('UNIDADE_NAO_CONFIRMADA');
+    expect((await receber('porteiro', 'D-32', { destinatario: '   ' })).body.code).toBe('DESTINATARIO_OBRIGATORIO');
     expect((await post('porteiro', '/encomendas', { unidadeId: '00000000-0000-4000-8000-000000000000', destinatario: 'X', unidadeConfirmada: true })).status).toBe(404);
-    const sem = await post('porteiro', '/encomendas', { unidadeId: ids['T4-32'], destinatario: 'Paulo', unidadeConfirmada: true });
+    const sem = await post('porteiro', '/encomendas', { unidadeId: ids['D-32'], destinatario: 'Paulo', unidadeConfirmada: true });
     expect(sem.status).toBe(201);
     expect(sem.body.data).toMatchObject({ transportadora: '', codigoRastreio: '' });
-    expect((await receber('porteiro', 'T4-32', { papel: 'sindico' })).status).toBe(400); // campo desconhecido
+    expect((await receber('porteiro', 'D-32', { papel: 'sindico' })).status).toBe(400); // campo desconhecido
   });
 
   it('unidade desativada não recebe encomenda nova (UNIDADE_INATIVA)', async () => {
-    expect((await post('administracao', `/unidades/${ids['T1-11']}/desativar`)).status).toBe(200);
+    expect((await post('administracao', `/unidades/${ids['A-11']}/desativar`)).status).toBe(200);
     try {
-      const r = await receber('porteiro', 'T1-11');
+      const r = await receber('porteiro', 'A-11');
       expect(r.status).toBe(422);
       expect(r.body.code).toBe('UNIDADE_INATIVA');
-    } finally { await post('administracao', `/unidades/${ids['T1-11']}/reativar`); }
+    } finally { await post('administracao', `/unidades/${ids['A-11']}/reativar`); }
   });
 
   it('403 por papel: o auditor só lê (e a negação vai para a trilha)', async () => {
@@ -90,7 +90,7 @@ describe('encomendas: entrega (RF-25, RN-08)', () => {
   it('sem vínculo, com vínculo pendente: 422; dependente aprovado retira; a segunda retirada é 409', async () => {
     const e = (await receber('porteiro')).body.data;
     expect((await post('porteiro', `/encomendas/${e.id}/retirada`, { pessoaId: ids['Marcos Pereira'] })).body)
-      .toMatchObject({ code: 'PESSOA_SEM_VINCULO', message: expect.stringContaining('T4-32') });
+      .toMatchObject({ code: 'PESSOA_SEM_VINCULO', message: expect.stringContaining('D-32') });
     expect((await post('porteiro', `/encomendas/${e.id}/retirada`, { pessoaId: ids['Rafael Mendes'] })).body.code).toBe('PESSOA_SEM_VINCULO');
     expect((await post('porteiro', `/encomendas/${e.id}/retirada`, { pessoaId: ids['Carla Mendes'] })).body.code).toBe('PESSOA_SEM_VINCULO'); // outra unidade
     const ok = await post('porteiro', `/encomendas/${e.id}/retirada`, { pessoaId: ids['Paulo Ribeiro'] });
@@ -156,7 +156,7 @@ describe('encomendas: filas, atrasadas e contagens (RF-26)', () => {
   it('status separa as filas; página por cursor sem repetir; atrasadas = há mais de 7 dias; resumo e turno batem', async () => {
     const recebida = async (diasAtras: number) => {
       const [e] = await api.db.insert(s.encomenda).values({
-        unidadeId: ids['T2-24'], destinatario: `Helena ${diasAtras}d`, unidadeConfirmada: true, recebidaPorId: api.usuarios['joao.lima']!.id,
+        unidadeId: ids['B-24'], destinatario: `Helena ${diasAtras}d`, unidadeConfirmada: true, recebidaPorId: api.usuarios['joao.lima']!.id,
         recebidaEm: new Date(api.relogio.agora().getTime() - diasAtras * DIA - 60_000),
       }).returning();
       return e!.id;
@@ -190,22 +190,22 @@ describe('encomendas: filas, atrasadas e contagens (RF-26)', () => {
     expect((await get('porteiro', '/turnos/resumo')).body.data.encomendasPendentes).toBe(aguardando.length);
     expect((await get('porteiro', '/encomendas?status=pendente')).status).toBe(400);
     expect((await get('porteiro', '/encomendas?cursor=lixo')).body.code).toBe('CURSOR_INVALIDO');
-    expect((await get('porteiro', `/encomendas?unidadeId=${ids['T2-24']}`)).body.data).toHaveLength(2);
+    expect((await get('porteiro', `/encomendas?unidadeId=${ids['B-24']}`)).body.data).toHaveLength(2);
   });
 });
 
 describe('restrição em unidade desativada (correção pendente do lote de acesso)', () => {
   it('criar restrição de unidade ou com origem em unidade inativa é 422 UNIDADE_INATIVA', async () => {
     const validaAte = '2026-12-31';
-    expect((await post('administracao', `/unidades/${ids['T4-32']}/desativar`)).status).toBe(200);
+    expect((await post('administracao', `/unidades/${ids['D-32']}/desativar`)).status).toBe(200);
     try {
-      const r = await post('porteiro', '/restricoes', { pessoaId: ids['Marcos Pereira'], unidadeId: ids['T4-32'], motivo: 'Morador não autoriza', validaAte, solicitadaPorPessoaId: ids['Ana Ribeiro'] });
+      const r = await post('porteiro', '/restricoes', { pessoaId: ids['Marcos Pereira'], unidadeId: ids['D-32'], motivo: 'Morador não autoriza', validaAte, solicitadaPorPessoaId: ids['Ana Ribeiro'] });
       expect(r.status).toBe(422);
       expect(r.body.code).toBe('UNIDADE_INATIVA');
-      const cond = await post('administracao', '/restricoes', { pessoaId: ids['Marcos Pereira'], unidadeId: ids['T4-32'], motivo: 'Ameaçou o porteiro', validaAte, paraTodoCondominio: true, solicitadaPorPessoaId: null });
+      const cond = await post('administracao', '/restricoes', { pessoaId: ids['Marcos Pereira'], unidadeId: ids['D-32'], motivo: 'Ameaçou o porteiro', validaAte, paraTodoCondominio: true, solicitadaPorPessoaId: null });
       expect(cond.body.code).toBe('UNIDADE_INATIVA');
-    } finally { await post('administracao', `/unidades/${ids['T4-32']}/reativar`); }
-    const ok = await post('porteiro', '/restricoes', { pessoaId: ids['Marcos Pereira'], unidadeId: ids['T4-32'], motivo: 'Morador não autoriza', validaAte, solicitadaPorPessoaId: ids['Ana Ribeiro'] });
+    } finally { await post('administracao', `/unidades/${ids['D-32']}/reativar`); }
+    const ok = await post('porteiro', '/restricoes', { pessoaId: ids['Marcos Pereira'], unidadeId: ids['D-32'], motivo: 'Morador não autoriza', validaAte, solicitadaPorPessoaId: ids['Ana Ribeiro'] });
     expect(ok.status).toBe(201);
     await post('administracao', `/restricoes/${ok.body.data.id}/revogar`);
   });
@@ -216,7 +216,7 @@ describe('ocorrências: abrir, status e eventos (RF-27, RF-28)', () => {
   let doPorteiro: string;
   beforeAll(async () => {
     const r = await post('porteiro', '/eventos-acesso', {
-      pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['T7-11'], autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: ids['Carla Mendes'],
+      pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['G-11'], autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: ids['Carla Mendes'],
     });
     expect(r.status).toBe(201);
     eventoId = r.body.data.id;
@@ -224,12 +224,12 @@ describe('ocorrências: abrir, status e eventos (RF-27, RF-28)', () => {
 
   it('porteiro abre com evento vinculado (o link do negado): 201, nasce aberta, código OC-ano-nnn, audit', async () => {
     const r = await post('porteiro', '/ocorrencias', {
-      tipo: 'tentativa_acesso_indevido', descricao: '  Tentou entrar sem autorização  ', unidadeId: ids['T7-11'], envolvidos: 'Bruno Teixeira', eventoIds: [eventoId, eventoId],
+      tipo: 'tentativa_acesso_indevido', descricao: '  Tentou entrar sem autorização  ', unidadeId: ids['G-11'], envolvidos: 'Bruno Teixeira', eventoIds: [eventoId, eventoId],
     });
     expect(r.status).toBe(201);
     doPorteiro = r.body.data.id;
     expect(r.body.data).toMatchObject({
-      codigo: expect.stringMatching(/^OC-2026-\d{3}$/), status: 'aberta', descricao: 'Tentou entrar sem autorização', unidadeCodigo: 'T7-11',
+      codigo: expect.stringMatching(/^OC-2026-\d{3}$/), status: 'aberta', descricao: 'Tentou entrar sem autorização', unidadeCodigo: 'G-11',
       envolvidos: 'Bruno Teixeira', abertaPorNome: 'João Lima', eventoIds: [eventoId], historicoStatus: [], anexos: [], documentos: [],
     });
     expect((await trilha(api, 'ocorrencia.criar')).at(-1)).toMatchObject({ registroId: doPorteiro });
@@ -279,7 +279,7 @@ describe('ocorrências: abrir, status e eventos (RF-27, RF-28)', () => {
   });
 
   it('vincular eventos depois: aditivo, repetido é ignorado; evento inexistente 404', async () => {
-    const o = (await post('porteiro', '/ocorrencias', { tipo: 'conflito', descricao: 'Discussão na portaria', unidadeId: ids['T7-11'] })).body.data;
+    const o = (await post('porteiro', '/ocorrencias', { tipo: 'conflito', descricao: 'Discussão na portaria', unidadeId: ids['G-11'] })).body.data;
     const v = await post('porteiro', `/ocorrencias/${o.id}/eventos`, { eventoIds: [eventoId] });
     expect(v.status).toBe(200);
     expect(v.body.data.eventoIds).toEqual([eventoId]);

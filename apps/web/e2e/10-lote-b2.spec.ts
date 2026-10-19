@@ -43,22 +43,22 @@ test.describe('10. Lote B2', () => {
     await page.goto('/unidades');
     await page.getByRole('button', { name: 'Nova unidade' }).click();
     const modal = page.getByRole('dialog', { name: 'Nova unidade' });
-    await modal.getByLabel('Torre').fill('10');
+    await modal.getByLabel('Bloco').fill('j'); // vira maiúscula
     await modal.getByLabel('Apartamento').fill('101');
     await modal.getByRole('button', { name: 'Cadastrar unidade' }).click();
-    await expect(toast(page, 'Unidade T10-101 cadastrada.')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Torre 10 · Apartamento 101' })).toBeVisible();
-    await expect(page.getByRole('radiogroup', { name: 'Torre' }).getByRole('radio', { name: '10' })).toBeVisible();
+    await expect(toast(page, 'Unidade J-101 cadastrada.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Bloco J · Apartamento 101' })).toBeVisible();
+    await expect(page.getByRole('radiogroup', { name: 'Bloco' }).getByRole('radio', { name: 'J', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Desativar unidade' }).click();
-    await expect(toast(page, /Unidade T10-101 desativada/)).toBeVisible();
+    await expect(toast(page, /Unidade J-101 desativada/)).toBeVisible();
     await expect(page.getByText(/Unidade desativada: não aparece para nova entrada/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Solicitar vínculo' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Reativar unidade' }).click();
-    await expect(toast(page, 'Unidade T10-101 reativada.')).toBeVisible();
+    await expect(toast(page, 'Unidade J-101 reativada.')).toBeVisible();
 
     // Unidade com histórico não muda de número
-    await page.goto('/unidades/T4-32');
+    await page.goto('/unidades/D-32');
     await page.getByRole('button', { name: 'Editar número' }).click();
     const ed = page.getByRole('dialog', { name: 'Editar número da unidade' });
     await ed.getByLabel('Apartamento').fill('99');
@@ -67,8 +67,8 @@ test.describe('10. Lote B2', () => {
 
     await page.keyboard.press('Escape');
     await trocarPara(page, 'Auditor');
-    await page.goto('/unidades/T4-32');
-    await expect(page.getByRole('heading', { name: 'Torre 4 · Apartamento 32' })).toBeVisible();
+    await page.goto('/unidades/D-32');
+    await expect(page.getByRole('heading', { name: 'Bloco D · Apartamento 32' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Nova unidade' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Desativar unidade' })).toHaveCount(0);
   });
@@ -86,7 +86,7 @@ test.describe('10. Lote B2', () => {
     await page.getByLabel('Conferi o comprovante apresentado').check();
     await page.getByRole('button', { name: 'Registrar conferência' }).click();
     await page.getByRole('button', { name: 'Regularizar', exact: true }).click();
-    await expect(toast(page, /Vínculo legado de Lúcia Ribeiro \(T4-32\) regularizado/)).toBeVisible();
+    await expect(toast(page, /Vínculo legado de Lúcia Ribeiro \(D-32\) regularizado/)).toBeVisible();
     await expect(page.getByRole('list', { name: 'Fila' }).getByRole('button', { name: /Lúcia Ribeiro/ })).toHaveCount(0);
   });
 

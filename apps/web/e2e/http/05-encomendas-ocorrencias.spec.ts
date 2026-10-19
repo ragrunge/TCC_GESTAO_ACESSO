@@ -45,22 +45,22 @@ const RASTREIO = { dependente: `E2E${SUFIXO}DEP`.toUpperCase(), terceiro: `E2E${
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(`anexo e2e ${SUFIXO} `.repeat(40))]);
 let codigoOcorrencia = '';
 
-/** Receber pela tela: torre, apartamento, destinatário, transportadora, rastreio e a conferência da unidade. Devolve o código. */
+/** Receber pela tela: bloco, apartamento, destinatário, transportadora, rastreio e a conferência da unidade. Devolve o código. */
 async function receber(page: Page, rastreio: string): Promise<string> {
   await page.goto('/encomendas');
   await expect(page.getByRole('heading', { name: 'Encomendas', level: 1 })).toBeVisible();
   await page.keyboard.press('F3'); // RNF-07: atalho do recebimento
   const modal = page.getByRole('dialog', { name: 'Receber encomenda' });
-  await modal.getByRole('radio', { name: '4', exact: true }).click();
+  await modal.getByRole('radio', { name: 'D', exact: true }).click();
   await modal.getByRole('button', { name: 'Apartamento 32', exact: true }).click();
   await modal.getByLabel('Destinatário', { exact: true }).fill('Ana Ribeiro');
   await modal.getByRole('radio', { name: 'Correios' }).click();
   await modal.getByLabel('Código de rastreio').fill(rastreio);
   await modal.getByRole('button', { name: /Continuar/ }).click();
   // RF-23: conferência da unidade em destaque antes de gravar
-  await expect(page.getByRole('dialog', { name: 'Conferir a unidade de destino' })).toContainText('TORRE 4 · AP 32?');
+  await expect(page.getByRole('dialog', { name: 'Conferir a unidade de destino' })).toContainText('BLOCO D · AP 32?');
   await page.keyboard.press('Enter');
-  const t = toast(page, /Encomenda K\d+ registrada para T4-32/);
+  const t = toast(page, /Encomenda K\d+ registrada para D-32/);
   await expect(t).toBeVisible();
   return /Encomenda (K\d+)/.exec((await t.textContent()) ?? '')![1]!;
 }
@@ -69,7 +69,7 @@ test.describe.serial('API real: encomendas e ocorrências', () => {
   test.beforeAll(async ({ request, playwright }) => {
     test.skip(!(await apiDePe(request)), 'API local fora do ar (docker compose up)');
     test.skip(!SENHA, 'SEED_SENHA_DEV ausente');
-    // Administração: a pessoa com restrição na T4-32 (a pedido da Ana) e o terceiro que vai retirar uma encomenda
+    // Administração: a pessoa com restrição na D-32 (a pedido da Ana) e o terceiro que vai retirar uma encomenda
     const ctx = await playwright.request.newContext();
     try {
       expect((await ctx.post(`${API}/auth/login`, { data: { login: 'paula.nogueira', senha: SENHA } })).ok()).toBe(true);
@@ -80,7 +80,7 @@ test.describe.serial('API real: encomendas e ocorrências', () => {
         ids[nome] = (await r.json()).data.id;
       }
       const ana = (await (await ctx.post(`${API}/pessoas/busca`, { data: { q: 'Ana Ribeiro' } })).json()).data.pessoas[0];
-      const t432 = (await (await ctx.get(`${API}/unidades/T4-32`)).json()).data.unidade.id;
+      const t432 = (await (await ctx.get(`${API}/unidades/D-32`)).json()).data.unidade.id;
       const validaAte = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
       const rest = await ctx.post(`${API}/restricoes`, { data: { pessoaId: ids[P.restrita], unidadeId: t432, motivo: 'Morador não autoriza visitas', validaAte, solicitadaPorPessoaId: ana.id } });
       expect(rest.status()).toBe(201);
@@ -97,7 +97,7 @@ test.describe.serial('API real: encomendas e ocorrências', () => {
     const modal = page.getByRole('dialog', { name: `Entregar encomenda ${codigo}` });
     await modal.getByLabel('Quem está retirando?').fill('Paulo Ribeiro');
     await modal.getByRole('button', { name: /Paulo Ribeiro/ }).click();
-    await expect(modal.getByText(/Vínculo válido com a T4-32/)).toBeVisible();
+    await expect(modal.getByText(/Vínculo válido com a D-32/)).toBeVisible();
     await modal.getByRole('button', { name: /Confirmar entrega/ }).click();
     await expect(toast(page, `Encomenda ${codigo} entregue a Paulo Ribeiro.`)).toBeVisible();
     await expect(page.getByRole('row').filter({ hasText: RASTREIO.dependente })).toHaveCount(0); // a fila foi invalidada
@@ -138,7 +138,7 @@ test.describe.serial('API real: encomendas e ocorrências', () => {
     await page.goto('/entrada');
     await page.getByRole('combobox', { name: /Buscar por nome/ }).fill(P.restrita);
     await page.getByRole('option', { name: new RegExp(P.restrita) }).first().click();
-    await page.getByRole('radio', { name: '4', exact: true }).click();
+    await page.getByRole('radio', { name: 'D', exact: true }).click();
     await page.getByLabel('Ou digite o apartamento', { exact: false }).fill('32');
     const alerta = page.getByRole('alertdialog');
     await expect(alerta).toContainText('Entrada não permitida');
@@ -148,7 +148,7 @@ test.describe.serial('API real: encomendas e ocorrências', () => {
     await expect(page).toHaveURL(/\/ocorrencias/);
     const modal = page.getByRole('dialog', { name: 'Nova ocorrência' });
     await expect(modal.getByRole('radio', { name: 'Tentativa de acesso indevido' })).toHaveAttribute('aria-checked', 'true');
-    await expect(modal.getByLabel('Unidade')).toHaveValue('T4-32');
+    await expect(modal.getByLabel('Unidade')).toHaveValue('D-32');
     await expect(modal.getByLabel('Envolvidos')).toHaveValue(P.restrita);
     await expect(modal.getByText('Eventos de acesso vinculados (1)')).toBeVisible();
     await modal.getByLabel('Descrição').fill('Tentou entrar com restrição ativa; morador não autoriza visitas.');

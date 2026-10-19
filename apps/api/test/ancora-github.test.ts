@@ -27,13 +27,13 @@ async function montar(github = true) {
   const cookies = {} as Record<PapelTeste, string>;
   for (const p of ['porteiro', 'auditor'] as PapelTeste[]) cookies[p] = (await api.como(p)).cookie;
   const [pessoa] = await api.db.select().from(s.pessoa).where(eq(s.pessoa.nome, 'Marcos Pereira'));
-  const [t432] = await api.db.select().from(s.unidade).where(and(eq(s.unidade.torre, 4), eq(s.unidade.numero, '32')));
+  const [d32] = await api.db.select().from(s.unidade).where(and(eq(s.unidade.bloco, 'D'), eq(s.unidade.numero, '32')));
   const get = (papel: PapelTeste, url: string) => api.http().get(`${V1}${url}`).set('Cookie', cookies[papel]);
   const post = (papel: PapelTeste, url: string, corpo?: object) => api.http().post(`${V1}${url}`).set('Cookie', cookies[papel]).send(corpo);
   /** n entradas (com saída): 2n eventos. */
   async function movimentar(n: number) {
     for (let i = 0; i < n; i++) {
-      const e = await post('porteiro', '/eventos-acesso', { pessoaId: pessoa!.id, unidadeDestinoId: t432!.id, autorizadoPorTipo: 'excecao_porteiro', justificativa: JUST });
+      const e = await post('porteiro', '/eventos-acesso', { pessoaId: pessoa!.id, unidadeDestinoId: d32!.id, autorizadoPorTipo: 'excecao_porteiro', justificativa: JUST });
       if (e.status !== 201) throw new Error(`entrada falhou: ${JSON.stringify(e.body)}`);
       await post('porteiro', `/eventos-acesso/${e.body.data.id}/saida`);
     }

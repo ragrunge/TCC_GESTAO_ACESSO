@@ -29,10 +29,10 @@ export async function novoBanco() {
 
 async function fixtures(db: Db) {
   const [ponto] = await db.select().from(s.pontoAcesso).where(eq(s.pontoAcesso.nome, PORTARIA_SOCIAL));
-  const un = async (torre: number, numero: string) =>
-    (await db.select().from(s.unidade).where(and(eq(s.unidade.torre, torre), eq(s.unidade.numero, numero))))[0];
-  const t432 = await un(4, '32');
-  const t111 = await un(1, '11');
+  const un = async (bloco: string, numero: string) =>
+    (await db.select().from(s.unidade).where(and(eq(s.unidade.bloco, bloco), eq(s.unidade.numero, numero))))[0];
+  const d32 = await un('D', '32');
+  const a11 = await un('A', '11');
   const usuario = async (nome: string, login: string, papel: (typeof s.papel.enumValues)[number]) =>
     (await db.insert(s.usuarioSistema).values({ nome, login, papel, senhaHash: SENHA_FALSA }).returning())[0];
   const sindico = await usuario('Marcos Síndico', 'marcos', 'sindico');
@@ -54,11 +54,11 @@ async function fixtures(db: Db) {
   const semCpf = await pessoa('Sem Documento', 'visitante', { semCpf: true, documentoMascarado: null, documentoBusca: null });
   await db.insert(s.funcionario).values({ pessoaId: funcionarioPessoa.id, funcao: 'Zelador', diasSemana: [1, 2, 3, 4, 5], horaInicio: '22:00:00', horaFim: '06:00:00' });
   const [vinculo] = await db.insert(s.vinculoUnidade).values({
-    pessoaId: morador.id, unidadeId: t432.id, tipo: 'proprietario', registradoPorId: admin.id, vigenciaInicio: '2026-01-01',
+    pessoaId: morador.id, unidadeId: d32.id, tipo: 'proprietario', registradoPorId: admin.id, vigenciaInicio: '2026-01-01',
   }).returning();
   await db.update(s.vinculoUnidade).set({ ...conferencia(admin.id), status: 'aprovado', decididoPorId: admin.id, decididoEm: new Date() }).where(eq(s.vinculoUnidade.id, vinculo.id));
   const [area] = await db.select().from(s.areaComum).where(eq(s.areaComum.nome, 'Salão de festas')); // vem do seed
-  return { ponto, t432, t111, sindico, admin, porteiro, auditor, morador, visitante, prestador, funcionarioPessoa, semCpf, vinculo, area };
+  return { ponto, d32, a11, sindico, admin, porteiro, auditor, morador, visitante, prestador, funcionarioPessoa, semCpf, vinculo, area };
 }
 
 export type Fixtures = Awaited<ReturnType<typeof fixtures>>;
@@ -71,7 +71,7 @@ export const conferencia = (conferidoPorId: string, extra: Partial<typeof s.vinc
 /** Entrada de visitante por interfone, válida; `extra` sobrescreve. */
 export function entradaBase(fx: Fixtures, extra: Partial<typeof s.eventoAcesso.$inferInsert> = {}): typeof s.eventoAcesso.$inferInsert {
   return {
-    tipo: 'entrada', categoriaPessoa: 'visitante', pessoaId: fx.visitante.id, unidadeDestinoId: fx.t432.id,
+    tipo: 'entrada', categoriaPessoa: 'visitante', pessoaId: fx.visitante.id, unidadeDestinoId: fx.d32.id,
     pontoAcessoId: fx.ponto.id, autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: fx.morador.id,
     operadorId: fx.porteiro.id, operadorPapel: 'porteiro', ...extra,
   };

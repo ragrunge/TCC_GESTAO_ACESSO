@@ -190,14 +190,14 @@ export class PessoasService {
     if (!ids.length) return mapa;
     const linhas = await this.db.select({
       pessoaId: vinculoUnidade.pessoaId, id: vinculoUnidade.id, unidadeId: vinculoUnidade.unidadeId, tipo: vinculoUnidade.tipo,
-      status: vinculoUnidade.status, torre: unidade.torre, numero: unidade.numero,
+      status: vinculoUnidade.status, bloco: unidade.bloco, numero: unidade.numero,
     }).from(vinculoUnidade).innerJoin(unidade, eq(unidade.id, vinculoUnidade.unidadeId))
       .where(inArray(vinculoUnidade.pessoaId, ids))
       .orderBy(asc(vinculoUnidade.registradoEm), asc(vinculoUnidade.id));
     for (const l of linhas) {
       const atual = mapa.get(l.pessoaId);
       if (!atual || PRIORIDADE.indexOf(l.status) < PRIORIDADE.indexOf(atual.status)) {
-        mapa.set(l.pessoaId, { id: l.id, unidadeId: l.unidadeId, unidadeCodigo: codigoUnidade({ torre: l.torre, numero: l.numero }), tipo: l.tipo, status: l.status });
+        mapa.set(l.pessoaId, { id: l.id, unidadeId: l.unidadeId, unidadeCodigo: codigoUnidade({ bloco: l.bloco, numero: l.numero }), tipo: l.tipo, status: l.status });
       }
     }
     return mapa;

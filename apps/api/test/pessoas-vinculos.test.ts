@@ -39,8 +39,8 @@ const post = (papel: PapelTeste, url: string, corpo?: object) => api.http().post
 const patch = (papel: PapelTeste, url: string, corpo: object) => api.http().patch(`${V1}${url}`).set('Cookie', cookies[papel]).send(corpo);
 
 async function unidadeId(codigo: string) {
-  const m = /^T(\d+)-(\d+)$/.exec(codigo)!;
-  const [u] = await api.db.select().from(s.unidade).where(and(eq(s.unidade.torre, Number(m[1])), eq(s.unidade.numero, m[2]!)));
+  const m = /^([A-Z0-9]+)-(\d+)$/.exec(codigo)!;
+  const [u] = await api.db.select().from(s.unidade).where(and(eq(s.unidade.bloco, m[1]!), eq(s.unidade.numero, m[2]!)));
   return u!.id;
 }
 async function pessoaPorNome(nome: string) {
@@ -188,7 +188,7 @@ describe('pessoas: listagem e ficha (MATRIZ e minimização)', () => {
   it('vínculo principal e unidades válidas na lista; filtro por categoria; texto na URL é recusado (pode ser CPF)', async () => {
     const r = await get('administracao', '/pessoas?limite=100&categoria=morador');
     const ana = r.body.data.find((p: { nome: string }) => p.nome === 'Ana Ribeiro');
-    expect(ana).toMatchObject({ vinculoPrincipal: { unidadeCodigo: 'T4-32', status: 'aprovado', tipo: 'proprietario' }, unidadesVinculadasCodigos: ['T4-32'] });
+    expect(ana).toMatchObject({ vinculoPrincipal: { unidadeCodigo: 'D-32', status: 'aprovado', tipo: 'proprietario' }, unidadesVinculadasCodigos: ['D-32'] });
     expect(r.body.data.every((p: { categoria: string }) => p.categoria === 'morador')).toBe(true);
     expect((await get('administracao', `/pessoas?q=${CPF_ANA}`)).status).toBe(400);
   });
@@ -199,7 +199,7 @@ describe('pessoas: listagem e ficha (MATRIZ e minimização)', () => {
     expect(adm.status).toBe(200);
     expect(adm.body.data.pessoa.telefone).toBe('11987650001');
     expect(adm.body.data.eventos).toBeNull();
-    expect(adm.body.data.vinculos[0]).toMatchObject({ unidadeCodigo: 'T4-32', status: 'aprovado', conferencia: { tipoDocumento: 'escritura' }, conferidoPorNome: 'Paula Nogueira' });
+    expect(adm.body.data.vinculos[0]).toMatchObject({ unidadeCodigo: 'D-32', status: 'aprovado', conferencia: { tipoDocumento: 'escritura' }, conferidoPorNome: 'Paula Nogueira' });
     for (const papel of ['porteiro', 'auditor'] as const) {
       const r = await get(papel, `/pessoas/${ana.id}`);
       expect(r.status).toBe(200);
@@ -258,27 +258,27 @@ describe('funcionários (RF-09)', () => {
 
 describe('veículos (RF-08)', () => {
   it('placa antiga ou Mercosul, normalizada; inválida 422; ativa repetida 409; porteiro 403', async () => {
-    const t111 = await unidadeId('T1-11');
-    const r = await post('administracao', '/veiculos', { unidadeId: t111, placa: 'abc-1d23', modelo: 'Gol', cor: 'azul' });
+    const a11 = await unidadeId('A-11');
+    const r = await post('administracao', '/veiculos', { unidadeId: a11, placa: 'abc-1d23', modelo: 'Gol', cor: 'azul' });
     expect([r.status, r.body.data.placa]).toEqual([201, 'ABC1D23']);
-    expect((await post('administracao', '/veiculos', { unidadeId: t111, placa: 'XYZ1234', modelo: 'Uno', cor: 'branco' })).status).toBe(201);
-    expect((await post('administracao', '/veiculos', { unidadeId: t111, placa: 'AB12345', modelo: 'Uno', cor: 'branco' })).body.code).toBe('PLACA_INVALIDA');
-    expect((await post('administracao', '/veiculos', { unidadeId: t111, placa: 'FKR-2C41', modelo: 'Fit', cor: 'prata' })).body.code).toBe('PLACA_DUPLICADA');
-    expect((await post('administracao', '/veiculos', { unidadeId: t111, placa: 'QWE1R23', modelo: ' ', cor: 'prata' })).body.code).toBe('MODELO_OBRIGATORIO');
-    expect((await post('porteiro', '/veiculos', { unidadeId: t111, placa: 'QWE1R23', modelo: 'Ka', cor: 'prata' })).status).toBe(403);
-    const det = await get('porteiro', '/unidades/T1-11');
+    expect((await post('administracao', '/veiculos', { unidadeId: a11, placa: 'XYZ1234', modelo: 'Uno', cor: 'branco' })).status).toBe(201);
+    expect((await post('administracao', '/veiculos', { unidadeId: a11, placa: 'AB12345', modelo: 'Uno', cor: 'branco' })).body.code).toBe('PLACA_INVALIDA');
+    expect((await post('administracao', '/veiculos', { unidadeId: a11, placa: 'FKR-2C41', modelo: 'Fit', cor: 'prata' })).body.code).toBe('PLACA_DUPLICADA');
+    expect((await post('administracao', '/veiculos', { unidadeId: a11, placa: 'QWE1R23', modelo: ' ', cor: 'prata' })).body.code).toBe('MODELO_OBRIGATORIO');
+    expect((await post('porteiro', '/veiculos', { unidadeId: a11, placa: 'QWE1R23', modelo: 'Ka', cor: 'prata' })).status).toBe(403);
+    const det = await get('porteiro', '/unidades/A-11');
     expect(det.body.data.veiculos.map((v: { placa: string }) => v.placa)).toEqual(['ABC1D23', 'XYZ1234']);
   });
 
   it('unidade desativada não recebe veículo; desativar libera a placa; reativar com a placa em uso é 409', async () => {
-    const u = await post('administracao', '/unidades', { torre: 98, numero: '1' });
+    const u = await post('administracao', '/unidades', { bloco: 'Y', numero: '01' });
     await post('administracao', `/unidades/${u.body.data.id}/desativar`);
     expect((await post('administracao', '/veiculos', { unidadeId: u.body.data.id, placa: 'JJJ1A11', modelo: 'Ka', cor: 'preto' })).body.code).toBe('UNIDADE_INATIVA');
-    const t112 = await unidadeId('T1-12');
-    const a = await post('administracao', '/veiculos', { unidadeId: t112, placa: 'JJJ1A11', modelo: 'Ka', cor: 'preto' });
+    const a12 = await unidadeId('A-12');
+    const a = await post('administracao', '/veiculos', { unidadeId: a12, placa: 'JJJ1A11', modelo: 'Ka', cor: 'preto' });
     expect((await patch('administracao', `/veiculos/${a.body.data.id}`, { ativo: false })).body.data.ativo).toBe(false);
-    expect((await get('administracao', '/unidades/T1-12')).body.data.veiculos).toEqual([]);
-    expect((await post('administracao', '/veiculos', { unidadeId: t112, placa: 'JJJ-1A11', modelo: 'Onix', cor: 'cinza' })).status).toBe(201);
+    expect((await get('administracao', '/unidades/A-12')).body.data.veiculos).toEqual([]);
+    expect((await post('administracao', '/veiculos', { unidadeId: a12, placa: 'JJJ-1A11', modelo: 'Onix', cor: 'cinza' })).status).toBe(201);
     expect((await patch('administracao', `/veiculos/${a.body.data.id}`, { ativo: true })).body.code).toBe('PLACA_DUPLICADA');
     const ed = await patch('administracao', `/veiculos/${a.body.data.id}`, { cor: 'vermelho' });
     expect(ed.body.data.cor).toBe('vermelho');
@@ -289,23 +289,23 @@ describe('veículos (RF-08)', () => {
 describe('vínculos: fluxo completo (RF-03 a RF-06, RN-02, RN-03)', () => {
   let pessoaId: string;
   let vinculoId: string;
-  let t111: string;
+  let a11: string;
 
   beforeAll(async () => {
-    t111 = await unidadeId('T1-11');
+    a11 = await unidadeId('A-11');
     const p = await novaPessoa('administracao', { nome: 'Renata Vínculo', documento: cpf(), categoria: 'visitante' });
     pessoaId = p.body.data.id;
   });
 
   it('só SI/AD criam; porteiro não vê a lista; nasce pendente e não muda a categoria', async () => {
-    const corpo = () => ({ pessoaId, unidadeId: t111, tipo: 'proprietario', vigenciaInicio: '2026-10-01', vigenciaFim: null });
+    const corpo = () => ({ pessoaId, unidadeId: a11, tipo: 'proprietario', vigenciaInicio: '2026-10-01', vigenciaFim: null });
     expect((await post('porteiro', '/vinculos', corpo())).status).toBe(403);
     expect((await post('auditor', '/vinculos', corpo())).status).toBe(403);
     expect((await get('porteiro', '/vinculos')).status).toBe(403);
     const pend = (await get('auditor', '/vinculos/contagem?status=pendente')).body.data.total;
     const r = await post('administracao', '/vinculos', corpo());
     expect(r.status).toBe(201);
-    expect(r.body.data).toMatchObject({ status: 'pendente', unidadeCodigo: 'T1-11', pessoaNome: 'Renata Vínculo', conferencia: null, registradoPorNome: 'Paula Nogueira', solicitadoPor: 'Paula Nogueira', vigenciaInicio: '2026-10-01' });
+    expect(r.body.data).toMatchObject({ status: 'pendente', unidadeCodigo: 'A-11', pessoaNome: 'Renata Vínculo', conferencia: null, registradoPorNome: 'Paula Nogueira', solicitadoPor: 'Paula Nogueira', vigenciaInicio: '2026-10-01' });
     vinculoId = r.body.data.id;
     expect((await get('auditor', '/vinculos/contagem?status=pendente')).body.data.total).toBe(pend + 1);
     expect((await pessoaPorNome('Renata Vínculo')).categoria).toBe('visitante');
@@ -313,7 +313,7 @@ describe('vínculos: fluxo completo (RF-03 a RF-06, RN-02, RN-03)', () => {
   });
 
   it('regras de vigência e de unidade', async () => {
-    const p = { pessoaId, unidadeId: await unidadeId('T1-12') };
+    const p = { pessoaId, unidadeId: await unidadeId('A-12') };
     expect((await post('administracao', '/vinculos', { ...p, tipo: 'inquilino', vigenciaInicio: '2026-10-01' })).body.code).toBe('VIGENCIA_OBRIGATORIA');
     expect((await post('administracao', '/vinculos', { ...p, tipo: 'proprietario', vigenciaInicio: '2026-10-01', vigenciaFim: '2026-09-01' })).body.code).toBe('VIGENCIA_INVALIDA');
     expect((await post('administracao', '/vinculos', { ...p, tipo: 'proprietario', vigenciaInicio: '2026-02-30' })).status).toBe(400);
@@ -341,11 +341,11 @@ describe('vínculos: fluxo completo (RF-03 a RF-06, RN-02, RN-03)', () => {
     expect(r.body.data).toMatchObject({ status: 'aprovado', decididoPorNome: 'Paula Nogueira', pessoaCadastroCompleto: true });
     expect((await pessoaPorNome('Renata Vínculo')).categoria).toBe('morador');
     expect((await get('auditor', '/vinculos/contagem?status=pendente')).body.data.total).toBe(pend - 1);
-    const det = await get('porteiro', '/unidades/T1-11');
+    const det = await get('porteiro', '/unidades/A-11');
     expect(det.body.data.vinculos.map((v: { pessoaNome: string; status: string }) => [v.pessoaNome, v.status])).toContainEqual(['Renata Vínculo', 'aprovado']);
     const b = await post('porteiro', '/busca', { q: 'Renata' });
-    expect(b.body.data.pessoas[0]).toMatchObject({ nome: 'Renata Vínculo', unidadesVinculadasCodigos: ['T1-11'] });
-    const aut = await get('porteiro', `/unidades/${t111}/autorizadores`);
+    expect(b.body.data.pessoas[0]).toMatchObject({ nome: 'Renata Vínculo', unidadesVinculadasCodigos: ['A-11'] });
+    const aut = await get('porteiro', `/unidades/${a11}/autorizadores`);
     expect(aut.body.data.map((a: { pessoa: { nome: string } }) => a.pessoa.nome)).toContain('Renata Vínculo');
     expect(aut.body.data[0].pessoa).not.toHaveProperty('telefone');
   });
@@ -365,13 +365,13 @@ describe('vínculos: fluxo completo (RF-03 a RF-06, RN-02, RN-03)', () => {
     expect(r.status).toBe(200);
     expect(r.body.data).toMatchObject({ status: 'encerrado', justificativa: 'Mudou-se do condomínio', encerradoEm: new Date('2026-10-10T03:00:00.000Z').getTime() });
     expect((await post('administracao', `/vinculos/${vinculoId}/encerrar`, { motivo: 'Mudou-se do condomínio' })).body.code).toBe('VINCULO_NAO_ENCERRAVEL');
-    const aut = await get('porteiro', `/unidades/${t111}/autorizadores`);
+    const aut = await get('porteiro', `/unidades/${a11}/autorizadores`);
     expect(aut.body.data.map((a: { pessoa: { nome: string } }) => a.pessoa.nome)).not.toContain('Renata Vínculo');
   });
 
   it('cadastro incompleto (sem CPF) não é aprovado; rejeitar exige justificativa', async () => {
     const semCpf = await pessoaPorNome('José Sem Documento');
-    const v = await post('administracao', '/vinculos', { pessoaId: semCpf.id, unidadeId: t111, tipo: 'dependente' });
+    const v = await post('administracao', '/vinculos', { pessoaId: semCpf.id, unidadeId: a11, tipo: 'dependente' });
     await post('administracao', `/vinculos/${v.body.data.id}/conferencias`, { tipo: 'outro', descricao: 'Certidão de nascimento' });
     const a = await post('administracao', `/vinculos/${v.body.data.id}/aprovar`);
     expect([a.status, a.body.code]).toEqual([422, 'CADASTRO_INCOMPLETO']);
@@ -385,7 +385,7 @@ describe('vínculos: fluxo completo (RF-03 a RF-06, RN-02, RN-03)', () => {
 
 describe('vínculos: legado (RN-09)', () => {
   it('regularizar exige conferência e cadastro completo; vira aprovado', async () => {
-    const v = await vinculoDe('Lúcia Ribeiro', 'T4-32');
+    const v = await vinculoDe('Lúcia Ribeiro', 'D-32');
     expect(v.status).toBe('legado');
     expect((await post('administracao', `/vinculos/${v.id}/regularizar`, {})).body.code).toBe('CONFERENCIA_OBRIGATORIA');
     await post('administracao', `/vinculos/${v.id}/conferencias`, { tipo: 'outro', descricao: 'Certidão de casamento' });
@@ -402,7 +402,7 @@ describe('vínculos: legado (RN-09)', () => {
     }).returning();
     const [p] = await api.db.insert(s.pessoa).values({ nome: 'Legado Sem Telefone', categoria: 'morador', semCpf: true, importacaoId: imp!.id }).returning();
     const [v] = await api.db.insert(s.vinculoUnidade).values({
-      pessoaId: p!.id, unidadeId: await unidadeId('T2-21'), tipo: 'proprietario', status: 'legado', prazoRegularizacao: '2026-10-01',
+      pessoaId: p!.id, unidadeId: await unidadeId('B-21'), tipo: 'proprietario', status: 'legado', prazoRegularizacao: '2026-10-01',
       registradoPorId: api.usuarios['paula.nogueira']!.id, importacaoId: imp!.id,
     }).returning();
     await post('administracao', `/vinculos/${v!.id}/conferencias`, { tipo: 'escritura' });
@@ -417,7 +417,7 @@ describe('vínculos: legado (RN-09)', () => {
 
 describe('vínculos: unidade desativada barra a aprovação (UNIDADE_INATIVA)', () => {
   it('aprovar e regularizar em unidade desativada: 422; rejeitar continua possível; reativada, aprova', async () => {
-    const u = await post('administracao', '/unidades', { torre: 50, numero: '1' });
+    const u = await post('administracao', '/unidades', { bloco: 'X', numero: '01' });
     expect(u.status).toBe(201);
     const uid = u.body.data.id as string;
     const p1 = (await novaPessoa('administracao', { nome: 'Inativa Um', documento: cpf() })).body.data.id as string;
@@ -466,8 +466,8 @@ describe('vínculos: paginação e filtros', () => {
   it('filtro por vários status, por unidade e por pessoa', async () => {
     const r = await get('administracao', '/vinculos?status=aprovado,rejeitado&ordem=decisao&limite=100');
     expect(r.body.data.every((v: { status: string }) => ['aprovado', 'rejeitado'].includes(v.status))).toBe(true);
-    const t432 = await unidadeId('T4-32');
-    const u = await get('administracao', `/vinculos?unidadeId=${t432}&limite=100`);
+    const d32 = await unidadeId('D-32');
+    const u = await get('administracao', `/vinculos?unidadeId=${d32}&limite=100`);
     expect(u.body.data.map((v: { pessoaNome: string }) => v.pessoaNome).sort()).toEqual(['Ana Ribeiro', 'Lúcia Ribeiro', 'Paulo Ribeiro']);
     expect((await get('administracao', '/vinculos?status=xpto')).status).toBe(400);
   });
@@ -483,7 +483,7 @@ describe('vínculos: erros do banco viram 409/422 legíveis', () => {
     expect([t.getStatus(), (t.getResponse() as { codigo: string }).codigo]).toEqual([409, 'TRANSICAO_INVALIDA']);
     expect(JSON.stringify(t.getResponse())).not.toMatch(/vínculo .* está|transição de vínculo|[0-9a-f]{8}-/);
 
-    const pend = await vinculoDe('Rafael Mendes', 'T7-11');
+    const pend = await vinculoDe('Rafael Mendes', 'G-11');
     erro = undefined;
     try {
       await api.db.update(s.vinculoUnidade).set({ status: 'aprovado', decididoPorId: api.usuarios['paula.nogueira']!.id, decididoEm: new Date() })

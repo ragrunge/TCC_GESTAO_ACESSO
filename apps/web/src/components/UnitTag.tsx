@@ -1,6 +1,6 @@
 import { useCatalogo } from '../app/catalogo';
 
-/** Torre/unidade em destaque, em fonte mono: "TORRE 4 · AP 32". */
+/** Bloco/unidade em destaque, em fonte mono: "BLOCO D · AP 32". */
 export function UnitTag({ id, tamanho = 'md', className = '' }: { id: string; tamanho?: 'sm' | 'md' | 'lg' | 'xl'; className?: string }) {
   const { rotulo } = useCatalogo();
   const t = { sm: 'text-[14px]', md: 'text-[22px] text-[#0B3F49]', lg: 'text-[28px] text-[#0B3F49]', xl: 'text-[34px] tracking-[0.02em] text-[#0B3F49]' }[tamanho];

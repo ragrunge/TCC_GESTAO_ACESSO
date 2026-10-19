@@ -31,9 +31,9 @@ async function popularCadeia() {
     retroativo: true, formularioContingencia: 'FC-0042', ocorridoEm: new Date(Date.now() - 3 * 3600_000),
   }));
   await inserirEvento(db, {
-    tipo: 'correcao', categoriaPessoa: 'visitante', pessoaId: fx.visitante.id, unidadeDestinoId: fx.t432.id, pontoAcessoId: fx.ponto.id,
+    tipo: 'correcao', categoriaPessoa: 'visitante', pessoaId: fx.visitante.id, unidadeDestinoId: fx.d32.id, pontoAcessoId: fx.ponto.id,
     operadorId: fx.admin.id, operadorPapel: 'administracao', corrigeEventoId: entrada.id, justificativa: 'Unidade digitada errada pelo porteiro',
-    correcaoValores: { unidade_destino_id: fx.t111.id, ocorrido_em: '2026-10-17T08:15:00.123456-03:00', autorizado_por_pessoa_id: null },
+    correcaoValores: { unidade_destino_id: fx.a11.id, ocorrido_em: '2026-10-17T08:15:00.123456-03:00', autorizado_por_pessoa_id: null },
   });
   return entrada;
 }
@@ -68,10 +68,10 @@ describe('cadeia de hash', () => {
   it('correção: valores normalizados (UTC com ms, ordem fixa) e dentro do hash', async () => {
     const [cor] = await db.select().from(s.eventoAcesso).where(eq(s.eventoAcesso.tipo, 'correcao'));
     expect(cor.correcaoValores).toEqual({
-      unidade_destino_id: fx.t111.id, ocorrido_em: '2026-10-17T11:15:00.123Z', autorizado_por_pessoa_id: null,
+      unidade_destino_id: fx.a11.id, ocorrido_em: '2026-10-17T11:15:00.123Z', autorizado_por_pessoa_id: null,
     });
     expect(jsonCanonicoV1(paraExportacao(cor))).toContain(
-      `"correcao_valores":{"unidade_destino_id":"${fx.t111.id}","ocorrido_em":"2026-10-17T11:15:00.123Z","autorizado_por_pessoa_id":null}`);
+      `"correcao_valores":{"unidade_destino_id":"${fx.a11.id}","ocorrido_em":"2026-10-17T11:15:00.123Z","autorizado_por_pessoa_id":null}`);
   });
 
   it('o servidor define seq, registrado_em, hash e (fora da contingência) ocorrido_em', async () => {

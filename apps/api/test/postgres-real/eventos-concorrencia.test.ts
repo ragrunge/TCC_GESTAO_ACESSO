@@ -82,9 +82,9 @@ describe.skipIf(!URL_ADMIN)('API sobre PostgreSQL real: registro de acesso conco
         documentoMascarado: mascararCpf(cpf), documentoBusca: documentoBusca(cpf, CHAVE_HMAC_TESTE) }).returning();
       visitantes.push(p!.id);
     }
-    const un = async (torre: number, numero: string) => (await dbMig.select().from(s.unidade).where(and(eq(s.unidade.torre, torre), eq(s.unidade.numero, numero))))[0]!.id;
-    ids.t432 = await un(4, '32');
-    ids.t711 = await un(7, '11');
+    const un = async (bloco: string, numero: string) => (await dbMig.select().from(s.unidade).where(and(eq(s.unidade.bloco, bloco), eq(s.unidade.numero, numero))))[0]!.id;
+    ids.d32 = await un('D', '32');
+    ids.t711 = await un('G', '11');
     ids.ana = (await dbMig.select().from(s.pessoa).where(eq(s.pessoa.nome, 'Ana Ribeiro')))[0]!.id;
     ids.bruno = (await dbMig.select().from(s.pessoa).where(eq(s.pessoa.nome, 'Bruno Teixeira')))[0]!.id;
     ids.marcos = (await dbMig.select().from(s.pessoa).where(eq(s.pessoa.nome, 'Marcos Pereira')))[0]!.id;
@@ -125,7 +125,7 @@ describe.skipIf(!URL_ADMIN)('API sobre PostgreSQL real: registro de acesso conco
 
   const post = (papel: string, url: string, corpo?: object) => request(app.getHttpServer()).post(`${V1}${url}`).set('Cookie', cookies[papel]!).send(corpo);
   const get = (papel: string, url: string) => request(app.getHttpServer()).get(`${V1}${url}`).set('Cookie', cookies[papel]!);
-  const excecao = (pessoaId: string) => ({ pessoaId, unidadeDestinoId: ids.t432, autorizadoPorTipo: 'excecao_porteiro', justificativa: JUST });
+  const excecao = (pessoaId: string) => ({ pessoaId, unidadeDestinoId: ids.d32, autorizadoPorTipo: 'excecao_porteiro', justificativa: JUST });
 
   it('30 entradas simultâneas de pessoas diferentes: todas gravadas, seq contínuo, cadeia íntegra', async () => {
     const rs = await Promise.all(visitantes.map((v) => post('porteiro', '/eventos-acesso', excecao(v))));
@@ -149,7 +149,7 @@ describe.skipIf(!URL_ADMIN)('API sobre PostgreSQL real: registro de acesso conco
   }, 60_000);
 
   it('restrição: 6 tentativas simultâneas gravam 6 negados (um por tentativa, nenhum duplicado)', async () => {
-    const r = await post('porteiro', '/restricoes', { pessoaId: ids.bruno, unidadeId: ids.t432, motivo: 'Morador não autoriza', validaAte: '2099-12-31', solicitadaPorPessoaId: ids.ana });
+    const r = await post('porteiro', '/restricoes', { pessoaId: ids.bruno, unidadeId: ids.d32, motivo: 'Morador não autoriza', validaAte: '2099-12-31', solicitadaPorPessoaId: ids.ana });
     expect(r.status).toBe(201);
     const db = drizzle(leitura, { schema: s });
     const contar = async () => Number((await db.select({ n: count() }).from(s.eventoAcesso).where(eq(s.eventoAcesso.tipo, 'negado')))[0]!.n);
@@ -162,23 +162,23 @@ describe.skipIf(!URL_ADMIN)('API sobre PostgreSQL real: registro de acesso conco
   }, 60_000);
 
   it('correções simultâneas do mesmo evento: a última acumula as duas (advisory lock)', async () => {
-    // Ana (moradora da T4-32) visita a T7-11: entra como visitante, por exceção
+    // Ana (moradora da D-32) visita a G-11: entra como visitante, por exceção
     const alvo = await post('porteiro', '/eventos-acesso', { ...excecao(ids.ana!), unidadeDestinoId: ids.t711 });
     expect(alvo.status).toBe(201);
     const id = alvo.body.data.id as string;
     const hora = Date.now() - 3_600_000;
     const [c1, c2] = await Promise.all([
-      post('administracao', `/eventos-acesso/${id}/correcoes`, { justificativa: 'Unidade digitada errada pelo porteiro', valores: { unidadeDestinoId: ids.t432 } }),
+      post('administracao', `/eventos-acesso/${id}/correcoes`, { justificativa: 'Unidade digitada errada pelo porteiro', valores: { unidadeDestinoId: ids.d32 } }),
       post('administracao', `/eventos-acesso/${id}/correcoes`, { justificativa: 'Hora real informada pelo morador', valores: { ocorridoEm: hora } }),
     ]);
     expect([c1.status, c2.status]).toEqual([201, 201]);
     const ev = (await get('auditor', `/eventos-acesso/${id}`)).body.data;
-    expect(ev).toMatchObject({ unidadeDestinoId: ids.t432, ocorridoEm: hora });
+    expect(ev).toMatchObject({ unidadeDestinoId: ids.d32, ocorridoEm: hora });
     expect(Object.keys(ev.valoresOriginais).sort()).toEqual(['ocorridoEm', 'unidadeDestinoId']);
   }, 60_000);
 
   it('encomenda: 8 retiradas simultâneas (duas pessoas com vínculo) gravam uma só; as outras 7 são 409 legíveis', async () => {
-    const e = await post('porteiro', '/encomendas', { unidadeId: ids.t432, destinatario: 'Ana Ribeiro', unidadeConfirmada: true });
+    const e = await post('porteiro', '/encomendas', { unidadeId: ids.d32, destinatario: 'Ana Ribeiro', unidadeConfirmada: true });
     expect(e.status).toBe(201);
     const rs = await Promise.all(Array.from({ length: 8 }, (_, i) =>
       post(i % 2 ? 'administracao' : 'porteiro', `/encomendas/${e.body.data.id}/retirada`, { pessoaId: i % 2 ? ids.paulo : ids.ana })));

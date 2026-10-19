@@ -28,8 +28,8 @@ describe('RF-30/RF-31: relatórios com filtros', () => {
     const api = novaApi();
     await entrarComo(api, 'luiza.campos');
     const todos = await api.relatorios.resumo();
-    const porUn = await api.relatorios.resumo({ unidadeId: un('T4-32') });
-    const esperadoUn = (await api.eventos.listar({ unidadeId: un('T4-32'), de: porUn.periodo.de, ate: porUn.periodo.ate })).filter((e) => e.tipo === 'entrada').length;
+    const porUn = await api.relatorios.resumo({ unidadeId: un('D-32') });
+    const esperadoUn = (await api.eventos.listar({ unidadeId: un('D-32'), de: porUn.periodo.de, ate: porUn.periodo.ate })).filter((e) => e.tipo === 'entrada').length;
     expect(porUn.totais.entradas).toBe(esperadoUn);
     expect(porUn.totais.entradas).toBeLessThan(todos.totais.entradas);
 
@@ -83,7 +83,7 @@ describe('RF-32: exportar evento isolado', () => {
     expect(Object.keys(ev.evento)).toEqual(['v', ...CAMPOS_CANONICOS_V1, 'hash_anterior', 'hash']);
     expect(man.ordemCampos).toEqual(['v', ...CAMPOS_CANONICOS_V1]);
     expect(ev.evento.ocorrido_em).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-    expect(ev.exibicao.unidade).toBe('T3-51');
+    expect(ev.exibicao.unidade).toBe('C-03');
     const g = await hashGenese();
     expect(man.hashGenese).toBe(g);
     const recalculado = await calcularHashExportado(ev.evento);
@@ -105,10 +105,11 @@ describe('RF-32: exportar evento isolado', () => {
 
 describe('RF-11: planilha .xlsx', () => {
   it('mapearMatriz usa o cabeçalho (aliases) e reporta colunas faltando', () => {
-    const r = mapearMatriz([['Bloco', 'Apto', 'Morador', 'CPF'], ['1', '12', 'Fulana', '529.982.247-25']]);
+    const r = mapearMatriz([['Bloco', 'Apto', 'Morador', 'CPF'], ['A', '12', 'Fulana', '529.982.247-25']]);
     expect(r.faltando).toEqual([]);
-    expect(r.linhas[0]).toMatchObject({ linha: 2, torre: '1', unidade: '12', nome: 'Fulana', documento: '529.982.247-25' });
-    expect(mapearMatriz([['Nome']]).faltando).toEqual(['torre', 'unidade']);
+    expect(r.linhas[0]).toMatchObject({ linha: 2, bloco: 'A', unidade: '12', nome: 'Fulana', documento: '529.982.247-25' });
+    expect(mapearMatriz([['Nome']]).faltando).toEqual(['bloco', 'unidade']);
+    expect(mapearMatriz([['Torre', 'Unidade', 'Nome'], ['4', '32', 'Ana']]).linhas[0]).toMatchObject({ bloco: '4', unidade: '32' }); // planilha antiga
   });
 
   it('células numéricas, vazias e datas viram texto; linhas vazias são descartadas', () => {
@@ -120,7 +121,7 @@ describe('RF-11: planilha .xlsx', () => {
     const xlsx = mapearMatriz(matrizDeCelulas(await readSheet(fileURLToPath(new URL('../../e2e/fixtures/moradores.xlsx', import.meta.url)))));
     expect(xlsx.faltando).toEqual([]);
     expect(xlsx.linhas.length).toBe(3);
-    expect(xlsx.linhas[0]).toMatchObject({ torre: '1', unidade: '12', nome: 'Ágata Mendonça Lopes', documento: '529.982.247-25' });
+    expect(xlsx.linhas[0]).toMatchObject({ bloco: 'A', unidade: '12', nome: 'Ágata Mendonça Lopes', documento: '529.982.247-25' });
     const csv = lerCsv(readFileSync(new URL('../../e2e/fixtures/moradores.csv', import.meta.url), 'utf8'));
     expect(xlsx.linhas).toEqual(csv.linhas);
 
@@ -128,7 +129,7 @@ describe('RF-11: planilha .xlsx', () => {
     await entrarComo(api, 'paula.nogueira');
     const [rx, rc] = [await api.importacao.analisar({ arquivo: 'm.xlsx', linhas: xlsx.linhas }), await api.importacao.analisar({ arquivo: 'm.csv', linhas: csv.linhas })];
     expect(rx.inconsistencias.map((i) => [i.linha, i.codigo])).toEqual(rc.inconsistencias.map((i) => [i.linha, i.codigo]));
-    expect(rx.rejeitadas).toBe(1); // T2-104 não existe
+    expect(rx.rejeitadas).toBe(1); // B-104 não existe
   });
 });
 
@@ -139,8 +140,8 @@ describe('busca da portaria', () => {
     const r = await api.pessoas.buscar('Ana Ribeiro');
     const ana = r.find((p) => p.id === id.ana)!;
     expect(ana.unidadesVinculadas.length).toBeGreaterThan(0);
-    // Morador da T4-32 visitando a T1-12: o servidor trata como visitante (RN-01/RN-02)
-    const ev = await api.eventos.criar({ pessoaId: id.ana, unidadeDestinoId: un('T1-12'), autorizadoPorTipo: 'excecao_porteiro', justificativa: 'Moradora de outra torre sem ninguém atendendo o interfone.' });
+    // Morador da D-32 visitando a A-12: o servidor trata como visitante (RN-01/RN-02)
+    const ev = await api.eventos.criar({ pessoaId: id.ana, unidadeDestinoId: un('A-12'), autorizadoPorTipo: 'excecao_porteiro', justificativa: 'Moradora de outro bloco sem ninguém atendendo o interfone.' });
     expect(ev.categoriaPessoa).toBe('visitante');
   });
 

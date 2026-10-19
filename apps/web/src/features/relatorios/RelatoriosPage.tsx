@@ -77,8 +77,8 @@ export function RelatoriosPage() {
           </span>
         </div>
         <label className={campo}>Unidade
-          <input className={`${entrada} font-sans`} placeholder="Ex.: T4-32" value={unidade} onChange={(e) => setUnidade(e.target.value)} aria-invalid={!!unidade && !un} />
-          {unidade && !un && <span className="text-[12px] font-normal text-[#B42318]">Use T4-32.</span>}
+          <input className={`${entrada} font-sans`} placeholder="Ex.: D-32" value={unidade} onChange={(e) => setUnidade(e.target.value)} aria-invalid={!!unidade && !un} />
+          {unidade && !un && <span className="text-[12px] font-normal text-[#B42318]">Use D-32.</span>}
         </label>
         <label className={campo}>Tipo de pessoa
           <select className={entrada} value={categoria} onChange={(e) => setCategoria(e.target.value)}><option value="">Todos</option>{(Object.keys(ROTULO_CATEGORIA) as CategoriaPessoa[]).map((c) => <option key={c} value={c}>{ROTULO_CATEGORIA[c]}</option>)}</select>

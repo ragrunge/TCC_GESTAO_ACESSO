@@ -52,9 +52,9 @@ export async function escolherPessoa(page: Page, busca: string, nome = busca) {
   await expect(page.getByRole('button', { name: 'Trocar', exact: true })).toBeVisible();
 }
 
-/** Escolhe a unidade pelo seletor de torre (botões 1–9) e campo de apartamento. Ex.: "T4-32". */
+/** Escolhe a unidade pelo seletor de bloco (botões A–I) e campo de apartamento. Ex.: "D-32". */
 export async function escolherUnidade(page: Page, unidade: string) {
-  const m = /^T(\d)-(\d{2})$/.exec(unidade);
+  const m = /^([A-Z0-9]{1,3})-(\d{2,4})$/.exec(unidade);
   if (!m) throw new Error(`Unidade inválida: ${unidade}`);
   await page.getByRole('radio', { name: m[1], exact: true }).click();
   await page.getByLabel('Ou digite o apartamento', { exact: false }).fill(m[2]);

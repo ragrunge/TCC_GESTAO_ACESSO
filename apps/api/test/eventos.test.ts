@@ -32,9 +32,9 @@ beforeAll(async () => {
     'Juliana Costa', 'Cláudia Rocha', 'Marta Siqueira', 'Helena Duarte']) {
     ids[nome] = (await api.db.select().from(s.pessoa).where(eq(s.pessoa.nome, nome)))[0]!.id;
   }
-  for (const c of ['T4-32', 'T7-11', 'T9-13', 'T2-24', 'T1-11']) {
-    const m = /^T(\d+)-(\d+)$/.exec(c)!;
-    ids[c] = (await api.db.select().from(s.unidade).where(and(eq(s.unidade.torre, Number(m[1])), eq(s.unidade.numero, m[2]!))))[0]!.id;
+  for (const c of ['D-32', 'G-11', 'I-13', 'B-24', 'A-11']) {
+    const m = /^([A-Z0-9]+)-(\d+)$/.exec(c)!;
+    ids[c] = (await api.db.select().from(s.unidade).where(and(eq(s.unidade.bloco, m[1]!), eq(s.unidade.numero, m[2]!))))[0]!.id;
   }
   ids.salao = (await api.db.select().from(s.areaComum).where(eq(s.areaComum.nome, 'Salão de festas')))[0]!.id;
 });
@@ -60,12 +60,12 @@ const amanhaReal = () => new Date(Date.now() + 86_400_000 - 3 * HORA).toISOStrin
 describe('entrada, saída e presentes (RF-12, RF-13, RF-19, RF-20)', () => {
   let entradaId: string;
   it('visitante por interfone: 201 com a view (nomes por id, papel do operador, hash do trigger)', async () => {
-    const r = await entrar('porteiro', interfone('Marcos Pereira', 'T4-32', 'Ana Ribeiro', { observacao: 'Visita' }));
+    const r = await entrar('porteiro', interfone('Marcos Pereira', 'D-32', 'Ana Ribeiro', { observacao: 'Visita' }));
     expect(r.status).toBe(201);
     const ev = r.body.data;
     entradaId = ev.id;
     expect(ev).toMatchObject({
-      tipo: 'entrada', categoriaPessoa: 'visitante', pessoaNome: 'Marcos Pereira', unidadeRotulo: 'T4-32', autorizadoPorTipo: 'interfone',
+      tipo: 'entrada', categoriaPessoa: 'visitante', pessoaNome: 'Marcos Pereira', unidadeRotulo: 'D-32', autorizadoPorTipo: 'interfone',
       autorizadoPorNome: 'Ana Ribeiro', operadorNome: 'João Lima', operadorPapel: 'porteiro', dentro: true, retroativo: false, observacao: 'Visita',
       pontoAcessoNome: 'Portaria social', formatoHash: 1, codigo: `EV-${String(ev.seq).padStart(6, '0')}`,
     });
@@ -77,7 +77,7 @@ describe('entrada, saída e presentes (RF-12, RF-13, RF-19, RF-20)', () => {
   });
 
   it('não registra se a pessoa já está dentro (409); presentes mostra; a saída é evento novo e a dupla é 409', async () => {
-    expect((await entrar('porteiro', interfone('Marcos Pereira', 'T4-32', 'Ana Ribeiro'))).body.code).toBe('JA_ESTA_DENTRO');
+    expect((await entrar('porteiro', interfone('Marcos Pereira', 'D-32', 'Ana Ribeiro'))).body.code).toBe('JA_ESTA_DENTRO');
     const p = await get('porteiro', '/acessos/presentes');
     expect(p.body.data.map((e: { id: string }) => e.id)).toContain(entradaId);
     const sd = await sair('porteiro', entradaId);
@@ -91,43 +91,43 @@ describe('entrada, saída e presentes (RF-12, RF-13, RF-19, RF-20)', () => {
   });
 
   it('unidade desativada barra a entrada (UNIDADE_INATIVA); pessoa inexistente 404', async () => {
-    await post('administracao', `/unidades/${ids['T1-11']}/desativar`);
+    await post('administracao', `/unidades/${ids['A-11']}/desativar`);
     try {
-      const r = await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['T1-11'], autorizadoPorTipo: 'excecao_porteiro', justificativa: JUST });
+      const r = await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['A-11'], autorizadoPorTipo: 'excecao_porteiro', justificativa: JUST });
       expect(r.body.code).toBe('UNIDADE_INATIVA');
-    } finally { await post('administracao', `/unidades/${ids['T1-11']}/reativar`); }
-    expect((await entrar('porteiro', { pessoaId: '00000000-0000-4000-8000-000000000000', unidadeDestinoId: ids['T4-32'] })).status).toBe(404);
+    } finally { await post('administracao', `/unidades/${ids['A-11']}/reativar`); }
+    expect((await entrar('porteiro', { pessoaId: '00000000-0000-4000-8000-000000000000', unidadeDestinoId: ids['D-32'] })).status).toBe(404);
   });
 });
 
 describe('autorização da entrada (RN-01, RF-17, RN-02)', () => {
   it('RN-01: sem meio, interfone sem morador e autorizador sem vínculo válido (visitante ou pendente) são 422', async () => {
-    expect((await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['T4-32'] })).body.code).toBe('AUTORIZADO_POR_OBRIGATORIO');
-    expect((await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['T4-32'], autorizadoPorTipo: 'interfone' })).body.code)
+    expect((await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['D-32'] })).body.code).toBe('AUTORIZADO_POR_OBRIGATORIO');
+    expect((await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['D-32'], autorizadoPorTipo: 'interfone' })).body.code)
       .toBe('AUTORIZADO_POR_SEM_IDENTIFICACAO');
-    expect((await entrar('porteiro', interfone('Bruno Teixeira', 'T4-32', 'Marcos Pereira'))).body.code).toBe('AUTORIZADOR_SEM_VINCULO');
-    expect((await entrar('porteiro', interfone('Bruno Teixeira', 'T7-11', 'Rafael Mendes'))).body.code).toBe('AUTORIZADOR_SEM_VINCULO');
-    expect((await entrar('porteiro', interfone('Bruno Teixeira', 'T7-11', 'Ana Ribeiro'))).body.code).toBe('AUTORIZADOR_SEM_VINCULO'); // outra unidade
+    expect((await entrar('porteiro', interfone('Bruno Teixeira', 'D-32', 'Marcos Pereira'))).body.code).toBe('AUTORIZADOR_SEM_VINCULO');
+    expect((await entrar('porteiro', interfone('Bruno Teixeira', 'G-11', 'Rafael Mendes'))).body.code).toBe('AUTORIZADOR_SEM_VINCULO');
+    expect((await entrar('porteiro', interfone('Bruno Teixeira', 'G-11', 'Ana Ribeiro'))).body.code).toBe('AUTORIZADOR_SEM_VINCULO'); // outra unidade
   });
 
   it('legado no prazo autoriza; morador na própria unidade entra sem autorizador; "morador" em outra unidade entra como visitante', async () => {
-    const lucia = await entrar('porteiro', interfone('Bruno Teixeira', 'T4-32', 'Lúcia Ribeiro'));
+    const lucia = await entrar('porteiro', interfone('Bruno Teixeira', 'D-32', 'Lúcia Ribeiro'));
     expect(lucia.status).toBe(201);
     await sair('porteiro', lucia.body.data.id);
-    const propria = await entrar('porteiro', { pessoaId: ids['Paulo Ribeiro'], unidadeDestinoId: ids['T4-32'] });
+    const propria = await entrar('porteiro', { pessoaId: ids['Paulo Ribeiro'], unidadeDestinoId: ids['D-32'] });
     expect(propria.body.data).toMatchObject({ categoriaPessoa: 'morador', autorizadoPorTipo: null, autorizadoPorPessoaId: null });
     await sair('porteiro', propria.body.data.id);
-    expect((await entrar('porteiro', { pessoaId: ids['Paulo Ribeiro'], unidadeDestinoId: ids['T7-11'] })).body.code).toBe('AUTORIZADO_POR_OBRIGATORIO');
-    const outra = await entrar('porteiro', interfone('Paulo Ribeiro', 'T7-11', 'Carla Mendes'));
+    expect((await entrar('porteiro', { pessoaId: ids['Paulo Ribeiro'], unidadeDestinoId: ids['G-11'] })).body.code).toBe('AUTORIZADO_POR_OBRIGATORIO');
+    const outra = await entrar('porteiro', interfone('Paulo Ribeiro', 'G-11', 'Carla Mendes'));
     expect(outra.body.data).toMatchObject({ categoriaPessoa: 'visitante', autorizadoPorNome: 'Carla Mendes' });
     await sair('porteiro', outra.body.data.id);
   });
 
   it('RF-17: exceção exige 15+ caracteres e não guarda autorizador; sem CPF só entra por exceção; prestador leva empresa e serviço', async () => {
-    const curta = await entrar('porteiro', { pessoaId: ids['Cláudia Rocha'], unidadeDestinoId: ids['T9-13'], autorizadoPorTipo: 'excecao_porteiro', justificativa: 'curta' });
+    const curta = await entrar('porteiro', { pessoaId: ids['Cláudia Rocha'], unidadeDestinoId: ids['I-13'], autorizadoPorTipo: 'excecao_porteiro', justificativa: 'curta' });
     expect(curta.body.code).toBe('JUSTIFICATIVA_OBRIGATORIA');
-    expect((await entrar('porteiro', interfone('Cláudia Rocha', 'T9-13', 'Marta Siqueira'))).body.code).toBe('SEM_CPF_SO_EXCECAO');
-    const ok = await entrar('porteiro', { pessoaId: ids['Cláudia Rocha'], unidadeDestinoId: ids['T9-13'], autorizadoPorTipo: 'excecao_porteiro',
+    expect((await entrar('porteiro', interfone('Cláudia Rocha', 'I-13', 'Marta Siqueira'))).body.code).toBe('SEM_CPF_SO_EXCECAO');
+    const ok = await entrar('porteiro', { pessoaId: ids['Cláudia Rocha'], unidadeDestinoId: ids['I-13'], autorizadoPorTipo: 'excecao_porteiro',
       justificativa: `  ${JUST}  `, autorizadoPorPessoaId: ids['Marta Siqueira'] });
     expect(ok.status).toBe(201);
     expect(ok.body.data).toMatchObject({ categoriaPessoa: 'prestador', empresa: 'Autônoma', servico: 'Diarista', justificativa: JUST, autorizadoPorPessoaId: null });
@@ -160,13 +160,13 @@ describe('escala de funcionário (RF-09), consultada pela própria API', () => {
       await sair('porteiro', n.body.data.id);
     });
     // Escala não vale para quem não é funcionário
-    expect((await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['T4-32'], autorizadoPorTipo: 'escala' })).body.code).toBe('MEIO_INVALIDO_PARA_TIPO');
+    expect((await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['D-32'], autorizadoPorTipo: 'escala' })).body.code).toBe('MEIO_INVALIDO_PARA_TIPO');
   });
 });
 
 describe('autorização prévia (RF-14, RN-07, RF-36)', () => {
   const nova = (papel: PapelTeste, extra: object) => post(papel, '/autorizacoes-previas', {
-    unidadeId: ids['T4-32'], pessoaId: ids['Bruno Teixeira'], validaAte: '2026-10-20', diasSemana: [6], horaInicio: '08:00', horaFim: '10:00',
+    unidadeId: ids['D-32'], pessoaId: ids['Bruno Teixeira'], validaAte: '2026-10-20', diasSemana: [6], horaInicio: '08:00', horaFim: '10:00',
     solicitadaPorPessoaId: ids['Ana Ribeiro'], ...extra,
   });
 
@@ -178,14 +178,14 @@ describe('autorização prévia (RF-14, RN-07, RF-36)', () => {
     expect((await nova('auditor', {})).status).toBe(403);
     const a = await nova('porteiro', {});
     expect(a.status).toBe(201);
-    expect(a.body.data).toMatchObject({ estado: 'valida', solicitadaPorNome: 'Ana Ribeiro', cadastradaPorNome: 'João Lima (Porteiro)', unidadeRotulo: 'T4-32', semSolicitante: false });
+    expect(a.body.data).toMatchObject({ estado: 'valida', solicitadaPorNome: 'Ana Ribeiro', cadastradaPorNome: 'João Lima (Porteiro)', unidadeRotulo: 'D-32', semSolicitante: false });
     expect((await trilha(api, 'autorizacao.criar')).at(-1)!.registroId).toBe(a.body.data.id);
-    const vig = await get('porteiro', `/autorizacoes-previas/vigentes?pessoaId=${ids['Bruno Teixeira']}&unidadeId=${ids['T4-32']}`);
+    const vig = await get('porteiro', `/autorizacoes-previas/vigentes?pessoaId=${ids['Bruno Teixeira']}&unidadeId=${ids['D-32']}`);
     expect(vig.body.data.map((x: { id: string }) => x.id)).toContain(a.body.data.id);
     const hoje = await get('porteiro', '/autorizacoes-previas/hoje');
     expect(hoje.body.data.map((x: { id: string }) => x.id)).toContain(a.body.data.id);
     // Lançamento retroativo de 10 min atrás: o "utilizada hoje" usa o dia do relógio da API (o banco carimba com o real)
-    const r = await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['T4-32'], autorizadoPorTipo: 'autorizacao_previa',
+    const r = await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['D-32'], autorizadoPorTipo: 'autorizacao_previa',
       autorizacaoPreviaId: a.body.data.id, retroativo: true, ocorridoEm: AGORA.getTime() - 600_000, formularioContingencia: 'F-7' });
     expect(r.status).toBe(201);
     expect(r.body.data).toMatchObject({ autorizadoPorPessoaId: ids['Ana Ribeiro'], autorizadoPorNome: 'Ana Ribeiro', autorizacaoSemSolicitante: false });
@@ -194,7 +194,7 @@ describe('autorização prévia (RF-14, RN-07, RF-36)', () => {
     expect(usada.utilizadaEm).toBe(AGORA.getTime() - 600_000);
     // Fora da janela (11:30 BRT) a mesma autorização não vale
     await comRelogio(new Date('2026-10-17T14:30:00.000Z'), async () => {
-      const f = await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['T4-32'], autorizadoPorTipo: 'autorizacao_previa', autorizacaoPreviaId: a.body.data.id });
+      const f = await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['D-32'], autorizadoPorTipo: 'autorizacao_previa', autorizacaoPreviaId: a.body.data.id });
       expect(f.body.code).toBe('AUTORIZACAO_PREVIA_INVALIDA');
     });
     // Revogar: uma vez; a segunda é 409
@@ -207,7 +207,7 @@ describe('autorização prévia (RF-14, RN-07, RF-36)', () => {
     expect((await nova('administracao', { solicitadaPorPessoaId: null, justificativa: 'curta' })).body.code).toBe('SOLICITANTE_OU_JUSTIFICATIVA');
     const a = await nova('administracao', { pessoaId: ids['Marcos Pereira'], solicitadaPorPessoaId: null, justificativa: 'Entrega de móveis combinada com a administração' });
     expect(a.body.data).toMatchObject({ semSolicitante: true, solicitadaPorNome: null });
-    const r = await entrar('porteiro', { pessoaId: ids['Marcos Pereira'], unidadeDestinoId: ids['T4-32'], autorizadoPorTipo: 'autorizacao_previa', autorizacaoPreviaId: a.body.data.id });
+    const r = await entrar('porteiro', { pessoaId: ids['Marcos Pereira'], unidadeDestinoId: ids['D-32'], autorizadoPorTipo: 'autorizacao_previa', autorizacaoPreviaId: a.body.data.id });
     expect(r.body.data).toMatchObject({ autorizacaoSemSolicitante: true, autorizadoPorNome: 'Sem solicitante — cadastrada por Paula Nogueira' });
     const exc = await post('auditor', '/eventos-acesso/busca', { somenteExcecoes: true, pessoaId: ids['Marcos Pereira'] });
     expect(exc.body.data.map((e: { id: string }) => e.id)).toContain(r.body.data.id);
@@ -239,19 +239,19 @@ describe('autorização prévia (RF-14, RN-07, RF-36)', () => {
 describe('restrição (RF-15, RF-16, RN-06)', () => {
   let restricaoId: string;
   it('de unidade: porteiro cadastra com solicitante; verificar mostra; a entrada grava UM negado e responde 422 com o id', async () => {
-    const base = { pessoaId: ids['Bruno Teixeira'], unidadeId: ids['T4-32'], motivo: 'Morador não autoriza', validaAte: '2026-12-31' };
+    const base = { pessoaId: ids['Bruno Teixeira'], unidadeId: ids['D-32'], motivo: 'Morador não autoriza', validaAte: '2026-12-31' };
     expect((await post('porteiro', '/restricoes', { ...base, solicitadaPorPessoaId: null })).body.code).toBe('SOLICITANTE_OBRIGATORIO');
     expect((await post('porteiro', '/restricoes', { ...base, solicitadaPorPessoaId: ids['Carla Mendes'] })).body.code).toBe('SOLICITANTE_SEM_VINCULO');
     const r = await post('porteiro', '/restricoes', { ...base, solicitadaPorPessoaId: ids['Ana Ribeiro'] });
     expect(r.status).toBe(201);
     restricaoId = r.body.data.id;
-    expect(r.body.data).toMatchObject({ escopo: 'unidade', pendente: false, solicitadaPorNome: 'Ana Ribeiro', unidadeCodigo: 'T4-32' });
-    const v = await get('porteiro', `/restricoes/verificar?pessoaId=${ids['Bruno Teixeira']}&unidadeId=${ids['T4-32']}`);
+    expect(r.body.data).toMatchObject({ escopo: 'unidade', pendente: false, solicitadaPorNome: 'Ana Ribeiro', unidadeCodigo: 'D-32' });
+    const v = await get('porteiro', `/restricoes/verificar?pessoaId=${ids['Bruno Teixeira']}&unidadeId=${ids['D-32']}`);
     expect(v.body.data).toMatchObject({ restrita: true, alertas: [{ id: restricaoId, motivo: 'Morador não autoriza' }] });
-    expect((await get('porteiro', `/restricoes/verificar?pessoaId=${ids['Bruno Teixeira']}&unidadeId=${ids['T7-11']}`)).body.data.restrita).toBe(false);
+    expect((await get('porteiro', `/restricoes/verificar?pessoaId=${ids['Bruno Teixeira']}&unidadeId=${ids['G-11']}`)).body.data.restrita).toBe(false);
 
     const antes = await negados();
-    const e = await entrar('porteiro', interfone('Bruno Teixeira', 'T4-32', 'Ana Ribeiro'));
+    const e = await entrar('porteiro', interfone('Bruno Teixeira', 'D-32', 'Ana Ribeiro'));
     expect(e.status).toBe(422);
     expect(e.body.code).toBe('PESSOA_EM_RESTRICAO');
     expect(e.body.details).toMatchObject({ eventoId: expect.any(String), codigo: expect.stringMatching(/^EV-/), restricoes: [{ id: restricaoId }] });
@@ -259,11 +259,11 @@ describe('restrição (RF-15, RF-16, RN-06)', () => {
     const neg = await get('auditor', `/eventos-acesso/${e.body.details.eventoId}`);
     expect(neg.body.data).toMatchObject({ tipo: 'negado', restricaoId, autorizadoPorTipo: null, dentro: false });
     // Sem meio (a tela grava o negado detectado antes): o mesmo caminho, sem exigir autorização
-    const semMeio = await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['T4-32'], autorizadoPorTipo: null });
+    const semMeio = await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['D-32'], autorizadoPorTipo: null });
     expect(semMeio.body.code).toBe('PESSOA_EM_RESTRICAO');
     expect(await negados()).toBe(antes + 2);
     // A restrição de unidade não vale em outra unidade
-    const outra = await entrar('porteiro', interfone('Bruno Teixeira', 'T7-11', 'Carla Mendes'));
+    const outra = await entrar('porteiro', interfone('Bruno Teixeira', 'G-11', 'Carla Mendes'));
     expect(outra.status).toBe(201);
     await sair('porteiro', outra.body.data.id);
   });
@@ -272,7 +272,7 @@ describe('restrição (RF-15, RF-16, RN-06)', () => {
     expect((await post('porteiro', `/restricoes/${restricaoId}/revogar`)).status).toBe(403);
     expect((await post('administracao', `/restricoes/${restricaoId}/revogar`)).status).toBe(204);
     expect((await post('administracao', `/restricoes/${restricaoId}/revogar`)).body.code).toBe('RESTRICAO_JA_REVOGADA');
-    const ok = await entrar('porteiro', interfone('Bruno Teixeira', 'T4-32', 'Ana Ribeiro'));
+    const ok = await entrar('porteiro', interfone('Bruno Teixeira', 'D-32', 'Ana Ribeiro'));
     expect(ok.status).toBe(201);
     await sair('porteiro', ok.body.data.id);
   });
@@ -301,12 +301,12 @@ describe('restrição (RF-15, RF-16, RN-06)', () => {
 describe('retroativo (RF-35, UC08) e recusa (UC02 A4)', () => {
   const t = (h: number) => AGORA.getTime() - h * HORA;
   it('retroativo exige formulário e hora passada; auditor 403; a saída retroativa fica entre a entrada e agora', async () => {
-    const corpo = { ...interfone('Marcos Pereira', 'T2-24', 'Helena Duarte'), retroativo: true, ocorridoEm: t(5) };
+    const corpo = { ...interfone('Marcos Pereira', 'B-24', 'Helena Duarte'), retroativo: true, ocorridoEm: t(5) };
     expect((await entrar('porteiro', { ...corpo, formularioContingencia: ' ' })).body.code).toBe('FORMULARIO_OBRIGATORIO');
     expect((await entrar('porteiro', { ...corpo, ocorridoEm: AGORA.getTime() + HORA, formularioContingencia: 'F-1' })).body.code).toBe('DATA_INCONSISTENTE');
     expect((await entrar('auditor', { ...corpo, formularioContingencia: 'F-1' })).status).toBe(403);
     // Não retroativo com hora fora da tolerância (5 min)
-    expect((await entrar('porteiro', { ...interfone('Marcos Pereira', 'T2-24', 'Helena Duarte'), ocorridoEm: t(1) })).body.code).toBe('DATA_INCONSISTENTE');
+    expect((await entrar('porteiro', { ...interfone('Marcos Pereira', 'B-24', 'Helena Duarte'), ocorridoEm: t(1) })).body.code).toBe('DATA_INCONSISTENTE');
     const r = await entrar('porteiro', { ...corpo, formularioContingencia: 'F-0042' });
     expect(r.status).toBe(201);
     expect(r.body.data).toMatchObject({ retroativo: true, ocorridoEm: t(5), formularioContingencia: 'F-0042' });
@@ -320,7 +320,7 @@ describe('retroativo (RF-35, UC08) e recusa (UC02 A4)', () => {
   });
 
   it('recusa: morador com vínculo válido, por interfone ou presente; vira evento "recusado" sem entrada', async () => {
-    const corpo = { pessoaId: ids['Marcos Pereira'], unidadeDestinoId: ids['T9-13'], meio: 'interfone', moradorPessoaId: ids['Marta Siqueira'] };
+    const corpo = { pessoaId: ids['Marcos Pereira'], unidadeDestinoId: ids['I-13'], meio: 'interfone', moradorPessoaId: ids['Marta Siqueira'] };
     expect((await post('porteiro', '/eventos-acesso/recusas', { ...corpo, moradorPessoaId: ids['Ana Ribeiro'] })).body.code).toBe('AUTORIZADOR_SEM_VINCULO');
     expect((await post('porteiro', '/eventos-acesso/recusas', { ...corpo, meio: 'excecao_porteiro' })).status).toBe(400);
     const r = await post('porteiro', '/eventos-acesso/recusas', corpo);
@@ -332,32 +332,32 @@ describe('retroativo (RF-35, UC08) e recusa (UC02 A4)', () => {
 
 describe('correção (RN-04): evento novo, valores efetivos, sem corrigir correção', () => {
   it('porteiro 403; justificativa; os valores efetivos aparecem no original e nos filtros; o acumulado segue', async () => {
-    const e = await entrar('porteiro', interfone('Juliana Costa', 'T4-32', 'Ana Ribeiro'));
+    const e = await entrar('porteiro', interfone('Juliana Costa', 'D-32', 'Ana Ribeiro'));
     const id = e.body.data.id as string;
     await sair('porteiro', id);
     expect((await post('porteiro', `/eventos-acesso/${id}/correcoes`, { justificativa: JUST })).status).toBe(403);
     expect((await post('administracao', `/eventos-acesso/${id}/correcoes`, { justificativa: 'curta' })).body.code).toBe('JUSTIFICATIVA_OBRIGATORIA');
-    const c1 = await post('administracao', `/eventos-acesso/${id}/correcoes`, { justificativa: 'Unidade digitada errada pelo porteiro', valores: { unidadeDestinoId: ids['T2-24'] } });
+    const c1 = await post('administracao', `/eventos-acesso/${id}/correcoes`, { justificativa: 'Unidade digitada errada pelo porteiro', valores: { unidadeDestinoId: ids['B-24'] } });
     expect(c1.status).toBe(201);
-    expect(c1.body.data).toMatchObject({ tipo: 'correcao', corrigeEventoId: id, valoresCorrigidos: { unidadeDestinoId: ids['T2-24'] } });
+    expect(c1.body.data).toMatchObject({ tipo: 'correcao', corrigeEventoId: id, valoresCorrigidos: { unidadeDestinoId: ids['B-24'] } });
     expect((await post('administracao', `/eventos-acesso/${c1.body.data.id}/correcoes`, { justificativa: JUST })).body.code).toBe('CORRECAO_DE_CORRECAO');
     const orig = (await get('auditor', `/eventos-acesso/${id}`)).body.data;
-    expect(orig).toMatchObject({ unidadeDestinoId: ids['T2-24'], unidadeRotulo: 'T2-24', valoresOriginais: { unidadeDestinoId: ids['T4-32'] },
+    expect(orig).toMatchObject({ unidadeDestinoId: ids['B-24'], unidadeRotulo: 'B-24', valoresOriginais: { unidadeDestinoId: ids['D-32'] },
       correcao: { id: c1.body.data.id, justificativa: 'Unidade digitada errada pelo porteiro', operadorNome: 'Paula Nogueira' } });
-    // Filtro pela unidade EFETIVA: aparece na T2-24, não na T4-32
-    const naNova = await get('auditor', `/eventos-acesso?unidadeId=${ids['T2-24']}&tipo=entrada&limite=100`);
+    // Filtro pela unidade EFETIVA: aparece na B-24, não na D-32
+    const naNova = await get('auditor', `/eventos-acesso?unidadeId=${ids['B-24']}&tipo=entrada&limite=100`);
     expect(naNova.body.data.map((x: { id: string }) => x.id)).toContain(id);
-    const naVelha = await get('auditor', `/eventos-acesso?unidadeId=${ids['T4-32']}&tipo=entrada&limite=100`);
+    const naVelha = await get('auditor', `/eventos-acesso?unidadeId=${ids['D-32']}&tipo=entrada&limite=100`);
     expect(naVelha.body.data.map((x: { id: string }) => x.id)).not.toContain(id);
     // Segunda correção (hora) acumula a unidade; a anotação sem valores também carrega o acumulado
     const hora = AGORA.getTime() - 2 * HORA;
     expect((await post('administracao', `/eventos-acesso/${id}/correcoes`, { justificativa: JUST, valores: { ocorridoEm: AGORA.getTime() + HORA * 1e4 } })).body.code).toBe('DATA_INCONSISTENTE');
     const c2 = await post('sindico', `/eventos-acesso/${id}/correcoes`, { justificativa: 'Hora real informada pelo morador', valores: { ocorridoEm: hora } });
-    expect(c2.body.data.valoresCorrigidos).toEqual({ unidadeDestinoId: ids['T2-24'], ocorridoEm: hora });
+    expect(c2.body.data.valoresCorrigidos).toEqual({ unidadeDestinoId: ids['B-24'], ocorridoEm: hora });
     const c3 = await post('administracao', `/eventos-acesso/${id}/correcoes`, { justificativa: 'Anotação: confirmado com a portaria', observacao: 'ok' });
-    expect(c3.body.data.valoresCorrigidos).toEqual({ unidadeDestinoId: ids['T2-24'], ocorridoEm: hora });
+    expect(c3.body.data.valoresCorrigidos).toEqual({ unidadeDestinoId: ids['B-24'], ocorridoEm: hora });
     const fim = (await get('auditor', `/eventos-acesso/${id}`)).body.data;
-    expect(fim).toMatchObject({ ocorridoEm: hora, unidadeDestinoId: ids['T2-24'], correcao: { id: c3.body.data.id } });
+    expect(fim).toMatchObject({ ocorridoEm: hora, unidadeDestinoId: ids['B-24'], correcao: { id: c3.body.data.id } });
     const lista = await get('auditor', `/eventos-acesso/${id}/correcoes`);
     expect(lista.body.data.map((x: { id: string }) => x.id)).toEqual([c1.body.data.id, c2.body.data.id, c3.body.data.id]);
     // Corrigir pessoa e autorizador: os nomes originais e corrigidos vêm resolvidos
@@ -406,7 +406,7 @@ describe('turno (RF-29) e relatórios (RF-30, RF-31)', () => {
   it('resumo do turno: porteiro vê, auditor não; conta quem está dentro e as exceções de hoje', async () => {
     expect((await get('auditor', '/turnos/resumo')).status).toBe(403);
     const dentroAntes = (await get('porteiro', '/turnos/resumo')).body.data;
-    const e = await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['T9-13'], autorizadoPorTipo: 'excecao_porteiro', justificativa: JUST });
+    const e = await entrar('porteiro', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['I-13'], autorizadoPorTipo: 'excecao_porteiro', justificativa: JUST });
     const depois = (await get('porteiro', '/turnos/resumo')).body.data;
     expect(depois).toMatchObject({ pessoasDentro: dentroAntes.pessoasDentro + 1, excecoesHoje: dentroAntes.excecoesHoje + 1, encomendasPendentes: 0, ocorrenciasAbertas: 0 });
     await sair('porteiro', e.body.data.id);
@@ -428,23 +428,23 @@ describe('turno (RF-29) e relatórios (RF-30, RF-31)', () => {
     expect(res.totais.retroativos).toBeGreaterThanOrEqual(1);
     expect(res.acessosPorDia.reduce((a: number, d: { entradas: number }) => a + d.entradas, 0)).toBe(res.totais.entradas);
     expect(res.acessosPorMeio.map((m: { meio: string }) => m.meio)).toEqual(expect.arrayContaining(['interfone', 'excecao_porteiro', 'escala', 'autorizacao_previa']));
-    expect(res.cadastroCompleto.total).toBe(165);
+    expect(res.cadastroCompleto.total).toBe(162);
     const porMeio = (await get('auditor', `/relatorios/resumo?de=2026-10-17&ate=${fim}&meio=escala`)).body.data;
     expect(porMeio.totais.entradas).toBe(res.acessosPorMeio.find((m: { meio: string }) => m.meio === 'escala').total);
     expect(porMeio.totais.negados).toBe(0);
-    const csv = (await get('administracao', `/relatorios/resumo/csv?de=2026-10-17&ate=${fim}&unidadeId=${ids['T4-32']}`)).body.data;
+    const csv = (await get('administracao', `/relatorios/resumo/csv?de=2026-10-17&ate=${fim}&unidadeId=${ids['D-32']}`)).body.data;
     expect(csv.nomeArquivo).toMatch(/^relatorio-portaria-parque-\d{4}-\d{2}-\d{2}\.csv$/);
     expect(csv.conteudo.startsWith('﻿Seção;Item;Total\r\n')).toBe(true);
-    expect(csv.conteudo).toContain('Filtro;Unidade;T4-32');
+    expect(csv.conteudo).toContain('Filtro;Unidade;D-32');
   });
 });
 
 describe('RBAC por papel (403 e acesso.negado na trilha)', () => {
   it('auditor não registra; porteiro não corrige, não aprova restrição, não exporta nem verifica', async () => {
     const casos: [PapelTeste, 'get' | 'post', string, object?][] = [
-      ['auditor', 'post', '/eventos-acesso', interfone('Bruno Teixeira', 'T4-32', 'Ana Ribeiro')],
-      ['auditor', 'post', '/eventos-acesso/recusas', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['T4-32'], meio: 'interfone', moradorPessoaId: ids['Ana Ribeiro'] }],
-      ['auditor', 'post', '/restricoes', { pessoaId: ids['Bruno Teixeira'], unidadeId: ids['T4-32'], motivo: 'x', validaAte: '2026-12-31', solicitadaPorPessoaId: ids['Ana Ribeiro'] }],
+      ['auditor', 'post', '/eventos-acesso', interfone('Bruno Teixeira', 'D-32', 'Ana Ribeiro')],
+      ['auditor', 'post', '/eventos-acesso/recusas', { pessoaId: ids['Bruno Teixeira'], unidadeDestinoId: ids['D-32'], meio: 'interfone', moradorPessoaId: ids['Ana Ribeiro'] }],
+      ['auditor', 'post', '/restricoes', { pessoaId: ids['Bruno Teixeira'], unidadeId: ids['D-32'], motivo: 'x', validaAte: '2026-12-31', solicitadaPorPessoaId: ids['Ana Ribeiro'] }],
       ['porteiro', 'get', '/auditoria/integridade'],
       ['porteiro', 'post', '/auditoria/exportacoes', {}],
       ['porteiro', 'get', '/auditoria/alteracoes'],

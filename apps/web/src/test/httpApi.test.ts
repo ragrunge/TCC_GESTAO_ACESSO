@@ -3,6 +3,7 @@
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import { createHttpApi, diaParaMs, msParaDia, nomeDoAnexo } from '../api/http/createHttpApi';
 import { brt } from '@portaria/domain/time';
+import { codigoUnidade } from '@portaria/domain/units';
 import { segundosRetryAfter } from '../api/http/cliente';
 import { ApiError, type EventoSessao } from '../api/types';
 import { deveRepetir } from '../app/queryClient';
@@ -29,7 +30,7 @@ const EV = {
   pontoAcessoId: 'pa1', autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: 'p2', autorizacaoPreviaId: null, justificativa: null, restricaoId: null,
   operadorId: 'u-1', operadorPapel: 'porteiro', ocorridoEm: 1_760_000_000_000, registradoEm: 1_760_000_000_000, retroativo: false,
   refereEventoId: null, corrigeEventoId: null, observacao: null, formularioContingencia: null, correcaoValores: null, empresa: null, servico: null,
-  hashAnterior: 'a'.repeat(64), hash: 'b'.repeat(64), codigo: 'EV-000007', pessoaNome: 'Marcos', operadorNome: 'João', unidadeRotulo: 'T4-32',
+  hashAnterior: 'a'.repeat(64), hash: 'b'.repeat(64), codigo: 'EV-000007', pessoaNome: 'Marcos', operadorNome: 'João', unidadeRotulo: 'D-32',
   areaComumNome: null, pontoAcessoNome: 'Portaria social', autorizadoPorNome: 'Ana', saida: null, dentro: true, entradaCodigo: null,
   valoresOriginais: null, correcao: null, valoresCorrigidos: null, pessoaNomeOriginal: null, pessoaNomeCorrigida: null,
   autorizadoPorNomeOriginal: null, autorizadoPorNomeCorrigido: null, autorizacaoSemSolicitante: false,
@@ -194,22 +195,25 @@ describe('adaptador HTTP (axios)', () => {
 });
 
 describe('adaptador HTTP: catálogo, unidades, busca e contagem', () => {
-  const UN = { id: 'u-432', torre: 4, numero: '32', ativo: true };
+  const UN = { id: 'u-432', bloco: 'D', numero: '32', ativo: true };
   const corpo = (c: InternalAxiosRequestConfig) => (c.data ? JSON.parse(c.data as string) : undefined);
 
-  it('catálogo: GET /catalogo, unidades só com os campos da interface', async () => {
+  it('catálogo: GET /catalogo, agrupamento da API e unidades só com os campos da interface', async () => {
     const { api, adapter } = montar(() => ({ status: 200, data: { data: {
-      unidades: [{ ...UN, codigo: 'T4-32', rotulo: 'Torre 4 · AP 32' }], areasComuns: [{ id: 'a1', nome: 'Piscina', ativo: true }], pontosAcesso: [],
+      agrupamento: 'Torre', unidades: [{ ...UN, codigo: 'D-32', rotulo: 'Torre D · AP 32' }], areasComuns: [{ id: 'a1', nome: 'Piscina', ativo: true }], pontosAcesso: [],
     } } }));
-    expect(await api.catalogo.obter()).toEqual({ unidades: [UN], areasComuns: [{ id: 'a1', nome: 'Piscina', ativo: true }] });
+    expect(await api.catalogo.obter()).toEqual({ agrupamento: 'Torre', unidades: [UN], areasComuns: [{ id: 'a1', nome: 'Piscina', ativo: true }] });
     expect(adapter.mock.calls[0]![0]).toMatchObject({ url: '/catalogo', method: 'get' });
+    // Agrupamento ausente ou desconhecido (API de outra versão) é resposta inválida, não rótulo inventado
+    const semAgrupamento = montar(() => ({ status: 200, data: { data: { unidades: [UN], areasComuns: [] } } }));
+    expect((await esperaErro(semAgrupamento.api.catalogo.obter())).code).toBe('RESPOSTA_INVALIDA');
   });
 
-  it('listarPagina: torre, limite e cursor na query; pagination vira { itens, cursor, temMais }', async () => {
+  it('listarPagina: bloco, limite e cursor na query; pagination vira { itens, cursor, temMais }', async () => {
     const resumo = { unidade: UN, moradoresValidos: 3, pendentes: 0, restricoes: 0, cadastroCompleto: true };
     const { api, adapter } = montar(() => ({ status: 200, data: { data: [resumo], pagination: { cursor: 'c2', hasNextPage: true } } }));
-    expect(await api.unidades.listarPagina({ torre: 4, cursor: 'c1', limite: 20 })).toEqual({ itens: [resumo], cursor: 'c2', temMais: true });
-    expect(adapter.mock.calls[0]![0]).toMatchObject({ url: '/unidades', params: { torre: 4, cursor: 'c1', limite: 20 } });
+    expect(await api.unidades.listarPagina({ bloco: 'D', cursor: 'c1', limite: 20 })).toEqual({ itens: [resumo], cursor: 'c2', temMais: true });
+    expect(adapter.mock.calls[0]![0]).toMatchObject({ url: '/unidades', params: { bloco: 'D', cursor: 'c1', limite: 20 } });
     await api.unidades.listarPagina();
     expect(adapter.mock.calls[1]![0].params).toEqual({ limite: 50 });
     const ruim = montar(() => ({ status: 200, data: { data: [resumo] } }));
@@ -217,12 +221,12 @@ describe('adaptador HTTP: catálogo, unidades, busca e contagem', () => {
   });
 
   it('detalhe: código legível na URL codificado; autorizações, restrições e acessos vêm dos módulos, pelo uuid', async () => {
-    const { api, adapter } = montar((c) => (c.url === '/unidades/T4-32'
+    const { api, adapter } = montar((c) => (c.url === '/unidades/D-32'
       ? { status: 200, data: { data: { unidade: UN, veiculos: [{ id: 'v1', unidadeId: 'u-432', placa: 'FKR2C41', modelo: 'Honda Fit', cor: 'prata' }] } } }
       : c.url === '/eventos-acesso' ? { status: 200, data: { data: [EV], pagination: { cursor: null, hasNextPage: false } } }
         : { status: 200, data: { data: [] } }));
-    const d = await api.unidades.detalhe('T4-32');
-    expect(adapter.mock.calls[0]![0].url).toBe('/unidades/T4-32');
+    const d = await api.unidades.detalhe('D-32');
+    expect(adapter.mock.calls[0]![0].url).toBe('/unidades/D-32');
     expect(d).toMatchObject({ unidade: UN, vinculos: null, autorizacoes: [], restricoes: [], eventos: [{ id: 'ev1' }] });
     expect(d.veiculos).toEqual([{ id: 'v1', unidadeId: 'u-432', placa: 'FKR-2C41', modelo: 'Honda Fit', cor: 'prata' }]);
     const urls = adapter.mock.calls.slice(1).map((c) => [c[0].url, c[0].params]);
@@ -234,14 +238,14 @@ describe('adaptador HTTP: catálogo, unidades, busca e contagem', () => {
 
   it('CRUD de unidade: POST, PATCH e verbos de transição; erro de regra chega com o código da API', async () => {
     const { api, adapter } = montar((c) => {
-      if (c.method === 'post' && c.url === '/unidades' && corpo(c).numero === '32') return { status: 409, data: { code: 'UNIDADE_DUPLICADA', message: 'Já existe a unidade T4-32 (ativa ou desativada).' } };
-      if (c.method === 'patch') return { status: 422, data: { code: 'UNIDADE_REFERENCIADA', message: 'A T4-32 já tem registros.' } };
+      if (c.method === 'post' && c.url === '/unidades' && corpo(c).numero === '32') return { status: 409, data: { code: 'UNIDADE_DUPLICADA', message: 'Já existe a unidade D-32 (ativa ou desativada).' } };
+      if (c.method === 'patch') return { status: 422, data: { code: 'UNIDADE_REFERENCIADA', message: 'A D-32 já tem registros.' } };
       return { status: c.method === 'post' && c.url === '/unidades' ? 201 : 200, data: { data: { ...UN, ativo: !c.url?.endsWith('/desativar') } } };
     });
-    expect(await api.unidades.criar({ torre: 10, numero: '101' })).toEqual({ ...UN, ativo: true });
-    expect(corpo(adapter.mock.calls[0]![0])).toEqual({ torre: 10, numero: '101' });
-    expect((await esperaErro(api.unidades.criar({ torre: 4, numero: '32' }))).code).toBe('UNIDADE_DUPLICADA');
-    expect((await esperaErro(api.unidades.editar({ id: 'u-432', torre: 4, numero: '99' })))).toMatchObject({ status: 422, code: 'UNIDADE_REFERENCIADA' });
+    expect(await api.unidades.criar({ bloco: 'J', numero: '101' })).toEqual({ ...UN, ativo: true });
+    expect(corpo(adapter.mock.calls[0]![0])).toEqual({ bloco: 'J', numero: '101' });
+    expect((await esperaErro(api.unidades.criar({ bloco: 'D', numero: '32' }))).code).toBe('UNIDADE_DUPLICADA');
+    expect((await esperaErro(api.unidades.editar({ id: 'u-432', bloco: 'D', numero: '99' })))).toMatchObject({ status: 422, code: 'UNIDADE_REFERENCIADA' });
     expect((await api.unidades.desativar('u-432')).ativo).toBe(false);
     expect((await api.unidades.reativar('u-432')).ativo).toBe(true);
     expect(adapter.mock.calls.map((c) => `${c[0].method} ${c[0].url}`)).toEqual([
@@ -274,7 +278,7 @@ describe('adaptador HTTP: catálogo, unidades, busca e contagem', () => {
 });
 
 describe('mock: paginação de unidades e contagem (mesmo contrato da API)', () => {
-  it('listarPagina percorre as 165 sem repetir; torre filtra; cursor inválido é 400', async () => {
+  it('listarPagina percorre as 162 sem repetir, na ordem bloco/número; bloco filtra; cursor inválido é 400', async () => {
     const { novaApi, entrarComo } = await import('./helpers');
     const api = novaApi();
     await entrarComo(api, 'paula.nogueira');
@@ -282,14 +286,16 @@ describe('mock: paginação de unidades e contagem (mesmo contrato da API)', () 
     let cursor: string | null = null;
     do {
       const p = await api.unidades.listarPagina({ limite: 40, cursor });
-      vistos.push(...p.itens.map((x) => x.unidade.id));
+      vistos.push(...p.itens.map((x) => codigoUnidade(x.unidade)));
       cursor = p.cursor;
       expect(p.temMais).toBe(cursor !== null);
     } while (cursor);
-    expect(new Set(vistos).size).toBe(165);
-    const t4 = await api.unidades.listarPagina({ torre: 4 });
-    expect(t4.itens).toHaveLength(20);
-    expect(t4.temMais).toBe(false);
+    expect(new Set(vistos).size).toBe(162);
+    expect(vistos.slice(0, 3)).toEqual(['A-03', 'A-04', 'A-11']);
+    expect(vistos.at(-1)).toBe('I-44');
+    const d = await api.unidades.listarPagina({ bloco: 'd' });
+    expect(d.itens).toHaveLength(18);
+    expect(d.temMais).toBe(false);
     expect((await esperaErro(api.unidades.listarPagina({ cursor: '%%' }))).code).toBe('CURSOR_INVALIDO');
     expect(await api.vinculos.contar('pendente')).toBe((await api.vinculos.listar({ status: 'pendente' })).length);
   });
@@ -331,7 +337,7 @@ describe('adaptador HTTP: pessoas, funcionários, veículos, vínculos e importa
     vigenciaInicio: '2026-10-01', vigenciaFim: '2027-07-31', prazoRegularizacao: null,
     conferencia: { tipoDocumento: 'contrato_locacao', data: '2026-10-17', conferidoPorId: 'u-2' },
     solicitadoPor: 'Paula Nogueira', solicitadoEm: 10, registradoPorId: 'u-2', encerradoEm: null,
-    pessoaNome: 'Ana Ribeiro', pessoaDocumento: '***.982.247-**', pessoaCadastroCompleto: true, unidadeCodigo: 'T4-32',
+    pessoaNome: 'Ana Ribeiro', pessoaDocumento: '***.982.247-**', pessoaCadastroCompleto: true, unidadeCodigo: 'D-32',
     decididoPorNome: null, registradoPorNome: 'Paula Nogueira', conferidoPorNome: 'Paula Nogueira', legadoVencido: false,
   };
   const ESCALA = { diasSemana: [1, 2, 3, 4, 5], horaInicio: '22:00', horaFim: '06:00' };
@@ -451,7 +457,7 @@ describe('adaptador HTTP: pessoas, funcionários, veículos, vínculos e importa
   });
 
   it('detalhe da unidade: vínculos vêm da API (datas convertidas)', async () => {
-    const UN = { id: 'u-432', torre: 4, numero: '32', ativo: true };
+    const UN = { id: 'u-432', bloco: 'D', numero: '32', ativo: true };
     const { api } = montar((c) => (c.url === '/unidades/u-432' ? { status: 200, data: { data: { unidade: UN, veiculos: [], vinculos: [VINCULO] } } }
       : c.url === '/eventos-acesso' ? { status: 200, data: { data: [], pagination: { cursor: null, hasNextPage: false } } } : { status: 200, data: { data: [] } }));
     const d = await api.unidades.detalhe('u-432');
@@ -461,7 +467,7 @@ describe('adaptador HTTP: pessoas, funcionários, veículos, vínculos e importa
   });
 
   it('importação: confirmar reenvia as linhas do analisar (a API não as guarda); sem análise nesta aba é 404 local', async () => {
-    const linhas = [{ linha: 2, torre: '4', unidade: '32', nome: 'Ana', documento: '52998224725', telefone: '11987650001', tipo: 'proprietario' }];
+    const linhas = [{ linha: 2, bloco: 'D', unidade: '32', nome: 'Ana', documento: '52998224725', telefone: '11987650001', tipo: 'proprietario' }];
     const { api, adapter } = montar((c) => (c.url === '/importacoes'
       ? { status: 201, data: { data: { id: 'imp1', arquivo: 'a.csv', status: 'analisada', lidas: 1, importaveis: 1, rejeitadas: 0, avisos: 0, inconsistencias: [], amostra: [], prazoRegularizacao: '2027-01-16' } } }
       : { status: 200, data: { data: { importados: 1, reaproveitados: 0, prazoRegularizacao: '2027-01-16' } } }));
@@ -492,7 +498,7 @@ describe('mock: operações novas do lote de pessoas e vínculos (mesmo contrato
     expect(new Set(vistos).size).toBe((await api.pessoas.listar()).length);
     const moradores = await api.pessoas.listarPagina({ categoria: 'morador', limite: 100 });
     expect(moradores.itens.every((p) => p.categoria === 'morador')).toBe(true);
-    expect(moradores.itens.find((p) => p.nome === 'Ana Ribeiro')?.vinculoPrincipal).toMatchObject({ status: 'aprovado', unidadeCodigo: 'T4-32' });
+    expect(moradores.itens.find((p) => p.nome === 'Ana Ribeiro')?.vinculoPrincipal).toMatchObject({ status: 'aprovado', unidadeCodigo: 'D-32' });
     const legados = await api.vinculos.listarPagina({ status: ['legado'], ordem: 'prazo', limite: 100 });
     const nLegados = await api.vinculos.contar('legado');
     expect(legados.itens.length).toBe(Math.min(100, nLegados));
@@ -525,12 +531,12 @@ describe('mock: operações novas do lote de pessoas e vínculos (mesmo contrato
     const { novaApi, entrarComo, esperaErro: erro, un } = await import('./helpers');
     const api = novaApi();
     await entrarComo(api, 'paula.nogueira');
-    const [a, b] = (await api.unidades.detalhe(un('T4-32'))).veiculos;
+    const [a, b] = (await api.unidades.detalhe(un('D-32'))).veiculos;
     expect((await erro(api.veiculos.editar({ id: a!.id, placa: 'XX' }))).code).toBe('PLACA_INVALIDA');
     expect((await erro(api.veiculos.editar({ id: a!.id, placa: b!.placa }))).code).toBe('PLACA_DUPLICADA');
     expect((await api.veiculos.editar({ id: a!.id, cor: 'azul' })).cor).toBe('azul');
     await api.veiculos.editar({ id: b!.id, ativo: false });
-    const ids = (await api.unidades.detalhe(un('T4-32'))).veiculos.map((v) => v.id);
+    const ids = (await api.unidades.detalhe(un('D-32'))).veiculos.map((v) => v.id);
     expect(ids).toContain(a!.id);
     expect(ids).not.toContain(b!.id);
     expect((await api.veiculos.editar({ id: a!.id, placa: b!.placa })).placa).toBe(b!.placa);
@@ -640,7 +646,7 @@ describe('adaptador HTTP: encomendas e ocorrências', () => {
   const ENC = {
     id: 'e1', codigo: 'K12', unidadeId: 'u-432', destinatario: 'Ana', transportadora: 'Correios', codigoRastreio: 'BR1', recebidaPorId: 'u-1',
     recebidaEm: 1_760_000_000_000, unidadeConfirmada: true, retiradaEm: null, retiradaPorPessoaId: null, retiradaRegistradaPorId: null,
-    retiradaAutorizacaoId: null, unidadeCodigo: 'T4-32', recebidaPorNome: 'João', retiradaPorNome: null, retiradaRegistradaPorNome: null, autorizacoes: [],
+    retiradaAutorizacaoId: null, unidadeCodigo: 'D-32', recebidaPorNome: 'João', retiradaPorNome: null, retiradaRegistradaPorNome: null, autorizacoes: [],
   };
   const OC = {
     id: 'o1', codigo: 'OC-2026-001', tipo: 'outro', descricao: 'Portão', unidadeId: null, envolvidos: '', abertaPorId: 'u-1', abertaEm: 1_760_000_000_000,
@@ -673,7 +679,7 @@ describe('adaptador HTTP: encomendas e ocorrências', () => {
 
   it('encomendas: erro de regra chega com o código da API; 2xx fora do formato é RESPOSTA_INVALIDA', async () => {
     const { api } = montar((c) => (c.url === '/encomendas/e1/retirada'
-      ? { status: 422, data: { code: 'PESSOA_SEM_VINCULO', message: 'Esta pessoa não tem vínculo com a T4-32' } }
+      ? { status: 422, data: { code: 'PESSOA_SEM_VINCULO', message: 'Esta pessoa não tem vínculo com a D-32' } }
       : { status: 200, data: { data: { id: 'e1' } } }));
     expect(await esperaErro(api.encomendas.entregar({ id: 'e1', pessoaId: 'p9' }))).toMatchObject({ status: 422, code: 'PESSOA_SEM_VINCULO' });
     expect((await esperaErro(api.encomendas.obter('e1'))).code).toBe('RESPOSTA_INVALIDA');
@@ -757,15 +763,15 @@ describe('mock: encomendas, ocorrências e restrição (mesmo contrato da API)',
   it('restrição em unidade desativada é UNIDADE_INATIVA (igual à API)', async () => {
     const api = novaApiMock();
     await entrarComo(api, 'paula.nogueira');
-    await api.unidades.desativar(un('T4-32'));
+    await api.unidades.desativar(un('D-32'));
     const e = await esperaErro(api.restricoes.criar({
-      pessoaId: id.marcos, unidadeId: un('T4-32'), motivo: 'Morador não autoriza', validaAte: brt(2026, 12, 31), solicitadaPorPessoaId: id.ana,
+      pessoaId: id.marcos, unidadeId: un('D-32'), motivo: 'Morador não autoriza', validaAte: brt(2026, 12, 31), solicitadaPorPessoaId: id.ana,
     }));
     expect(e).toMatchObject({ status: 422, code: 'UNIDADE_INATIVA' });
-    await api.unidades.reativar(un('T4-32'));
+    await api.unidades.reativar(un('D-32'));
     expect((await api.restricoes.criar({
-      pessoaId: id.marcos, unidadeId: un('T4-32'), motivo: 'Morador não autoriza', validaAte: brt(2026, 12, 31), solicitadaPorPessoaId: id.ana,
-    })).unidadeId).toBe(un('T4-32'));
+      pessoaId: id.marcos, unidadeId: un('D-32'), motivo: 'Morador não autoriza', validaAte: brt(2026, 12, 31), solicitadaPorPessoaId: id.ana,
+    })).unidadeId).toBe(un('D-32'));
   });
 });
 

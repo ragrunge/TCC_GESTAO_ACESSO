@@ -15,11 +15,12 @@ export const ROTULO_CATEGORIA: Record<CategoriaPessoa, string> = {
 /** Só CPF (decisão de produto). Pessoa sem CPF usa `semCpf` e só entra por exceção do porteiro. */
 export type TipoDocumento = 'cpf';
 
-/** Unidade (RF-01). `id` é uuid; o código "T4-32" é derivado de torre e número (`codigoUnidade`). */
+/** Unidade (RF-01). `id` é uuid; o código "A-32" é derivado de bloco e número (`codigoUnidade`). */
 export interface Unidade {
   id: string;
-  torre: number;
-  /** Só dígitos (CHECK do schema). */
+  /** 1 a 3 letras maiúsculas ou dígitos ("A", "4", "B2"; CHECK do schema). */
+  bloco: string;
+  /** Só dígitos, mínimo 2 ("03", "32"; CHECK do schema). */
   numero: string;
   ativo: boolean;
 }
@@ -235,7 +236,7 @@ export interface EventoView extends EventoAcesso {
   codigo: string;
   pessoaNome: string;
   operadorNome: string;
-  /** Código da unidade ("T4-32") ou nome da área comum. */
+  /** Código da unidade ("A-32") ou nome da área comum. */
   unidadeRotulo: string | null;
   areaComumNome: string | null;
   pontoAcessoNome: string;

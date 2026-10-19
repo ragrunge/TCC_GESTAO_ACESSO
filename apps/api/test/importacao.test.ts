@@ -31,15 +31,15 @@ const post = (papel: PapelTeste, url: string, corpo?: object) => api.http().post
 
 const fmt = (c: string) => `${c.slice(0, 3)}.${c.slice(3, 6)}.${c.slice(6, 9)}-${c.slice(9)}`;
 const LINHAS = [
-  { linha: 2, torre: '1', unidade: '11', nome: 'Importado Novo', documento: fmt(CPF_NOVO), telefone: '(11) 93333-0001', tipo: 'Proprietário' },
-  { linha: 3, torre: '1', unidade: '11', nome: 'Importado Novo', documento: CPF_NOVO, telefone: '', tipo: 'Proprietário' }, // duplicada na planilha
-  { linha: 4, torre: '1', unidade: '12', nome: 'Importado Novo', documento: CPF_NOVO, telefone: '', tipo: 'Inquilino' }, // mesmo CPF, outra unidade
-  { linha: 5, torre: '1', unidade: '13', nome: 'Sem Documento', documento: '', telefone: '1199', tipo: 'Dependente' },
-  { linha: 6, torre: '1', unidade: '14', nome: 'CPF Errado', documento: '123.456.789-00', telefone: '11933330006' },
-  { linha: 7, torre: '50', unidade: '1', nome: 'Unidade Inexistente', documento: CPF_NOVO_2, telefone: '' },
-  { linha: 8, torre: '1', unidade: '12', nome: '  ', documento: CPF_NOVO_2, telefone: '' },
-  { linha: 9, torre: 'Torre 4', unidade: 'Apto 32', nome: 'Ana Ribeiro', documento: CPF_ANA, telefone: '' }, // já é moradora de T4-32
-  { linha: 10, torre: '4', unidade: '32', nome: 'paulo ribeiro', documento: '', telefone: '' }, // sem CPF: casa pelo nome NA unidade
+  { linha: 2, bloco: 'A', unidade: '11', nome: 'Importado Novo', documento: fmt(CPF_NOVO), telefone: '(11) 93333-0001', tipo: 'Proprietário' },
+  { linha: 3, bloco: 'A', unidade: '11', nome: 'Importado Novo', documento: CPF_NOVO, telefone: '', tipo: 'Proprietário' }, // duplicada na planilha
+  { linha: 4, bloco: 'A', unidade: '12', nome: 'Importado Novo', documento: CPF_NOVO, telefone: '', tipo: 'Inquilino' }, // mesmo CPF, outra unidade
+  { linha: 5, bloco: 'A', unidade: '13', nome: 'Sem Documento', documento: '', telefone: '1199', tipo: 'Dependente' },
+  { linha: 6, bloco: 'A', unidade: '14', nome: 'CPF Errado', documento: '123.456.789-00', telefone: '11933330006' },
+  { linha: 7, bloco: 'Z', unidade: '1', nome: 'Unidade Inexistente', documento: CPF_NOVO_2, telefone: '' },
+  { linha: 8, bloco: 'A', unidade: '12', nome: '  ', documento: CPF_NOVO_2, telefone: '' },
+  { linha: 9, bloco: 'Bloco D', unidade: 'Apto 32', nome: 'Ana Ribeiro', documento: CPF_ANA, telefone: '' }, // já é moradora de D-32
+  { linha: 10, bloco: 'd', unidade: '32', nome: 'paulo ribeiro', documento: '', telefone: '' }, // sem CPF: casa pelo nome NA unidade
 ];
 
 describe('importação: análise', () => {
@@ -138,7 +138,7 @@ describe('importação: prazo do legado configurável (RN-09, definido em assemb
     const outra = await novaApi({ importacao: { prazoLegadoDias: 30 } });
     try {
       const { cookie } = await outra.como('administracao');
-      const linhas = [{ linha: 2, torre: '1', unidade: '13', nome: 'Prazo Curto', documento: cpfComDv('300000777'), telefone: '' }];
+      const linhas = [{ linha: 2, bloco: 'A', unidade: '13', nome: 'Prazo Curto', documento: cpfComDv('300000777'), telefone: '' }];
       const r = await outra.http().post(`${V1}/importacoes`).set('Cookie', cookie).send({ arquivo: 'prazo.csv', linhas });
       expect(r.body.data.prazoRegularizacao).toBe('2026-11-16'); // 17/10 + 30 dias
       const c = await outra.http().post(`${V1}/importacoes/${r.body.data.id}/confirmar`).set('Cookie', cookie).send({ linhas });

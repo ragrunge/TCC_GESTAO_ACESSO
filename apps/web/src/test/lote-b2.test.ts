@@ -20,7 +20,7 @@ describe('Parte 1: mock alinhado ao schema', () => {
   it('evento gravado tem as colunas do schema: sem código, sem nome copiado, ponto de acesso por id', async () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
-    const ev = await api.eventos.criar({ pessoaId: id.marcos, unidadeDestinoId: un('T4-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana });
+    const ev = await api.eventos.criar({ pessoaId: id.marcos, unidadeDestinoId: un('D-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana });
     await entrarComo(api, 'luiza.campos');
     const [, linha] = await linhasExportadas(api, { eventoId: ev.id });
     expect(Object.keys(linha.evento)).toEqual(['v', ...CAMPOS_CANONICOS_V1, 'hash_anterior', 'hash']);
@@ -28,11 +28,11 @@ describe('Parte 1: mock alinhado ao schema', () => {
     expect(linha.evento).not.toHaveProperty('autorizado_por_nome');
     expect(JSON.stringify(linha.evento)).not.toContain('Ana Ribeiro'); // nome só por join (view/exibição)
     expect(linha.evento.ponto_acesso_id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(linha.evento.unidade_destino_id).toBe(un('T4-32'));
+    expect(linha.evento.unidade_destino_id).toBe(un('D-32'));
     // a view resolve nome, código (derivado de seq) e rótulo da unidade
     expect(ev.codigo).toBe(`EV-${String(ev.seq).padStart(6, '0')}`);
     expect(ev.autorizadoPorNome).toBe('Ana Ribeiro');
-    expect(ev.unidadeRotulo).toBe('T4-32');
+    expect(ev.unidadeRotulo).toBe('D-32');
     expect(ev.pontoAcessoNome).toBe('Portaria social');
     // fora da contingência o relógio é do servidor: ocorrido = registrado (CHECK evento_retroativo_tempo_ck)
     expect(ev.ocorridoEm).toBe(ev.registradoEm);
@@ -42,7 +42,7 @@ describe('Parte 1: mock alinhado ao schema', () => {
   it('negado não copia o motivo para a justificativa (o motivo está na restrição)', async () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
-    await esperaErro(api.eventos.criar({ pessoaId: id.bruno, unidadeDestinoId: un('T4-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana }));
+    await esperaErro(api.eventos.criar({ pessoaId: id.bruno, unidadeDestinoId: un('D-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana }));
     const negado = (await api.eventos.listar({ tipo: 'negado' }))[0];
     expect(negado.justificativa).toBeNull();
     expect(negado.restricaoId).toBe('rs-bruno');
@@ -51,12 +51,12 @@ describe('Parte 1: mock alinhado ao schema', () => {
   it('restrição de unidade exige o morador solicitante, com vínculo válido', async () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
-    const base = { pessoaId: id.marcos, unidadeId: un('T4-32'), motivo: 'Morador pediu', validaAte: brt(2026, 12, 31) };
+    const base = { pessoaId: id.marcos, unidadeId: un('D-32'), motivo: 'Morador pediu', validaAte: brt(2026, 12, 31) };
     expect((await esperaErro(api.restricoes.criar({ ...base, solicitadaPorPessoaId: null }))).code).toBe('SOLICITANTE_OBRIGATORIO');
     expect((await esperaErro(api.restricoes.criar({ ...base, solicitadaPorPessoaId: id.carla }))).code).toBe('SOLICITANTE_SEM_VINCULO'); // outra unidade
     const r = await api.restricoes.criar({ ...base, solicitadaPorPessoaId: id.ana });
     expect(r.solicitadaPorPessoaId).toBe(id.ana);
-    const det = await api.unidades.detalhe(un('T4-32'));
+    const det = await api.unidades.detalhe(un('D-32'));
     expect(det.restricoes!.find((x) => x.id === r.id)).toMatchObject({ solicitadaPorNome: 'Ana Ribeiro', cadastradaPorNome: 'João Lima (Porteiro)' });
   });
 
@@ -70,26 +70,28 @@ describe('Parte 1: mock alinhado ao schema', () => {
     for (const x of (await api.pessoas.listar()).slice(0, 20)) expect(x.telefone ?? '').toMatch(/^\d{10,11}$/);
   });
 
-  it('unidade tem id uuid; o código "T4-32" é derivado e a busca por "4-32" continua funcionando', async () => {
+  it('unidade tem id uuid; o código "D-32" é derivado e a busca aceita "d 32" e o antigo "T4-32"', async () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
     const { unidades, areasComuns } = await api.catalogo.obter();
-    expect(unidades).toHaveLength(165);
+    expect(unidades).toHaveLength(162);
     expect(unidades.every((u) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(u.id))).toBe(true);
     expect(areasComuns.map((a) => a.nome)).toEqual(['Salão de festas', 'Piscina', 'Quadra', 'Academia', 'Administração', 'Casa de máquinas', 'Jardins']);
-    expect((await api.pessoas.buscar('4-32')).some((p) => p.id === id.ana)).toBe(true);
-    expect((await api.busca.global('T4-32')).unidades[0]).toEqual({ id: un('T4-32'), motivo: 'Unidade' });
-    expect((await api.unidades.detalhe('T4-32')).unidade.id).toBe(un('T4-32')); // link legível
+    expect((await api.pessoas.buscar('d 32')).some((p) => p.id === id.ana)).toBe(true);
+    expect((await api.pessoas.buscar('T4-32')).some((p) => p.id === id.ana)).toBe(false); // não há bloco "4" nem "T4"
+    expect((await api.busca.global('D32')).unidades.some((u) => u.motivo.startsWith('Unidade'))).toBe(false); // sem separador não é código
+    expect((await api.busca.global('D-32')).unidades[0]).toEqual({ id: un('D-32'), motivo: 'Unidade' });
+    expect((await api.unidades.detalhe('D-32')).unidade.id).toBe(un('D-32')); // link legível
     const ana = (await api.pessoas.buscar('Ana Ribeiro')).find((p) => p.id === id.ana)!;
-    expect(ana.unidadesVinculadasCodigos).toEqual(['T4-32']);
+    expect(ana.unidadesVinculadasCodigos).toEqual(['D-32']);
   });
 
   it('vínculo, encomenda, ocorrência e autorização guardam ids de usuário; as views resolvem o nome', async () => {
     const api = novaApi();
     await entrarComo(api, 'paula.nogueira');
-    const v = await api.vinculos.criar({ pessoaId: id.marcos, unidadeId: un('T4-32'), tipo: 'dependente', vigenciaInicio: brt(2026, 10, 9), vigenciaFim: null, solicitadoPor: '' });
+    const v = await api.vinculos.criar({ pessoaId: id.marcos, unidadeId: un('D-32'), tipo: 'dependente', vigenciaInicio: brt(2026, 10, 9), vigenciaFim: null, solicitadoPor: '' });
     expect(v).toMatchObject({ registradoPorId: 'u4', encerradoEm: null });
-    expect((await api.vinculos.listar()).find((x) => x.id === v.id)).toMatchObject({ registradoPorNome: 'Paula Nogueira', unidadeCodigo: 'T4-32' });
+    expect((await api.vinculos.listar()).find((x) => x.id === v.id)).toMatchObject({ registradoPorNome: 'Paula Nogueira', unidadeCodigo: 'D-32' });
     const helio = (await api.vinculos.listar({ status: 'encerrado' })).find((x) => x.pessoaNome === 'Hélio Prates')!;
     expect(helio.encerradoEm).not.toBeNull(); // CHECK vinculo_encerrado_ck
     const enc = (await api.encomendas.listar()).find((e) => e.id === 'K99')!;
@@ -101,7 +103,7 @@ describe('Parte 1: mock alinhado ao schema', () => {
   it('importação persiste o estado "analisada" (sem as linhas) e passa a "confirmada"', async () => {
     const api = novaApi();
     await entrarComo(api, 'paula.nogueira');
-    const r = await api.importacao.analisar({ arquivo: 'p.csv', linhas: [{ linha: 2, torre: '1', unidade: '11', nome: 'Importada Nova', documento: CPF_C, telefone: '11999998888' }] });
+    const r = await api.importacao.analisar({ arquivo: 'p.csv', linhas: [{ linha: 2, bloco: 'A', unidade: '11', nome: 'Importada Nova', documento: CPF_C, telefone: '11999998888' }] });
     expect(r.status).toBe('analisada');
     await api.importacao.confirmar(r.id);
     expect((await esperaErro(api.importacao.confirmar(r.id))).status).toBe(404); // linhas descartadas após confirmar
@@ -113,23 +115,25 @@ describe('Parte 1: mock alinhado ao schema', () => {
 });
 
 describe('RF-01: CRUD de unidades', () => {
-  it('cria com torre/número únicos, edita só sem referências, desativa e reativa; auditor só lê', async () => {
+  it('cria com bloco/número únicos (normalizados), edita só sem referências, desativa e reativa; auditor só lê', async () => {
     const api = novaApi();
     await entrarComo(api, 'paula.nogueira');
-    expect((await esperaErro(api.unidades.criar({ torre: 4, numero: '32' }))).code).toBe('UNIDADE_DUPLICADA');
-    expect((await esperaErro(api.unidades.criar({ torre: 4, numero: '3a' }))).code).toBe('UNIDADE_INVALIDA');
-    const nova = await api.unidades.criar({ torre: 10, numero: '101' });
+    expect((await esperaErro(api.unidades.criar({ bloco: 'd', numero: '32' }))).code).toBe('UNIDADE_DUPLICADA');
+    expect((await esperaErro(api.unidades.criar({ bloco: 'D', numero: '3' }))).code).toBe('UNIDADE_DUPLICADA'); // "3" é a D-03
+    expect((await esperaErro(api.unidades.criar({ bloco: 'D', numero: '3a' }))).code).toBe('UNIDADE_INVALIDA');
+    expect((await esperaErro(api.unidades.criar({ bloco: 'D-1', numero: '11' }))).code).toBe('UNIDADE_INVALIDA');
+    const nova = await api.unidades.criar({ bloco: 'J', numero: '101' });
     expect(nova.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect((await api.catalogo.obter()).unidades).toHaveLength(166);
-    const editada = await api.unidades.editar({ id: nova.id, torre: 10, numero: '102' });
+    expect((await api.catalogo.obter()).unidades).toHaveLength(163);
+    const editada = await api.unidades.editar({ id: nova.id, bloco: 'J', numero: '102' });
     expect(editada.numero).toBe('102');
-    expect((await esperaErro(api.unidades.editar({ id: un('T4-32'), torre: 4, numero: '99' }))).code).toBe('UNIDADE_REFERENCIADA');
+    expect((await esperaErro(api.unidades.editar({ id: un('D-32'), bloco: 'D', numero: '99' }))).code).toBe('UNIDADE_REFERENCIADA');
     expect((await api.unidades.desativar(nova.id)).ativo).toBe(false);
     expect((await esperaErro(api.unidades.desativar(nova.id))).status).toBe(409);
     expect((await api.unidades.reativar(nova.id)).ativo).toBe(true);
     await entrarComo(api, 'luiza.campos');
-    expect((await api.unidades.listar()).length).toBe(166);
-    expect((await esperaErro(api.unidades.criar({ torre: 11, numero: '11' }))).status).toBe(403);
+    expect((await api.unidades.listar()).length).toBe(163);
+    expect((await esperaErro(api.unidades.criar({ bloco: 'K', numero: '11' }))).status).toBe(403);
     await entrarComo(api, 'joao.lima');
     expect((await esperaErro(api.unidades.desativar(nova.id))).status).toBe(403);
   });
@@ -137,16 +141,16 @@ describe('RF-01: CRUD de unidades', () => {
   it('unidade inativa não recebe entrada, encomenda nem vínculo, mas continua no histórico', async () => {
     const api = novaApi();
     await entrarComo(api, 'paula.nogueira');
-    await api.unidades.desativar(un('T4-32'));
+    await api.unidades.desativar(un('D-32'));
     await entrarComo(api, 'joao.lima');
-    expect((await esperaErro(api.eventos.criar({ pessoaId: id.marcos, unidadeDestinoId: un('T4-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana }))).code).toBe('UNIDADE_INATIVA');
-    expect((await esperaErro(api.encomendas.receber({ unidadeId: un('T4-32'), destinatario: 'Ana', transportadora: 'X', codigoRastreio: '1', unidadeConfirmada: true }))).code).toBe('UNIDADE_INATIVA');
+    expect((await esperaErro(api.eventos.criar({ pessoaId: id.marcos, unidadeDestinoId: un('D-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana }))).code).toBe('UNIDADE_INATIVA');
+    expect((await esperaErro(api.encomendas.receber({ unidadeId: un('D-32'), destinatario: 'Ana', transportadora: 'X', codigoRastreio: '1', unidadeConfirmada: true }))).code).toBe('UNIDADE_INATIVA');
     await entrarComo(api, 'paula.nogueira');
-    expect((await esperaErro(api.vinculos.criar({ pessoaId: id.marcos, unidadeId: un('T4-32'), tipo: 'dependente', vigenciaInicio: brt(2026, 10, 9), vigenciaFim: null, solicitadoPor: '' }))).code).toBe('UNIDADE_INATIVA');
-    const det = await api.unidades.detalhe(un('T4-32'));
+    expect((await esperaErro(api.vinculos.criar({ pessoaId: id.marcos, unidadeId: un('D-32'), tipo: 'dependente', vigenciaInicio: brt(2026, 10, 9), vigenciaFim: null, solicitadoPor: '' }))).code).toBe('UNIDADE_INATIVA');
+    const det = await api.unidades.detalhe(un('D-32'));
     expect(det.unidade.ativo).toBe(false);
     expect(det.eventos!.length).toBeGreaterThan(0); // histórico preservado
-    expect((await api.eventos.listar({ unidadeId: un('T4-32') })).length).toBeGreaterThan(0);
+    expect((await api.eventos.listar({ unidadeId: un('D-32') })).length).toBeGreaterThan(0);
   });
 });
 
@@ -209,7 +213,7 @@ describe('RN-09 e correção (art. 18)', () => {
   it('regularizar legado: exige cadastro completo (422) e passa a aprovado; lista marca o legado vencido', async () => {
     const api = novaApi();
     await entrarComo(api, 'paula.nogueira');
-    const r = await api.importacao.analisar({ arquivo: 'p.csv', linhas: [{ linha: 2, torre: '1', unidade: '11', nome: 'Legado Sem Cpf', documento: '', telefone: '' }] });
+    const r = await api.importacao.analisar({ arquivo: 'p.csv', linhas: [{ linha: 2, bloco: 'A', unidade: '11', nome: 'Legado Sem Cpf', documento: '', telefone: '' }] });
     await api.importacao.confirmar(r.id);
     const leg = (await api.vinculos.listar({ status: 'legado' })).find((v) => v.pessoaNome === 'Legado Sem Cpf')!;
     expect(leg.pessoaCadastroCompleto).toBe(false);
@@ -307,7 +311,7 @@ describe('RN-08: autorização de retirada de encomenda', () => {
   it('morador com vínculo autoriza alguém com CPF; só o autorizado (ou quem tem vínculo) retira', async () => {
     const api = novaApi();
     await entrarComo(api, 'joao.lima');
-    const base = { encomendaId: 'K108', pessoaId: id.marcos, solicitadaPorPessoaId: id.ana }; // K108: T4-32
+    const base = { encomendaId: 'K108', pessoaId: id.marcos, solicitadaPorPessoaId: id.ana }; // K108: D-32
     expect((await esperaErro(api.encomendas.autorizarRetirada({ ...base, solicitadaPorPessoaId: id.carla }))).code).toBe('SOLICITANTE_SEM_VINCULO');
     const semCpf = await api.pessoas.criar({ nome: 'Sem Cpf Retira', semCpf: true, telefone: '11944443333', categoria: 'visitante' });
     expect((await esperaErro(api.encomendas.autorizarRetirada({ ...base, pessoaId: semCpf.id }))).code).toBe('CPF_OBRIGATORIO');
@@ -337,7 +341,7 @@ describe('LGPD (spec 9.3) e retenção (RNF-09)', () => {
     expect(j.titular.telefone).toMatch(/^\(\*\*\) \*{5}-\d{4}$/);
     expect(pacote.conteudo).not.toContain(ana.documentoBusca!);
     expect(pacote.conteudo).not.toContain(ana.telefone!);
-    expect(j.vinculos[0]).toMatchObject({ unidade: 'T4-32', status: 'aprovado' });
+    expect(j.vinculos[0]).toMatchObject({ unidade: 'D-32', status: 'aprovado' });
     expect(j.veiculos.map((v: { placa: string }) => v.placa)).toContain('FKR-2C41');
     expect(j.encomendasRetiradas).toEqual([]);
     expect(Array.isArray(j.eventos)).toBe(true);
@@ -351,7 +355,7 @@ describe('LGPD (spec 9.3) e retenção (RNF-09)', () => {
     const p = await api.pessoas.criar({ nome: 'Titular Pede Exclusao', documento: CPF_A, telefone: '11922221111', categoria: 'visitante' });
     expect((await esperaErro(api.lgpd.anonimizar(p.id))).status).toBe(403); // administração não anonimiza
     await entrarComo(api, 'joao.lima');
-    await api.eventos.criar({ pessoaId: p.id, unidadeDestinoId: un('T4-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana });
+    await api.eventos.criar({ pessoaId: p.id, unidadeDestinoId: un('D-32'), autorizadoPorTipo: 'interfone', autorizadoPorPessoaId: id.ana });
     await entrarComo(api, 'roberto.faria');
     expect((await esperaErro(api.lgpd.anonimizar(id.ana))).code).toBe('PESSOA_COM_VINCULO_VALIDO');
     const r = await api.lgpd.anonimizar(p.id);

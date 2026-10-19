@@ -1,16 +1,16 @@
-// Server state de unidades (React Query v5). A lista pagina por torre (a grade mostra uma torre por vez): nada de
-// baixar as 165 com resumo de uma vez. O catálogo leve (todas, sem resumo) continua no CatalogoProvider.
+// Server state de unidades (React Query v5). A lista pagina por bloco (a grade mostra um bloco por vez): nada de
+// baixar todas com resumo de uma vez. O catálogo leve (todas, sem resumo) continua no CatalogoProvider.
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApi, type NovaUnidadeInput } from '../../api';
 import { CHAVES } from '../../app/consultas';
 
 const POR_PAGINA = 50;
 
-export function useUnidadesDaTorre(torre: number) {
+export function useUnidadesDoBloco(bloco: string) {
   const api = useApi();
   return useInfiniteQuery({
-    queryKey: CHAVES.unidadesDaTorre(torre),
-    queryFn: ({ pageParam }) => api.unidades.listarPagina({ torre, cursor: pageParam, limite: POR_PAGINA }),
+    queryKey: CHAVES.unidadesDoBloco(bloco),
+    queryFn: ({ pageParam }) => api.unidades.listarPagina({ bloco, cursor: pageParam, limite: POR_PAGINA }),
     initialPageParam: null as string | null,
     // `undefined` encerra a paginação (null não encerra no v5).
     getNextPageParam: (p) => (p.temMais && p.cursor ? p.cursor : undefined),
@@ -19,7 +19,7 @@ export function useUnidadesDaTorre(torre: number) {
 }
 
 /**
- * `ref`: uuid ou código "T4-32". A tela abre por "/unidades/T4-32" e troca para o uuid quando o catálogo carrega: sem
+ * `ref`: uuid ou código "D-32". A tela abre por "/unidades/D-32" e troca para o uuid quando o catálogo carrega: sem
  * `keepPreviousData` a troca de chave zera o dado e desmonta o modal que o usuário já tinha aberto.
  */
 export function useUnidadeDetalhe(ref: string) {

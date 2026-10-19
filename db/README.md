@@ -10,7 +10,7 @@ Infraestrutura do banco da Portaria Parque (PostgreSQL 16+; no ambiente Docker, 
 | RF-05: conferência do comprovante no vínculo (gerada + trigger do vínculo, manual) | `apps/api/drizzle/0002_conferencia_comprovante.sql` |
 | Verificador independente da cadeia | `apps/api/src/db/cadeia.ts` |
 | CPF: máscara e HMAC | `apps/api/src/db/cpf.ts` |
-| Seed de estrutura (165 unidades, portaria social) | `apps/api/src/db/seed.ts` |
+| Seed de estrutura (unidades de `ESTRUTURA_PADRAO`, portaria social) | `apps/api/src/db/seed.ts` |
 | Bootstrap de roles (superusuário) | `db/bootstrap/00_roles.sh` |
 | Ambiente Docker (db, migrate, api) | `docker-compose.yml` e `.env.example` na raiz do monorepo |
 

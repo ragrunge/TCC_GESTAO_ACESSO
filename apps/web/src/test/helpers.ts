@@ -5,11 +5,11 @@ import { INICIO_SIMULADO, relogio } from '@portaria/domain/time';
 import { parseCodigoUnidade } from '@portaria/domain/units';
 import { idUnidadeSeed } from '../api/mock/seedUtil';
 
-/** Id (uuid determinístico do seed) da unidade de código "T4-32". */
+/** Id (uuid determinístico do seed) da unidade de código "D-32". */
 export function un(codigo: string): string {
   const p = parseCodigoUnidade(codigo);
   if (!p) throw new Error(`código de unidade inválido: ${codigo}`);
-  return idUnidadeSeed(p.torre, p.numero);
+  return idUnidadeSeed(p.bloco, p.numero);
 }
 
 export type Perfil = 'joao.lima' | 'sergio.matos' | 'paula.nogueira' | 'roberto.faria' | 'luiza.campos';

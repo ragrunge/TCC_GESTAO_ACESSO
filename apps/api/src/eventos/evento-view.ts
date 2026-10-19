@@ -69,7 +69,7 @@ export async function montarViews(exec: Executor, linhas: LinhaEvento[]): Promis
   const [pessoas, usuarios, unidades, areas, pontos] = await Promise.all([
     pessoaIds.length ? exec.select({ id: pessoa.id, nome: pessoa.nome }).from(pessoa).where(inArray(pessoa.id, pessoaIds)) : [],
     usuarioIds.length ? exec.select({ id: usuarioSistema.id, nome: usuarioSistema.nome, papel: usuarioSistema.papel }).from(usuarioSistema).where(inArray(usuarioSistema.id, usuarioIds)) : [],
-    unidadeIds.length ? exec.select({ id: unidade.id, torre: unidade.torre, numero: unidade.numero }).from(unidade).where(inArray(unidade.id, unidadeIds)) : [],
+    unidadeIds.length ? exec.select({ id: unidade.id, bloco: unidade.bloco, numero: unidade.numero }).from(unidade).where(inArray(unidade.id, unidadeIds)) : [],
     areaIds.length ? exec.select({ id: areaComum.id, nome: areaComum.nome }).from(areaComum).where(inArray(areaComum.id, areaIds)) : [],
     pontoIds.length ? exec.select({ id: pontoAcesso.id, nome: pontoAcesso.nome }).from(pontoAcesso).where(inArray(pontoAcesso.id, pontoIds)) : [],
   ]);

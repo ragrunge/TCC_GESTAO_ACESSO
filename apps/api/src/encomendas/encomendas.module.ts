@@ -118,7 +118,7 @@ export class EncomendasService {
     const [ps, us, uns, vs] = await Promise.all([
       pessoaIds.size ? exec.select({ id: pessoa.id, nome: pessoa.nome }).from(pessoa).where(inArray(pessoa.id, [...pessoaIds])) : [],
       exec.select({ id: usuarioSistema.id, nome: usuarioSistema.nome }).from(usuarioSistema).where(inArray(usuarioSistema.id, [...usuarioIds])),
-      exec.select({ id: unidade.id, torre: unidade.torre, numero: unidade.numero }).from(unidade).where(inArray(unidade.id, unidadeIds)),
+      exec.select({ id: unidade.id, bloco: unidade.bloco, numero: unidade.numero }).from(unidade).where(inArray(unidade.id, unidadeIds)),
       // Tipo do vínculo de quem retirou por vínculo (para "Lúcia Ribeiro (dependente)"), como o mock
       retirantes.length ? exec.select({ pessoaId: vinculoUnidade.pessoaId, unidadeId: vinculoUnidade.unidadeId, tipo: vinculoUnidade.tipo })
         .from(vinculoUnidade).where(inArray(vinculoUnidade.pessoaId, [...new Set(retirantes.map((e) => e.retiradaPorPessoaId!))]))
@@ -226,7 +226,7 @@ export class EncomendasService {
           const [aut] = await tx.select({ id: autorizacaoRetirada.id }).from(autorizacaoRetirada)
             .where(and(eq(autorizacaoRetirada.encomendaId, id), eq(autorizacaoRetirada.pessoaAutorizadaId, pessoaId)));
           if (!aut) {
-            const [u] = await tx.select({ torre: unidade.torre, numero: unidade.numero }).from(unidade).where(eq(unidade.id, antes.unidadeId));
+            const [u] = await tx.select({ bloco: unidade.bloco, numero: unidade.numero }).from(unidade).where(eq(unidade.id, antes.unidadeId));
             throw erroApi(422, 'PESSOA_SEM_VINCULO', `Esta pessoa não tem vínculo com a ${u ? codigoUnidade(u) : 'unidade'} nem autorização de retirada. Contate a unidade.`);
           }
           autorizacaoId = aut.id; // FK composta: a autorização usada é desta encomenda e desta pessoa

@@ -30,4 +30,5 @@ export interface DbData {
 
 /** v3: alinhado ao schema do banco (unidade uuid, ids no lugar de nomes, hash canônico v1). Versão antiga é descartada. */
 /** v4: conferência do comprovante (RF-05) no lugar do documento anexado e do checklist `conferencias`. */
-export const VERSAO_DB = 4;
+/** v5: unidade por bloco texto ("A-32") no lugar da torre numérica; estrutura de 162 unidades. */
+export const VERSAO_DB = 5;

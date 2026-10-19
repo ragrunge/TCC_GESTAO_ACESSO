@@ -47,7 +47,7 @@ export const Cel = ({ children, className = '' }: { children?: ReactNode; classN
   <span role="cell" className={`min-w-0 ${className}`}>{children}</span>
 );
 /** Texto de unidade na lista: mono, negrito. */
-/** Célula de unidade: mostra o código "T4-32" (resolvido pelo catálogo) ou `texto` (ex.: rótulo da view, área comum). */
+/** Célula de unidade: mostra o código "D-32" (resolvido pelo catálogo) ou `texto` (ex.: rótulo da view, área comum). */
 export function CelUnidade({ id, texto, className = '' }: { id: string | null; texto?: string | null; className?: string }) {
   const { codigo } = useCatalogo();
   const t = texto ?? (id ? codigo(id) : null);

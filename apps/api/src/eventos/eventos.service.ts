@@ -20,7 +20,7 @@ import { MIN_JUSTIFICATIVA, justificativaValida, restricoesVigentes, validarAuto
 import { inicioDoDia, fimDoDia, partes } from '@portaria/domain/time';
 import type { CategoriaPessoa, EventoView, Funcionario, MeioAutorizacao, Restricao, ValoresCorrecao } from '@portaria/domain/types';
 import { CAMPOS_CORRIGIVEIS } from '@portaria/domain/types';
-import { PORTARIA_SOCIAL, rotuloUnidade } from '@portaria/domain/units';
+import { PORTARIA_SOCIAL } from '@portaria/domain/units';
 import { and, asc, count, desc, eq, isNull, lt, ne, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Contexto } from '../auth/tipos';
@@ -235,7 +235,7 @@ export class EventosService {
           pontoAcessoId: ponto, restricaoId: rs[0]!.id, operadorId: ctx.ator.id, operadorPapel: ctx.ator.papel, ocorridoEm: new Date(quando),
           retroativo: !!i.retroativo, formularioContingencia: formulario, observacao: i.observacao?.trim() || null,
         });
-        return { tipo: 'negado', linha, restricoes: rs, destino: un ? `para ${rotuloUnidade(un)}` : 'no condomínio' };
+        return { tipo: 'negado', linha, restricoes: rs, destino: un ? `para ${this.unidades.rotulo(un)}` : 'no condomínio' };
       }
 
       // RN-01, RF-17, RN-07, escala, RF-36 (função pura do domain, a mesma que a tela usa para habilitar o botão)

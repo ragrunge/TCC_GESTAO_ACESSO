@@ -63,7 +63,7 @@ export function LoginPage() {
         </div>
         <div className="max-w-[540px]">
           <div className="text-[42px] font-semibold leading-[1.12] tracking-[-0.02em] [text-wrap:pretty]">Condomínio Residencial do Parque</div>
-          <div className="mt-4 text-[17px] leading-[1.55] text-[#C8D3D7] [text-wrap:pretty]">165 unidades em 9 torres. Cada entrada fica registrada com quem autorizou e quem registrou.</div>
+          <div className="mt-4 text-[17px] leading-[1.55] text-[#C8D3D7] [text-wrap:pretty]">Cada entrada fica registrada com quem autorizou e quem registrou.</div>
         </div>
         <div className="text-[13px] text-[#8DA2A9]">Protótipo acadêmico · TCC de Sistemas de Informação · dados fictícios</div>
       </div>

@@ -19,10 +19,11 @@ import { ROTULO_VINCULO, type Encomenda } from '@portaria/domain/types';
 import { diasDesde, encomendaAtrasada } from '@portaria/domain/rules';
 import { useCatalogo } from '../../app/catalogo';
 import { fmtDataHora } from '@portaria/domain/time';
+import { oAgrupamento } from '@portaria/domain/units';
 import { mensagemErro, useAgora, useAsync } from '../../app/useAsync';
 import { APOS_ENCOMENDA, CHAVES, useInvalidar } from '../../app/consultas';
 
-/** Encomendas por página: a fila cresce com "Carregar mais" (RF-26: um condomínio de 165 unidades acumula entregues). */
+/** Encomendas por página: a fila cresce com "Carregar mais" (RF-26: um condomínio de 162 unidades acumula entregues). */
 const POR_PAGINA = 50;
 
 const TRANSPORTADORAS = ['Correios', 'Mercado Livre', 'Amazon', 'Shopee', 'Loggi', 'Jadlog', 'Outra'];
@@ -143,7 +144,7 @@ export function EncomendasPage() {
 function ReceberModal({ onClose, onFeito }: { onClose: () => void; onFeito: (e: Encomenda) => void }) {
   const api = useApi();
   const catalogo = useCatalogo();
-  const [torre, setTorre] = useState<number | null>(null);
+  const [bloco, setBloco] = useState<string | null>(null);
   const [numero, setNumero] = useState<string | null>(null);
   const [f, setF] = useState({ destinatario: '', transportadora: '', codigoRastreio: '' });
   const [moradores, setMoradores] = useState<Autorizador[]>([]);
@@ -151,7 +152,7 @@ function ReceberModal({ onClose, onFeito }: { onClose: () => void; onFeito: (e: 
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
   const destRef = useRef<HTMLInputElement>(null);
-  const unidade = torre && numero ? catalogo.porTorreNumero(torre, numero)?.id ?? null : null;
+  const unidade = bloco && numero ? catalogo.porBlocoNumero(bloco, numero)?.id ?? null : null;
 
   // Destinatários sugeridos: moradores com vínculo válido na unidade (o campo continua editável)
   useEffect(() => {
@@ -166,7 +167,7 @@ function ReceberModal({ onClose, onFeito }: { onClose: () => void; onFeito: (e: 
 
   function revisar(e: FormEvent) {
     e.preventDefault();
-    if (!unidade) { setErro('Escolha a torre e a unidade.'); return; }
+    if (!unidade) { setErro(`Escolha ${oAgrupamento(catalogo.agrupamento).toLowerCase()} e a unidade.`); return; }
     if (!f.destinatario.trim()) { setErro('Informe o destinatário.'); return; }
     if (!f.transportadora) { setErro('Escolha a transportadora.'); return; }
     setErro(''); setEtapa('confirmar');
@@ -216,7 +217,7 @@ function ReceberModal({ onClose, onFeito }: { onClose: () => void; onFeito: (e: 
   return (
     <Modal titulo="Receber encomenda" largura={680} onClose={onClose}>
       <form id="form-encomenda" onSubmit={revisar} className="flex flex-col gap-4">
-        <TowerUnitPicker autoFocusTorre variante="modal" torre={torre} numero={numero} onChange={(t, n) => { setTorre(t); setNumero(n); }} onComplete={() => setTimeout(() => destRef.current?.focus(), 0)} />
+        <TowerUnitPicker autoFocusBloco variante="modal" bloco={bloco} numero={numero} onChange={(b, n) => { setBloco(b); setNumero(n); }} onComplete={() => setTimeout(() => destRef.current?.focus(), 0)} />
         {unidade && moradores.length > 0 && (
           <div className="flex flex-col gap-1.5">
             <span className="text-[14px] font-medium">Destinatário (moradores da unidade)</span>

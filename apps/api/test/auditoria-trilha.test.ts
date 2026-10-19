@@ -20,19 +20,19 @@ async function montar() {
   const cookies = {} as Record<PapelTeste, string>;
   for (const p of ['sindico', 'administracao', 'porteiro', 'auditor'] as PapelTeste[]) cookies[p] = (await api.como(p)).cookie;
   const pessoaId = async (nome: string) => (await api.db.select().from(s.pessoa).where(eq(s.pessoa.nome, nome)))[0]!.id;
-  const [t432] = await api.db.select().from(s.unidade).where(and(eq(s.unidade.torre, 4), eq(s.unidade.numero, '32')));
+  const [d32] = await api.db.select().from(s.unidade).where(and(eq(s.unidade.bloco, 'D'), eq(s.unidade.numero, '32')));
   const get = (papel: PapelTeste, url: string) => api.http().get(`${V1}${url}`).set('Cookie', cookies[papel]);
   const post = (papel: PapelTeste, url: string, corpo?: object) => api.http().post(`${V1}${url}`).set('Cookie', cookies[papel]).send(corpo);
   /** n entradas por exceção (com saída), de pessoas do seed. */
   async function movimentar(n: number) {
     const pessoas = await Promise.all(['Marcos Pereira', 'Bruno Teixeira', 'Juliana Costa'].map(pessoaId));
     for (let i = 0; i < n; i++) {
-      const e = await post('porteiro', '/eventos-acesso', { pessoaId: pessoas[i % 3], unidadeDestinoId: t432!.id, autorizadoPorTipo: 'excecao_porteiro', justificativa: JUST });
+      const e = await post('porteiro', '/eventos-acesso', { pessoaId: pessoas[i % 3], unidadeDestinoId: d32!.id, autorizadoPorTipo: 'excecao_porteiro', justificativa: JUST });
       if (e.status !== 201) throw new Error(`entrada falhou: ${JSON.stringify(e.body)}`);
       await post('porteiro', `/eventos-acesso/${e.body.data.id}/saida`);
     }
   }
-  return { api, get, post, movimentar, pessoaId, t432: t432! };
+  return { api, get, post, movimentar, pessoaId, d32: d32! };
 }
 
 /** Superusuário, sem o trigger append-only: o que o ataque faria. */
@@ -114,7 +114,7 @@ describe('exportação verificável (POST /auditoria/exportacoes) e trilha de al
     expect(resumo).toMatchObject({ quantidade: 8, ultimoSeq: 8 });
     // Nomes à parte ("exibicao"), fora do hash
     const linha = JSON.parse(p.conteudo.split('\n')[1]!);
-    expect(linha.exibicao).toMatchObject({ codigo: 'EV-000001', unidade: 'T4-32', pessoa: 'Marcos Pereira', operador: 'João Lima' });
+    expect(linha.exibicao).toMatchObject({ codigo: 'EV-000001', unidade: 'D-32', pessoa: 'Marcos Pereira', operador: 'João Lima' });
     expect(linha.evento).not.toHaveProperty('exibicao');
   });
 
@@ -149,7 +149,7 @@ describe('exportação verificável (POST /auditoria/exportacoes) e trilha de al
     const ana = await m.pessoaId('Ana Ribeiro');
     const bruno = await m.pessoaId('Bruno Teixeira');
     for (let i = 0; i < 3; i++) {
-      const a = await m.post('porteiro', '/autorizacoes-previas', { unidadeId: m.t432.id, pessoaId: bruno, validaAte: '2026-10-30', solicitadaPorPessoaId: ana });
+      const a = await m.post('porteiro', '/autorizacoes-previas', { unidadeId: m.d32.id, pessoaId: bruno, validaAte: '2026-10-30', solicitadaPorPessoaId: ana });
       expect(a.status).toBe(201);
     }
     const p1 = await m.get('auditor', '/auditoria/alteracoes?acao=autorizacao.criar&limite=2');

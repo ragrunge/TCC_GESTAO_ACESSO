@@ -131,8 +131,8 @@ export function HistoricoPage() {
           </span>
         </div>
         <label className={campo}>Unidade
-          <input className={`${entrada} font-sans`} placeholder="Ex.: T4-32" value={unidade} onChange={(e) => setUnidade(e.target.value)} aria-invalid={!!unidade && !un} />
-          {unidade && !un && <span className="text-[12px] font-normal text-[#B42318]">Use T4-32.</span>}
+          <input className={`${entrada} font-sans`} placeholder="Ex.: D-32" value={unidade} onChange={(e) => setUnidade(e.target.value)} aria-invalid={!!unidade && !un} />
+          {unidade && !un && <span className="text-[12px] font-normal text-[#B42318]">Use D-32.</span>}
         </label>
         <label className={campo}>Pessoa<input className={entrada} placeholder="Nome" value={pessoa} onChange={(e) => setPessoa(e.target.value)} /></label>
         <label className={campo}>Porteiro

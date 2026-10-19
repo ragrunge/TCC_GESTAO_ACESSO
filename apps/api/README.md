@@ -27,17 +27,19 @@ src/encomendas/          M3 (spec §6.4): receber, filas paginadas, resumo, atra
 src/ocorrencias/         M4 (spec §6.5): abrir, status só para a frente, vincular eventos (aditivo), anexos multipart
 src/documentos/cofre.ts  anexos cifrados: AES-256-GCM, DEK por arquivo embrulhada pela KEK (PORTARIA_KEK), AAD = id, volume `documentos`
 src/comum/transacao.ts   transação com retry curto em 40001/40P01
+src/cli/recriar-estrutura.ts troca TODAS as unidades pela estrutura configurada (ESTRUTURA_PADRAO), só sem nenhuma referência; simula sem --aplicar
 src/cli/seed-dev.ts      seed de dev: estrutura + 4 usuários (um por papel), senha de SEED_SENHA_DEV; com PORTARIA_AMBIENTE=dev, pessoas fictícias
 src/database/            DatabaseModule global: Pool do pg + Drizzle (node-postgres), DATABASE_URL, fecha o pool no shutdown
 src/saude/               GET /api/v1/saude: select 1 + leitura da cabeça da cadeia (sem devolver o seq); 503 se o banco cair
 src/db/schema.ts         schema Drizzle (fonte das migrações geradas)
 src/db/cadeia.ts         serialização canônica v1 e verificador independente da cadeia (RF-32, RF-37)
 src/db/cpf.ts            máscara e HMAC do CPF
-src/db/seed.ts           165 unidades + portaria social + áreas comuns (idempotente)
+src/db/seed.ts           unidades da estrutura configurada (162) + portaria social + áreas comuns (idempotente)
 src/db/seed-usuarios.ts  usuários de dev (mesmos nomes do mock), idempotente
 src/db/seed-pessoas-dev.ts pessoas, vínculos e veículos fictícios (mesmos nomes do mock), CPF válido só como máscara + HMAC, idempotente
 drizzle/                 0000_init.sql (gerada), 0001_regras_imutabilidade.sql (manual), 0002_conferencia_comprovante.sql (gerada + trigger manual),
-                         0003_autenticacao_sessao.sql (gerada: sessao, login_limite, deve_trocar_senha + GRANT manual)
+                         0003_autenticacao_sessao.sql (gerada: sessao, login_limite, deve_trocar_senha + GRANT manual),
+                         0005_unidade_bloco.sql (manual, snapshot do schema: torre -> bloco texto, número canônico, unidade_descartar_estrutura())
 test/                    vitest + PGlite com as migrações reais; postgres-real/ só com PG_TEST_URL
 Dockerfile               multi-stage (deps, build, migrate, prod, runtime), node:22-alpine
 ```
@@ -65,6 +67,7 @@ docker compose run --rm migrate # depois de criar migração nova (o migrate só
 docker compose ps
 curl http://127.0.0.1:3000/api/v1/saude    # {"data":{"status":"ok","banco":"ok","em":"..."}}
 docker compose exec api node dist/cli/seed-dev.js   # 4 usuários de dev; senha = SEED_SENHA_DEV do .env
+docker compose exec api node dist/cli/recriar-estrutura.js [--aplicar]  # só banco sem uso de unidade; sem --aplicar, simula
 docker compose exec api node dist/cli/jobs.js retencao            # retenção LGPD agora (spec §9.1); saída só com contagens
 docker compose exec api node dist/cli/jobs.js selo [AAAA-MM-DD]   # selo diário do dia (padrão: ontem BRT) + âncoras pendentes
 docker compose exec api node dist/cli/jobs.js ancoras             # só reenvia âncoras pendentes

@@ -54,7 +54,7 @@ test.describe('3. Cadastro de nova pessoa na entrada', () => {
     await expect(page.getByText('529.982.247-25')).toHaveCount(0);
 
     // Com CPF, todos os meios ficam disponíveis (aqui: escolhe a unidade e confere os rótulos)
-    await escolherUnidade(page, 'T4-32');
+    await escolherUnidade(page, 'D-32');
     for (const meio of [/Interfone/, /Morador presente/, /Exceção do porteiro/]) {
       await expect(page.getByRole('radio', { name: meio })).toBeEnabled();
     }
@@ -84,7 +84,7 @@ test.describe('3. Cadastro de nova pessoa na entrada', () => {
     await page.getByRole('button', { name: 'Usar este cadastro' }).click();
 
     await expect(page.getByRole('button', { name: 'Trocar', exact: true })).toBeVisible();
-    await escolherUnidade(page, 'T4-32');
+    await escolherUnidade(page, 'D-32');
 
     await expect(page.getByText('Pessoa cadastrada sem CPF')).toBeVisible();
     await expect(page.getByRole('radio', { name: /Interfone/ })).toBeDisabled();

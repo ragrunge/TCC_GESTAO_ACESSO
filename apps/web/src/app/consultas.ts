@@ -6,9 +6,9 @@ import { useApi } from '../api';
 
 export const CHAVES = {
   catalogo: ['catalogo'] as const,
-  /** Prefixo de tudo que é de unidade (lista por torre e detalhe). */
+  /** Prefixo de tudo que é de unidade (lista por bloco e detalhe). */
   unidades: ['unidades'] as const,
-  unidadesDaTorre: (torre: number) => ['unidades', 'lista', torre] as const,
+  unidadesDoBloco: (bloco: string) => ['unidades', 'lista', bloco] as const,
   unidade: (ref: string) => ['unidades', 'detalhe', ref] as const,
   /** Prefixo de tudo que é de vínculo: filas, contagens (badge) e autorizadores da unidade. */
   vinculos: ['vinculos'] as const,

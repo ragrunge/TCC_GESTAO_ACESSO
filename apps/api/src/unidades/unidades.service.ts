@@ -1,11 +1,13 @@
 // Unidades (RF-01), catálogo leve e áreas comuns (RF-36). Mesmas regras do mock (apps/web/src/api/mock):
-// - torre e número únicos (ativa ou desativada): 409 UNIDADE_DUPLICADA;
+// - bloco e número normalizados ("a" -> "A", "3" -> "03") e únicos (ativa ou desativada): 409 UNIDADE_DUPLICADA;
 // - unidade já referenciada (vínculo, veículo, autorização, restrição, encomenda, ocorrência, evento) não muda de número:
 //   422 UNIDADE_REFERENCIADA (mudaria o sentido do que já foi registrado nela; o caminho é desativar e cadastrar a certa);
 // - nunca é excluída: desativar/reativar; inativa continua no histórico e barra novos usos (`paraNovoUso`).
 // Toda escrita grava audit_log na mesma transação.
 import { Inject, Injectable } from '@nestjs/common';
-import { parseCodigoUnidade, rotuloUnidade, codigoUnidade, validarEstruturaUnidade } from '@portaria/domain/units';
+import {
+  codigoUnidade, leiturasDoCodigo, normalizarBloco, normalizarNumero, rotuloUnidade, validarEstruturaUnidade, type ConfigEstrutura,
+} from '@portaria/domain/units';
 import { and, asc, eq, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -14,28 +16,27 @@ import { codigoPg, erroApi } from '../comum/erros';
 import { diaBrt } from '../comum/datas';
 import { codificarCursor, decodificarCursor, Pagina } from '../comum/pagina';
 import { RELOGIO, type Relogio } from '../comum/relogio';
+import { ESTRUTURA } from '../config/config';
 import { DB, type Db, type Executor, type Tx } from '../database/database.module';
 import {
   areaComum, autorizacaoPrevia, encomenda, eventoAcesso, ocorrencia, pontoAcesso, restricao, unidade, veiculo, vinculoUnidade,
 } from '../db/schema';
 import { vinculoValidoSql } from '../vinculos/vinculo-valido';
 import { carregarVinculos } from '../vinculos/vinculo-view';
+import { chaveBlocoSql, ORDEM_UNIDADES } from './ordem';
 
-export interface UnidadeApi { id: string; torre: number; numero: string; ativo: boolean }
+export interface UnidadeApi { id: string; bloco: string; numero: string; ativo: boolean }
 export interface UnidadeCatalogo extends UnidadeApi { codigo: string; rotulo: string }
 export interface UnidadeResumo {
   unidade: UnidadeApi; moradoresValidos: number; pendentes: number; restricoes: number; cadastroCompleto: boolean;
 }
 
-const colunas = { id: unidade.id, torre: unidade.torre, numero: unidade.numero, ativo: unidade.ativo };
+const colunas = { id: unidade.id, bloco: unidade.bloco, numero: unidade.numero, ativo: unidade.ativo };
 
-/** Ordem de exibição: torre, número numérico ("4" antes de "32"), número como texto (desempate de "032" e "32"). */
-const ORDEM = [asc(unidade.torre), asc(sql`${unidade.numero}::numeric`), asc(unidade.numero)];
+/** Cursor = chave de ordenação do último item da página (bloco, número). Estável com inserção concorrente. */
+const CursorUnidades = z.strictObject({ b: z.string().regex(/^[A-Z0-9]{1,3}$/), n: z.string().regex(/^[0-9]{1,10}$/) });
 
-/** Cursor = chave de ordenação do último item da página (torre, número). Estável com inserção concorrente. */
-const CursorUnidades = z.strictObject({ t: z.number().int(), n: z.string().regex(/^[0-9]{1,10}$/) });
-
-export interface FiltroUnidades { limite: number; cursor?: string; torre?: number }
+export interface FiltroUnidades { limite: number; cursor?: string; bloco?: string }
 
 @Injectable()
 export class UnidadesService {
@@ -43,17 +44,22 @@ export class UnidadesService {
     @Inject(DB) private readonly db: Db,
     @Inject(RELOGIO) private readonly relogio: Relogio,
     @Inject(AuditoriaService) private readonly auditoria: AuditoriaService,
+    @Inject(ESTRUTURA) private readonly estrutura: ConfigEstrutura,
   ) {}
 
-  /** Catálogo leve (RF-01, RF-36): todas as unidades (inclusive inativas, para o histórico) e as áreas comuns. */
+  /**
+   * Catálogo leve (RF-01, RF-36): todas as unidades (inclusive inativas, para o histórico), as áreas comuns e o nome do
+   * agrupamento ("Bloco"/"Torre"), que o front usa nos rótulos. Exige sessão, como o resto (o Layout o carrega).
+   */
   async catalogo() {
     const [unidades, areasComuns, pontosAcesso] = await Promise.all([
-      this.db.select(colunas).from(unidade).orderBy(...ORDEM),
+      this.db.select(colunas).from(unidade).orderBy(...ORDEM_UNIDADES),
       this.db.select({ id: areaComum.id, nome: areaComum.nome, ativo: areaComum.ativo }).from(areaComum).orderBy(asc(areaComum.nome), asc(areaComum.id)),
       this.db.select({ id: pontoAcesso.id, nome: pontoAcesso.nome, ativo: pontoAcesso.ativo }).from(pontoAcesso).orderBy(asc(pontoAcesso.nome), asc(pontoAcesso.id)),
     ]);
     return {
-      unidades: unidades.map((u): UnidadeCatalogo => ({ ...u, codigo: codigoUnidade(u), rotulo: rotuloUnidade(u, false) })),
+      agrupamento: this.estrutura.agrupamento,
+      unidades: unidades.map((u): UnidadeCatalogo => ({ ...u, codigo: codigoUnidade(u), rotulo: rotuloUnidade(u, this.estrutura.agrupamento, false) })),
       areasComuns,
       pontosAcesso,
     };
@@ -68,9 +74,10 @@ export class UnidadesService {
     const hoje = diaBrt(agora);
     const depois = f.cursor ? decodificarCursor(f.cursor, CursorUnidades) : null;
     const filtros: SQL[] = [];
-    if (f.torre !== undefined) filtros.push(eq(unidade.torre, f.torre));
+    if (f.bloco !== undefined) filtros.push(eq(unidade.bloco, normalizarBloco(f.bloco)));
     if (depois) {
-      filtros.push(sql`(${unidade.torre}, ${unidade.numero}::numeric, ${unidade.numero}) > (${depois.t}, ${depois.n}::numeric, ${depois.n})`);
+      filtros.push(sql`(${chaveBlocoSql(unidade.bloco)}, ${unidade.numero}::numeric, ${unidade.numero})
+        > (${chaveBlocoSql(sql`${depois.b}::text`)}, ${depois.n}::numeric, ${depois.n})`);
     }
     const valido = vinculoValidoSql(hoje);
     // Referência EXPLÍCITA à linha externa: numa consulta de uma tabela só, o Drizzle escreve as colunas da seleção sem
@@ -87,29 +94,31 @@ export class UnidadesService {
         AND ${vinculoUnidade.status} = 'aprovado' AND ${valido})`.mapWith(Boolean),
     }).from(unidade)
       .where(filtros.length ? and(...filtros) : undefined)
-      .orderBy(...ORDEM)
+      .orderBy(...ORDEM_UNIDADES)
       .limit(f.limite + 1); // um a mais: diz se há próxima página sem COUNT
     const pagina = linhas.slice(0, f.limite);
     const ultimo = pagina[pagina.length - 1];
-    const proximo = linhas.length > f.limite && ultimo ? codificarCursor({ t: ultimo.torre, n: ultimo.numero }) : null;
+    const proximo = linhas.length > f.limite && ultimo ? codificarCursor({ b: ultimo.bloco, n: ultimo.numero }) : null;
     return new Pagina(pagina.map((l) => ({
-      unidade: { id: l.id, torre: l.torre, numero: l.numero, ativo: l.ativo },
+      unidade: { id: l.id, bloco: l.bloco, numero: l.numero, ativo: l.ativo },
       moradoresValidos: l.moradoresValidos, pendentes: l.pendentes, restricoes: l.restricoes, cadastroCompleto: l.cadastroCompleto,
     })), proximo);
   }
 
-  /** `ref`: uuid ou código legível ("T4-32", "4-32"), como no mock (links legíveis). */
+  /** `ref`: uuid ou código legível ("A-32", "a 32", e o antigo "T4-32"), como no mock (links legíveis). */
   async porReferencia(ref: string): Promise<UnidadeApi> {
     const uuid = z.uuid().safeParse(ref);
-    let filtro: SQL | undefined;
-    if (uuid.success) filtro = eq(unidade.id, uuid.data);
-    else {
-      const p = parseCodigoUnidade(ref);
-      if (p) filtro = and(eq(unidade.torre, p.torre), eq(unidade.numero, p.numero));
+    if (uuid.success) {
+      const [u] = await this.db.select(colunas).from(unidade).where(eq(unidade.id, uuid.data));
+      if (u) return u;
+    } else {
+      // Leitura literal primeiro; "T4-32" só cai na torre 4 se não houver bloco "T4" (no máximo duas consultas).
+      for (const p of leiturasDoCodigo(ref)) {
+        const [u] = await this.db.select(colunas).from(unidade).where(and(eq(unidade.bloco, p.bloco), eq(unidade.numero, p.numero)));
+        if (u) return u;
+      }
     }
-    const [u] = filtro ? await this.db.select(colunas).from(unidade).where(filtro) : [];
-    if (!u) throw erroApi(404, 'UNIDADE_NAO_ENCONTRADA', 'Unidade não encontrada.');
-    return u;
+    throw erroApi(404, 'UNIDADE_NAO_ENCONTRADA', 'Unidade não encontrada.');
   }
 
   /**
@@ -127,13 +136,21 @@ export class UnidadesService {
     return { unidade: u, veiculos, vinculos };
   }
 
-  private validar(torre: number, numero: string) {
-    const erro = validarEstruturaUnidade(torre, numero);
-    if (erro) throw erroApi(422, 'UNIDADE_INVALIDA', erro);
+  /** "BLOCO A · AP 32", com o agrupamento configurado (mensagens que citam a unidade). */
+  rotulo(u: { bloco: string; numero: string }, caixaAlta = true) {
+    return rotuloUnidade(u, this.estrutura.agrupamento, caixaAlta);
   }
 
-  private duplicada(torre: number, numero: string) {
-    return erroApi(409, 'UNIDADE_DUPLICADA', `Já existe a unidade T${torre}-${numero} (ativa ou desativada).`);
+  /** Normaliza ("a" -> "A", "3" -> "03") e valida com a regra do domain (a mesma do mock e dos CHECKs). */
+  private normalizar(i: { bloco: string; numero: string }) {
+    const n = { bloco: normalizarBloco(i.bloco), numero: normalizarNumero(i.numero) };
+    const erro = validarEstruturaUnidade(n.bloco, n.numero, this.estrutura.agrupamento);
+    if (erro) throw erroApi(422, 'UNIDADE_INVALIDA', erro);
+    return n;
+  }
+
+  private duplicada(u: { bloco: string; numero: string }) {
+    return erroApi(409, 'UNIDADE_DUPLICADA', `Já existe a unidade ${codigoUnidade(u)} (ativa ou desativada).`);
   }
 
   /** Trava a unidade com FOR UPDATE: conflita com o FOR KEY SHARE que o INSERT de quem a referencia (FK) toma. */
@@ -159,44 +176,42 @@ export class UnidadesService {
     return sim === true || sim === 't';
   }
 
-  async criar(ctx: Contexto, i: { torre: number; numero: string }): Promise<UnidadeApi> {
-    const numero = i.numero.trim();
-    this.validar(i.torre, numero);
+  async criar(ctx: Contexto, i: { bloco: string; numero: string }): Promise<UnidadeApi> {
+    const n = this.normalizar(i);
     const agora = this.relogio.agora();
     try {
       return await this.db.transaction(async (tx) => {
-        const [nova] = await tx.insert(unidade).values({ torre: i.torre, numero, criadoEm: agora, atualizadoEm: agora }).returning(colunas);
+        const [nova] = await tx.insert(unidade).values({ ...n, criadoEm: agora, atualizadoEm: agora }).returning(colunas);
         await this.auditoria.registrar(tx, { ator: ctx.ator, ip: ctx.ip, acao: 'unidade.criar', entidade: 'unidade', registroId: nova!.id, depois: nova });
         return nova!;
       });
     } catch (e) {
-      if (codigoPg(e) === '23505') throw this.duplicada(i.torre, numero);
+      if (codigoPg(e) === '23505') throw this.duplicada(n);
       throw e;
     }
   }
 
-  async editar(ctx: Contexto, id: string, i: { torre: number; numero: string }): Promise<UnidadeApi> {
-    const numero = i.numero.trim();
-    this.validar(i.torre, numero);
+  async editar(ctx: Contexto, id: string, i: { bloco: string; numero: string }): Promise<UnidadeApi> {
+    const n = this.normalizar(i);
     const agora = this.relogio.agora();
     try {
       return await this.db.transaction(async (tx) => {
         const antes = await this.travar(tx, id);
-        if (antes.torre === i.torre && antes.numero === numero) return antes; // nada mudou: sem auditoria
+        if (antes.bloco === n.bloco && antes.numero === n.numero) return antes; // nada mudou: sem auditoria
         // Duplicata antes da checagem de referência (mesma ordem do mock: a mensagem mais útil primeiro).
         const [outra] = await tx.select({ id: unidade.id }).from(unidade)
-          .where(and(eq(unidade.torre, i.torre), eq(unidade.numero, numero)));
-        if (outra) throw this.duplicada(i.torre, numero);
+          .where(and(eq(unidade.bloco, n.bloco), eq(unidade.numero, n.numero)));
+        if (outra) throw this.duplicada(n);
         if (await this.referenciada(tx, id)) {
           throw erroApi(422, 'UNIDADE_REFERENCIADA',
             `A ${codigoUnidade(antes)} já tem registros (vínculos, acessos, encomendas...). Desative-a e cadastre a unidade correta.`);
         }
-        const [depois] = await tx.update(unidade).set({ torre: i.torre, numero, atualizadoEm: agora }).where(eq(unidade.id, id)).returning(colunas);
+        const [depois] = await tx.update(unidade).set({ ...n, atualizadoEm: agora }).where(eq(unidade.id, id)).returning(colunas);
         await this.auditoria.registrar(tx, { ator: ctx.ator, ip: ctx.ip, acao: 'unidade.editar', entidade: 'unidade', registroId: id, antes, depois });
         return depois!;
       });
     } catch (e) {
-      if (codigoPg(e) === '23505') throw this.duplicada(i.torre, numero); // corrida com outra criação
+      if (codigoPg(e) === '23505') throw this.duplicada(n); // corrida com outra criação
       throw e;
     }
   }

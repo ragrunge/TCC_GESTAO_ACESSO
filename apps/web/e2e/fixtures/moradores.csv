@@ -1,4 +1,4 @@
-Torre;Unidade;Nome;CPF;Telefone;Tipo
-1;12;Ágata Mendonça Lopes;529.982.247-25;(11) 98877-1001;Proprietário
-1;12;Davi Mendonça Lopes;111.444.777-35;(11) 98877-1002;Dependente
-2;104;Valéria Sobral Mattos;;(11) 98877-1020;Proprietário
+Bloco;Unidade;Nome;CPF;Telefone;Tipo
+A;12;Ágata Mendonça Lopes;529.982.247-25;(11) 98877-1001;Proprietário
+A;12;Davi Mendonça Lopes;111.444.777-35;(11) 98877-1002;Dependente
+B;104;Valéria Sobral Mattos;;(11) 98877-1020;Proprietário

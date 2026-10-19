@@ -5,6 +5,7 @@
 //   transação: ou entra inteira, ou não entra.
 // - Vínculo aprovado segue o caminho real: nasce pendente com a conferência do comprovante e é aprovado depois (trigger
 //   de transição e CHECKs valem também para o seed).
+import { parseCodigoUnidade } from '@portaria/domain/units';
 import { eq, and } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { snapshot } from '../auditoria/snapshot';
@@ -37,28 +38,28 @@ interface PessoaSeed {
 
 interface FamiliaSeed { unidade?: string; pessoas: PessoaSeed[]; veiculos?: { placa: string; modelo: string; cor: string }[] }
 
-/** Torre e número de "T4-32". */
-const un = (c: string) => { const m = /^T(\d+)-(\d+)$/.exec(c)!; return { torre: Number(m[1]), numero: m[2]! }; };
+/** Bloco e número de "D-32". */
+const un = (c: string) => parseCodigoUnidade(c)!;
 
 export const FAMILIAS_DEV: FamiliaSeed[] = [
-  { unidade: 'T4-32', pessoas: [
+  { unidade: 'D-32', pessoas: [
     { nome: 'Ana Ribeiro', categoria: 'morador', cpf: '529982247', telefone: '11987650001', vinculo: { tipo: 'proprietario', status: 'aprovado' } },
     { nome: 'Paulo Ribeiro', categoria: 'morador', cpf: '318406253', telefone: '11987650002', vinculo: { tipo: 'dependente', status: 'aprovado' } },
     { nome: 'Lúcia Ribeiro', categoria: 'morador', cpf: '407152936', telefone: '11987650003', vinculo: { tipo: 'dependente', status: 'legado' } },
   ], veiculos: [{ placa: 'FKR2C41', modelo: 'Honda Fit', cor: 'prata' }, { placa: 'GHT8J20', modelo: 'VW T-Cross', cor: 'branco' }] },
-  { unidade: 'T7-11', pessoas: [
+  { unidade: 'G-11', pessoas: [
     { nome: 'Carla Mendes', categoria: 'morador', cpf: '226718409', telefone: '11987650004', vinculo: { tipo: 'inquilino', status: 'aprovado', vigenciaFim: '2027-07-31' } },
     { nome: 'Rafael Mendes', categoria: 'visitante', cpf: '613029487', telefone: '11987650005', vinculo: { tipo: 'dependente', status: 'pendente' } },
   ], veiculos: [{ placa: 'EQP4B77', modelo: 'Fiat Argo', cor: 'cinza' }] },
-  { unidade: 'T9-13', pessoas: [
+  { unidade: 'I-13', pessoas: [
     { nome: 'Marta Siqueira', categoria: 'morador', cpf: '740385162', telefone: '11987650006', vinculo: { tipo: 'proprietario', status: 'aprovado' } },
     { nome: 'Rodrigo Alves', categoria: 'visitante', cpf: '851204736', telefone: '11987650007', vinculo: { tipo: 'inquilino', status: 'pendente', vigenciaFim: '2027-12-31' } },
   ], veiculos: [{ placa: 'BRA2E19', modelo: 'Toyota Corolla', cor: 'preto' }] },
-  { unidade: 'T2-24', pessoas: [
+  { unidade: 'B-24', pessoas: [
     { nome: 'Helena Duarte', categoria: 'morador', cpf: '162839045', telefone: '11987650008', vinculo: { tipo: 'proprietario', status: 'aprovado' } },
     { nome: 'Otávio Duarte', categoria: 'morador', cpf: '293746518', telefone: '11987650009', vinculo: { tipo: 'dependente', status: 'legado' } },
   ], veiculos: [{ placa: 'DXA1F03', modelo: 'Jeep Renegade', cor: 'verde' }] },
-  { unidade: 'T3-42', pessoas: [
+  { unidade: 'C-42', pessoas: [
     { nome: 'Sandra Ferraz Teles', categoria: 'morador', cpf: '384615270', telefone: '11987650010', vinculo: { tipo: 'proprietario', status: 'legado' } },
     { nome: 'Lucas Ferraz', categoria: 'visitante', cpf: '475926381', telefone: '11987650011', vinculo: { tipo: 'inquilino', status: 'pendente', vigenciaFim: '2027-06-30' } },
   ] },
@@ -85,7 +86,7 @@ export async function seedPessoasDev(db: PgDatabase<PgQueryResultHKT, any>, o: {
       const audit = (acao: string, entidade: string, registroId: string, depois: unknown) =>
         tx.insert(auditLog).values({ usuarioId: null, usuarioPapel: null, usuarioNome: ORIGEM, acao, entidade, registroId, depois: { ...snapshot(depois), origem: 'seed' } });
       const destino = f.unidade
-        ? (await tx.select({ id: unidade.id }).from(unidade).where(and(eq(unidade.torre, un(f.unidade).torre), eq(unidade.numero, un(f.unidade).numero))))[0]
+        ? (await tx.select({ id: unidade.id }).from(unidade).where(and(eq(unidade.bloco, un(f.unidade).bloco), eq(unidade.numero, un(f.unidade).numero))))[0]
         : undefined;
       if (f.unidade && !destino) throw new Error(`seed de pessoas: unidade ${f.unidade} não existe (rode o seed de estrutura)`);
       for (const [i, p] of f.pessoas.entries()) {

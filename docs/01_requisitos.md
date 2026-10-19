@@ -16,8 +16,8 @@
 
 | Característica | Valor |
 | --- | --- |
-| Unidades | 165 |
-| Torres | 9 |
+| Unidades | 162 (provisório: confirmar o térreo) |
+| Blocos | 9 (A a I) |
 | Moradores (estimativa) | 500 a 600 |
 | Veículos cadastrados | ~175 |
 | Portaria | 1 portaria social, 24h, equipe orgânica (própria) |

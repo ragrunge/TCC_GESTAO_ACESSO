@@ -35,7 +35,7 @@ O **relógio simulado** começa em sexta-feira 09/10/2026 14:32 e avança em tem
 ```
 packages/domain/src/   (pacote `@portaria/domain`, importado como `@portaria/domain/rules` etc.)
   tipos (espelham a spec, seção 3), regras puras (rules.ts), RBAC (rbac.ts), encadeamento SHA-256 (hashChain.ts),
-  geração das 165 unidades (units.ts), tempo e relógio simulado (time.ts). Sem React.
+  estrutura do condomínio declarativa e utilitários de unidade (units.ts: blocos, código "A-32", busca), tempo e relógio simulado (time.ts). Sem React.
 
 apps/web/src/
   api/      types.ts (interface Api, ApiError), mock/ (servidor em memória + seed), http/ (axios: auth + usuários), index.tsx (escolha + useApi)
@@ -93,34 +93,38 @@ A base é sempre relativa (`/api/v1`, mesma origem): em dev o `server.proxy` do 
 | UC27, RF-29, RF-38 (painel e passagem de turno — T02) | `features/portaria/PainelPage.tsx` |
 | UC28–UC31, RF-19/32/37, RN-04, RNF-01 (histórico, integridade, exportação — T12) | `features/historico/*`, `packages/domain/src/hashChain.ts`, `auditoria.*` |
 | UC29, RF-30/31 (relatórios — T13) | `features/relatorios/RelatoriosPage.tsx` |
-| RNF-07 teclado | `app/Layout.tsx` (F2/F3/F4), `EntradaPage.tsx` (foco, 1–9, Enter/Esc), `components/TowerUnitPicker.tsx` |
+| RNF-07 teclado | `app/Layout.tsx` (F2/F3/F4), `EntradaPage.tsx` (foco, tecla do bloco A–I, Enter/Esc), `components/TowerUnitPicker.tsx` |
 
 ## Roteiros de demonstração
 
-1. **Visitante com interfone** — Porteiro, `F2`, "Marcos", `Enter`; tecla `4`, digite `32`; Interfone → Ana Ribeiro → `Enter`. Toast e nova linha no painel.
-2. **Pessoa em restrição** — `F2`, "Bruno Teixeira", torre 4, unidade 32: modal vermelho; "Registrar ocorrência" abre a ocorrência já preenchida e vinculada ao evento "negado".
-3. **Exceção** — `F2`, "Técnico Enel", torre 2, unidade 24 (antes T2-104), Exceção do porteiro, "Serviço público (luz, água, gás)", `Enter`. Etiqueta âmbar no painel.
-4. **Encomenda** — `F3`, torre 7 AP 11, confirmar a unidade; depois, em Aguardando, "Entregar" a uma pessoa sem vínculo (ex.: Marcos Pereira) e ver o bloqueio.
-5. **Fraude de locação** — Administração, Vínculos pendentes, "Rodrigo Alves — inquilino — T9-13": 3 itens não conferem, Rejeitar é a ação primária; rejeitar com justificativa (ou aprovar só com 15+ caracteres).
+1. **Visitante com interfone** — Porteiro, `F2`, "Marcos", `Enter`; tecla `D`, digite `32`; Interfone → Ana Ribeiro → `Enter`. Toast e nova linha no painel.
+2. **Pessoa em restrição** — `F2`, "Bruno Teixeira", bloco D, unidade 32: modal vermelho; "Registrar ocorrência" abre a ocorrência já preenchida e vinculada ao evento "negado".
+3. **Exceção** — `F2`, "Técnico Enel", bloco B, unidade 24 (no protótipo, T2-104), Exceção do porteiro, "Serviço público (luz, água, gás)", `Enter`. Etiqueta âmbar no painel.
+4. **Encomenda** — `F3`, bloco G AP 11, confirmar a unidade; depois, em Aguardando, "Entregar" a uma pessoa sem vínculo (ex.: Marcos Pereira) e ver o bloqueio.
+5. **Fraude de locação** — Administração, Vínculos pendentes, "Rodrigo Alves — inquilino — I-13": 3 itens não conferem, Rejeitar é a ação primária; rejeitar com justificativa (ou aprovar só com 15+ caracteres).
 6. **Auditoria** — Auditor, Histórico, "Somente exceções", abrir o evento do roteiro 3, "Verificar integridade", "Exportar trilha".
 7. **Retroativo** — Painel, "Lançar registro retroativo": hora real anterior a agora + nº do formulário; evento fica "Retroativo" com hora real e hora do lançamento.
 8. **Adulteração da trilha** — no console do navegador: `window.__adulterarEvento('e4808')` (aceita id, código EV-… ou seq). Em Histórico, "Verificar integridade" aponta o primeiro registro adulterado. "Restaurar dados de demonstração" (ou `window.__restaurarDemo()`) desfaz.
 
-Outras demonstrações: autorização prévia da Dedetizadora Lumen (T6-52) aparece em âmbar até 15h (avance o dia seguinte para ver vencida); Válter Souza (zelador) entra por Escala; síndico aprova a restrição para todo o condomínio pendente no painel.
+Outras demonstrações: autorização prévia da Dedetizadora Lumen (F-04) aparece em âmbar até 15h (avance o dia seguinte para ver vencida); Válter Souza (zelador) entra por Escala; síndico aprova a restrição para todo o condomínio pendente no painel.
 
-## Remapeamento de unidades (165 unidades: torres 1–8 com 11–54; torre 9 com 11–15)
+## Remapeamento de unidades (162 unidades: blocos A a I, térreo 03–04 e andares 1 a 4 com finais 1 a 4)
+
+A estrutura vem de `ESTRUTURA_PADRAO` (`packages/domain/src/units.ts`), a mesma do seed da API. O protótipo usava torres
+numéricas: a torre N virou a N-ésima letra (T4-32 -> D-32), e os números que não existem na estrutura foram remapeados.
 
 | Protótipo | App | Observação |
 |---|---|---|
-| T1-73 | T1-33 | |
-| T3-91 | T3-51 | |
-| T5-63 | T5-43 | |
-| T5-81 | T5-51 | pedido de vínculo de Beatriz Okada |
-| T2-104 | T2-24 | |
-| T2-61 | T2-41 | |
-| T9-21 | T9-13 | Rodrigo Alves e o contrato de locador que não é a proprietária (Marta Siqueira) |
-| T9-33 | T9-14 | |
-| T4-32, T7-11, T6-52, T3-42, T8-42, T1-12, T3-14, T6-22, T8-13 | iguais | existem no novo desenho |
+| T1-73 | A-33 | |
+| T3-91 | C-03 | |
+| T5-63 | E-43 | |
+| T5-81 | E-03 | pedido de vínculo de Beatriz Okada |
+| T2-104 | B-24 | |
+| T2-61 | B-41 | |
+| T9-21 | I-13 | Rodrigo Alves e o contrato de locador que não é a proprietária (Marta Siqueira) |
+| T9-33 | I-14 | |
+| T6-52 | F-04 | 52 não existe (só até o 4º andar) |
+| T4-32, T7-11, T3-42, T8-42, T1-12, T3-14, T6-22, T8-13 | D-32, G-11, C-42, H-42, A-12, C-14, F-22, H-13 | mesma posição, bloco por letra |
 
 Unidades sem moradores no protótipo recebem moradores fictícios com vínculo **Legado** (prazo 31/03/2027), simulando a
 importação da planilha; por isso "cadastro completo" (vínculo aprovado) é baixo no início. Há ~175 veículos e ~275

@@ -23,7 +23,7 @@ type Rascunho = Omit<EventoAcesso, 'id' | 'seq' | 'hash' | 'hashAnterior' | 'reg
 function rascunho(extra: Partial<Rascunho> = {}): Rascunho {
   return {
     formatoHash: FORMATO_HASH, tipo: 'entrada', categoriaPessoa: 'visitante', pessoaId: fx.visitante.id,
-    unidadeDestinoId: fx.t432.id, areaComumId: null, pontoAcessoId: fx.ponto.id, autorizadoPorTipo: 'interfone',
+    unidadeDestinoId: fx.d32.id, areaComumId: null, pontoAcessoId: fx.ponto.id, autorizadoPorTipo: 'interfone',
     autorizadoPorPessoaId: fx.morador.id, autorizacaoPreviaId: null, justificativa: null, restricaoId: null,
     operadorId: fx.porteiro.id, operadorPapel: 'porteiro', ocorridoEm: Date.now(), retroativo: false, refereEventoId: null,
     corrigeEventoId: null, observacao: null, formularioContingencia: null, correcaoValores: null, empresa: null, servico: null,
@@ -81,7 +81,7 @@ beforeAll(async () => {
     tipo: 'correcao', autorizadoPorTipo: null, autorizadoPorPessoaId: null, operadorId: fx.admin.id, operadorPapel: 'administracao',
     corrigeEventoId: entrada.id, justificativa: 'Unidade digitada errada pelo porteiro',
     // ordem das chaves diferente da canônica, de propósito: a serialização reordena
-    correcaoValores: { autorizadoPorPessoaId: null, unidadeDestinoId: fx.t111.id, ocorridoEm: Date.UTC(2026, 9, 17, 11, 15, 0, 123) },
+    correcaoValores: { autorizadoPorPessoaId: null, unidadeDestinoId: fx.a11.id, ocorridoEm: Date.UTC(2026, 9, 17, 11, 15, 0, 123) },
   }));
 });
 

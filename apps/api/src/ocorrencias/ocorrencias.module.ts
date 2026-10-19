@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { pode } from '@portaria/domain/rbac';
+import { codigoUnidade } from '@portaria/domain/units';
 import { ANEXO_MAX_BYTES, ANEXO_MAX_POR_OCORRENCIA, ANEXO_TIPOS, tipoAnexoPorConteudo } from '@portaria/domain/rules';
 import { and, asc, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { Response } from 'express';
@@ -140,10 +141,10 @@ export class OcorrenciasService {
     const unidadeIds = [...new Set(linhas.map((o) => o.unidadeId).filter((x): x is string => !!x))];
     const [us, uns] = await Promise.all([
       exec.select({ id: usuarioSistema.id, nome: usuarioSistema.nome }).from(usuarioSistema).where(inArray(usuarioSistema.id, [...usuarioIds])),
-      unidadeIds.length ? exec.select({ id: unidade.id, torre: unidade.torre, numero: unidade.numero }).from(unidade).where(inArray(unidade.id, unidadeIds)) : [],
+      unidadeIds.length ? exec.select({ id: unidade.id, bloco: unidade.bloco, numero: unidade.numero }).from(unidade).where(inArray(unidade.id, unidadeIds)) : [],
     ]);
     const nomeU = new Map(us.map((u) => [u.id, u.nome]));
-    const codU = new Map(uns.map((u) => [u.id, `T${u.torre}-${u.numero}`]));
+    const codU = new Map(uns.map((u) => [u.id, codigoUnidade(u)]));
     return linhas.map((o) => {
       const docs = anexos.filter((a) => a.ocorrenciaId === o.id).map((a) => ({
         id: a.id, nome: nomeAnexo(a.id, a.mime), mime: a.mime, tamanhoBytes: a.tamanhoBytes, enviadoEm: a.enviadoEm.getTime(),

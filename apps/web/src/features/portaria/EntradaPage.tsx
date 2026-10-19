@@ -31,7 +31,7 @@ const SUGESTOES_EXCECAO = ['Morador não atende o interfone', 'Emergência médi
 const NP_VAZIA = { nome: '', documento: '', telefone: '', semCpf: false, categoria: 'visitante' as CategoriaPessoa, empresa: '', servico: '', foto: '' };
 
 const LIMITE_SUGESTOES = 8;
-/** Quem tem vínculo válido aparece na busca com o rótulo "Morador da T4-32" (pode visitar outra unidade). */
+/** Quem tem vínculo válido aparece na busca com o rótulo "Morador da D-32" (pode visitar outra unidade). */
 const rotuloPessoa = (p: PessoaBusca) => (p.unidadesVinculadasCodigos.length > 0
   ? `Morador da ${p.unidadesVinculadasCodigos[0]}${p.unidadesVinculadasCodigos.length > 1 ? ` +${p.unidadesVinculadasCodigos.length - 1}` : ''}`
   : ROTULO_CATEGORIA[p.categoria]);
@@ -64,7 +64,7 @@ export function EntradaPage() {
   // --- Passo 2: unidade (ou área comum, só prestador: RF-36)
   const [destino, setDestino] = useState<'unidade' | 'area_comum'>('unidade');
   const [areaId, setAreaId] = useState('');
-  const [torre, setTorre] = useState<number | null>(null);
+  const [bloco, setBloco] = useState<string | null>(null);
   const [numero, setNumero] = useState<string | null>(null);
   const [carregandoUnidade, setCarregandoUnidade] = useState(false);
   const [previas, setPrevias] = useState<AutorizacaoView[]>([]);
@@ -116,27 +116,27 @@ export function EntradaPage() {
   const escolherPessoa = useCallback(async (p: PessoaBusca) => {
     setPessoa(p); setQuery(''); setSugestoes([]); setErro('');
     setFuncionario(p.categoria === 'funcionario' ? await api.pessoas.funcionario(p.id) : null);
-    // Correção 12: após escolher a pessoa, o foco vai para a seleção de torre
-    setTimeout(() => pickerRef.current?.focusTorre(), 0);
+    // Correção 12: após escolher a pessoa, o foco vai para a seleção de bloco
+    setTimeout(() => pickerRef.current?.focusBloco(), 0);
   }, [api]);
 
   escolherPessoaRef.current = escolherPessoa;
 
   function limpar(manterFoco = true) {
     setPessoa(null); setFuncionario(null); setQuery(''); setSugestoes([]); setNovoModo(false); setNp(NP_VAZIA); setErroNp('');
-    setTorre(null); setNumero(null); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setJustificativa('');
+    setBloco(null); setNumero(null); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setJustificativa('');
     setErro(''); setFormulario(''); setHoraReal(''); setRestricao(null); setNegadoGravado(null); setDestino('unidade'); setAreaId('');
     if (manterFoco) setTimeout(() => buscaRef.current?.focus(), 0);
   }
   const limparUnidade = () => {
     setRestricao(null); setNegadoGravado(null);
-    setTorre(null); setNumero(null); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setJustificativa('');
-    setTimeout(() => pickerRef.current?.focusTorre(), 0);
+    setBloco(null); setNumero(null); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setJustificativa('');
+    setTimeout(() => pickerRef.current?.focusBloco(), 0);
   };
 
   // Ao escolher a unidade: restrições (RF-16), autorizações prévias e moradores aptos a autorizar
   const emArea = destino === 'area_comum' && pessoa?.categoria === 'prestador';
-  const unidadeAtual = !emArea && torre && numero ? catalogo.porTorreNumero(torre, numero)?.id ?? null : null;
+  const unidadeAtual = !emArea && bloco && numero ? catalogo.porBlocoNumero(bloco, numero)?.id ?? null : null;
   const areaAtual = emArea && areaId ? areaId : null;
   const codUnidade = unidadeAtual ? catalogo.codigo(unidadeAtual) : null;
 
@@ -327,8 +327,8 @@ export function EntradaPage() {
     if (registrarOcorrencia) {
       nav(`/ocorrencias?novo=1&tipo=tentativa_acesso_indevido${codUnidade ? `&unidade=${codUnidade}` : ''}&envolvidos=${encodeURIComponent(nome)}&evento=${eventoId}`);
     } else if (unidadeAtual || areaAtual) {
-      setTorre(null); setNumero(null); setMeio(null); setAreaId('');
-      setTimeout(() => pickerRef.current?.focusTorre(), 0);
+      setBloco(null); setNumero(null); setMeio(null); setAreaId('');
+      setTimeout(() => pickerRef.current?.focusBloco(), 0);
     } else {
       limpar(); // funcionário sem unidade: nada a refazer na unidade, recomeça pela pessoa
     }
@@ -508,7 +508,7 @@ export function EntradaPage() {
                   <div role="radiogroup" aria-label="Destino do prestador" className="flex gap-2">
                     {(['unidade', 'area_comum'] as const).map((d) => (
                       <button key={d} type="button" role="radio" aria-checked={destino === d}
-                        onClick={() => { setDestino(d); setTorre(null); setNumero(null); setAreaId(''); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setRestricao(null); }}
+                        onClick={() => { setDestino(d); setBloco(null); setNumero(null); setAreaId(''); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setRestricao(null); }}
                         className={`h-10 rounded-full border px-4 text-[14px] font-medium ${destino === d ? 'border-[#0B5563] bg-[#0B5563] text-white' : 'border-[#B9C3CA] bg-white hover:bg-[#EEF2F4]'}`}>
                         {d === 'unidade' ? 'Unidade' : 'Área comum'}
                       </button>
@@ -527,8 +527,8 @@ export function EntradaPage() {
                     <span className="text-[13px] text-[#56616B]">Na área comum a entrada é por autorização prévia da administração ou por exceção do porteiro (RF-36).</span>
                   </div>
                 ) : (
-                <TowerUnitPicker ref={pickerRef} torre={torre} numero={numero}
-                  onChange={(t, n) => { setTorre(t); setNumero(n); if (!n) { setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); } }}
+                <TowerUnitPicker ref={pickerRef} bloco={bloco} numero={numero}
+                  onChange={(b, n) => { setBloco(b); setNumero(n); if (!n) { setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); } }}
                   onAlterar={limparUnidade}
                   onComplete={() => { /* o efeito de [unidade] consulta restrições e autorizações */ }} />
                 )}

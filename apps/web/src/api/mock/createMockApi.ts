@@ -28,7 +28,8 @@ import { csvRelatorio } from '@portaria/domain/relatorio';
 import { CHAVE_HMAC_DEMO, documentoBuscaCpf, mascararCpf, soDigitos } from '@portaria/domain/cpf';
 import { DIA, agora, fimDoDia, fmtData, fmtHora, inicioDoDia, partes, relogio } from '@portaria/domain/time';
 import {
-  acharUnidadePorTexto, codigoUnidade, compararUnidades, PORTARIA_SOCIAL, rotuloUnidade, validarEstruturaUnidade,
+  acharUnidadePorTexto, codigoUnidade, compararUnidades, ESTRUTURA_PADRAO, leiturasDoBloco, normalizarBloco, normalizarNumero, PORTARIA_SOCIAL,
+  rotuloUnidade, validarEstruturaUnidade,
 } from '@portaria/domain/units';
 import { VERSAO_DB, type DbData } from './dbTypes';
 import { criarSeed } from './seed';
@@ -47,6 +48,16 @@ export interface MockOptions {
 const CHAVE_PADRAO = 'portaria-parque:db:v1';
 const CHAVE_SESSAO = 'portaria-parque:sessao:v1';
 const PRAZO_LEGADO = dt('31/03/2027');
+/** Nome do agrupamento ("Bloco"/"Torre"): no modo http vem da API (/catalogo); aqui, da mesma configuração padrão. */
+const AGRUPAMENTO = ESTRUTURA_PADRAO.agrupamento;
+
+/** Normaliza ("a" -> "A", "3" -> "03") e valida com a regra do domain, como a API (422 UNIDADE_INVALIDA). */
+function estruturaValida(i: { bloco: string; numero: string }) {
+  const n = { bloco: normalizarBloco(String(i.bloco ?? '')), numero: normalizarNumero(String(i.numero ?? '')) };
+  const erro = validarEstruturaUnidade(n.bloco, n.numero, AGRUPAMENTO);
+  if (erro) throw new ApiError(422, 'UNIDADE_INVALIDA', erro);
+  return n;
+}
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
@@ -690,7 +701,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
     catalogo: {
       async obter() {
         exigeLogado();
-        return ler((d): Catalogo => ({ unidades: [...d.unidades].sort(compararUnidades), areasComuns: d.areasComuns }));
+        return ler((d): Catalogo => ({ agrupamento: AGRUPAMENTO, unidades: [...d.unidades].sort(compararUnidades), areasComuns: d.areasComuns }));
       },
     },
 
@@ -785,30 +796,31 @@ export function createMockApi(opts: MockOptions = {}): Api {
         exige('unidade.ver');
         return ler((d) => resumosUnidades(d, d.unidades));
       },
-      // Mesmo contrato da API real: keyset por (torre, número), cursor opaco, `torre` filtra.
+      // Mesmo contrato da API real: keyset por (bloco, número), cursor opaco, `bloco` filtra.
       async listarPagina(f = {}) {
         exige('unidade.ver');
         const limite = f.limite ?? 50;
-        let depois: { t: number; n: string } | null = null;
+        let depois: { b: string; n: string } | null = null;
         if (f.cursor) {
-          try { depois = JSON.parse(atob(f.cursor)) as { t: number; n: string }; } catch { depois = null; }
-          if (!depois || typeof depois.t !== 'number' || typeof depois.n !== 'string') throw new ApiError(400, 'CURSOR_INVALIDO', 'Cursor de paginação inválido.');
+          try { depois = JSON.parse(atob(f.cursor)) as { b: string; n: string }; } catch { depois = null; }
+          if (!depois || typeof depois.b !== 'string' || typeof depois.n !== 'string') throw new ApiError(400, 'CURSOR_INVALIDO', 'Cursor de paginação inválido.');
         }
+        const bloco = f.bloco === undefined ? undefined : normalizarBloco(f.bloco);
         return ler((d) => {
           const dep = depois;
           const candidatas = [...d.unidades].sort(compararUnidades)
-            .filter((u) => f.torre === undefined || u.torre === f.torre)
-            .filter((u) => !dep || compararUnidades(u, { torre: dep.t, numero: dep.n }) > 0 || (compararUnidades(u, { torre: dep.t, numero: dep.n }) === 0 && u.numero > dep.n));
+            .filter((u) => bloco === undefined || u.bloco === bloco)
+            .filter((u) => !dep || compararUnidades(u, { bloco: dep.b, numero: dep.n }) > 0);
           const pagina = candidatas.slice(0, limite);
           const ultimo = pagina[pagina.length - 1];
           const temMais = candidatas.length > limite;
-          return { itens: resumosUnidades(d, pagina), temMais, cursor: temMais && ultimo ? btoa(JSON.stringify({ t: ultimo.torre, n: ultimo.numero })) : null };
+          return { itens: resumosUnidades(d, pagina), temMais, cursor: temMais && ultimo ? btoa(JSON.stringify({ b: ultimo.bloco, n: ultimo.numero })) : null };
         });
       },
       async detalhe(id) {
         exige('unidade.ver');
         return ler((d): UnidadeDetalhe => {
-          // Aceita o uuid ou o código "T4-32" (links legíveis)
+          // Aceita o uuid ou o código "D-32" (links legíveis)
           const unidade = d.unidades.find((u) => u.id === id) ?? acharUnidadePorTexto(d.unidades, id);
           if (!unidade) throw new ApiError(404, 'UNIDADE_NAO_ENCONTRADA', 'Unidade não encontrada.');
           const uid_ = unidade.id;
@@ -823,38 +835,34 @@ export function createMockApi(opts: MockOptions = {}): Api {
           };
         });
       },
-      async criar({ torre, numero }) {
+      async criar(i) {
         const u = exige('unidade.editar');
         return escrever((d) => {
-          const n = String(numero ?? '').trim();
-          const erro = validarEstruturaUnidade(Number(torre), n);
-          if (erro) throw new ApiError(422, 'UNIDADE_INVALIDA', erro);
-          if (d.unidades.some((x) => x.torre === Number(torre) && x.numero === n)) {
-            throw new ApiError(409, 'UNIDADE_DUPLICADA', `Já existe a unidade T${torre}-${n} (ativa ou desativada).`);
+          const n = estruturaValida(i);
+          if (d.unidades.some((x) => x.bloco === n.bloco && x.numero === n.numero)) {
+            throw new ApiError(409, 'UNIDADE_DUPLICADA', `Já existe a unidade ${codigoUnidade(n)} (ativa ou desativada).`);
           }
-          const nova: Unidade = { id: novoUuid(), torre: Number(torre), numero: n, ativo: true };
+          const nova: Unidade = { id: novoUuid(), ...n, ativo: true };
           d.unidades.push(nova);
           registrar(d, u, 'unidade.criar', 'unidade', nova.id, null, nova);
           return nova;
         });
       },
-      async editar({ id, torre, numero }) {
+      async editar({ id, ...i }) {
         const u = exige('unidade.editar');
         return escrever((d) => {
           const x = unidadeOu404(d, id);
-          const n = String(numero ?? '').trim();
-          const erro = validarEstruturaUnidade(Number(torre), n);
-          if (erro) throw new ApiError(422, 'UNIDADE_INVALIDA', erro);
-          if (x.torre === Number(torre) && x.numero === n) return x;
-          if (d.unidades.some((o) => o.id !== id && o.torre === Number(torre) && o.numero === n)) {
-            throw new ApiError(409, 'UNIDADE_DUPLICADA', `Já existe a unidade T${torre}-${n} (ativa ou desativada).`);
+          const n = estruturaValida(i);
+          if (x.bloco === n.bloco && x.numero === n.numero) return x;
+          if (d.unidades.some((o) => o.id !== id && o.bloco === n.bloco && o.numero === n.numero)) {
+            throw new ApiError(409, 'UNIDADE_DUPLICADA', `Já existe a unidade ${codigoUnidade(n)} (ativa ou desativada).`);
           }
           // Renumerar unidade com histórico mudaria o sentido do que já foi registrado nela
           if (unidadeReferenciada(d, id)) {
             throw new ApiError(422, 'UNIDADE_REFERENCIADA', `A ${codigoUnidade(x)} já tem registros (vínculos, acessos, encomendas...). Desative-a e cadastre a unidade correta.`);
           }
           const antes = clone(x);
-          x.torre = Number(torre); x.numero = n;
+          x.bloco = n.bloco; x.numero = n.numero;
           registrar(d, u, 'unidade.editar', 'unidade', x.id, antes, x);
           return x;
         });
@@ -1318,7 +1326,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
                 retroativo: !!i.retroativo, refereEventoId: null, corrigeEventoId: null, observacao: i.observacao ?? null,
                 formularioContingencia: formulario,
               });
-              throw new ApiError(422, 'PESSOA_EM_RESTRICAO', `Entrada não permitida ${unidade ? `para ${rotuloUnidade(unidade)}` : 'no condomínio'}: ${rs[0].motivo}.`, {
+              throw new ApiError(422, 'PESSOA_EM_RESTRICAO', `Entrada não permitida ${unidade ? `para ${rotuloUnidade(unidade, AGRUPAMENTO)}` : 'no condomínio'}: ${rs[0].motivo}.`, {
                 eventoId: negado.id, codigo: codigoEvento(negado.seq), restricoes: rs.map((r) => restricaoView(r, ix)),
               });
             }
@@ -1959,12 +1967,12 @@ export function createMockApi(opts: MockOptions = {}): Api {
           const validas: LinhaPlanilha[] = [];
           const vistos = new Set<string>();
           for (const l of linhas) {
-            const torre = Number(l.torre.replace(/\D/g, ''));
-            const numero = l.unidade.replace(/\D/g, '');
-            const un = d.unidades.find((x) => x.ativo && x.torre === torre && x.numero === numero);
-            const cod = `T${torre}-${numero}`;
-            if (!un) { inc.push({ linha: l.linha, codigo: 'UNIDADE_INEXISTENTE', mensagem: `Unidade ${l.torre}/${l.unidade} não existe no condomínio (ou está desativada). Linha não importada.`, tipo: 'erro' }); continue; }
+            // "A", "Bloco A", "4" ou o antigo "T4"; número só com dígitos e normalizado ("3" -> "03"), como na API.
+            const numero = normalizarNumero(l.unidade.replace(/\D/g, ''));
+            const un = leiturasDoBloco(l.bloco).map((b) => d.unidades.find((x) => x.ativo && x.bloco === b && x.numero === numero)).find(Boolean);
+            if (!un) { inc.push({ linha: l.linha, codigo: 'UNIDADE_INEXISTENTE', mensagem: `Unidade ${l.bloco}/${l.unidade} não existe no condomínio (ou está desativada). Linha não importada.`, tipo: 'erro' }); continue; }
             if (!l.nome.trim()) { inc.push({ linha: l.linha, codigo: 'NOME_AUSENTE', mensagem: 'Nome ausente. Linha não importada.', tipo: 'erro' }); continue; }
+            const cod = codigoUnidade(un);
             const docDigitos = soDigitos(l.documento);
             const cpfOk = cpfValido(docDigitos);
             // Duplicidade na planilha: pelo CPF (quando válido) ou, sem CPF, pelo nome na mesma unidade
@@ -1978,7 +1986,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
             if (existente && d.vinculos.some((v) => v.pessoaId === existente.id && v.unidadeId === un.id && ['pendente', 'aprovado', 'legado'].includes(v.status))) {
               inc.push({ linha: l.linha, codigo: 'DUPLICIDADE_BANCO', mensagem: `${l.nome} já possui vínculo com ${cod}. Reaproveitado, sem duplicar.`, tipo: 'aviso' });
             }
-            validas.push({ ...l, torre: String(torre), unidade: numero });
+            validas.push({ ...l, bloco: un.bloco, unidade: un.numero });
           }
           const rejeitadas = linhas.length - validas.length - inc.filter((i2) => i2.codigo === 'DUPLICIDADE_PLANILHA').length;
           // Estado "analisada" persistido (como no schema); as linhas, com CPF em claro, ficam só em memória
@@ -2006,7 +2014,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
           if (imp.status !== 'analisada') throw new ApiError(409, 'IMPORTACAO_JA_CONFIRMADA', 'Esta importação já foi confirmada ou cancelada.');
           let importados = 0, reaproveitados = 0;
           for (const l of validas) {
-            const un = d.unidades.find((x) => x.torre === Number(l.torre) && x.numero === l.unidade)!;
+            const un = d.unidades.find((x) => x.bloco === l.bloco && x.numero === l.unidade)!;
             const dig = soDigitos(l.documento);
             const cpfOk = cpfValido(dig); // CPF inválido vira aviso e o número não é gravado
             // Nunca casa só por nome globalmente: CPF, ou nome NA MESMA unidade quando não há CPF

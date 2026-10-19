@@ -68,7 +68,7 @@ export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onC
       const valores: Partial<ValoresCorrecao> = {};
       if (vUnidade.trim()) {
         const un = catalogo.porTexto(vUnidade);
-        if (!un) { setErro('Unidade inexistente. Use o formato T4-32.'); return; }
+        if (!un) { setErro('Unidade inexistente. Use o formato D-32.'); return; }
         valores.unidadeDestinoId = un.id;
       }
       if (vData || vHora) {
@@ -173,7 +173,7 @@ export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onC
             <Field label="O que deve ser corrigido (opcional)"><input className="input" value={obs} onChange={(e) => setObs(e.target.value)} /></Field>
             <fieldset className="flex flex-col gap-3 rounded-lg border border-dashed border-[#C5CDD3] p-3">
               <legend className="px-1 text-[13px] font-medium text-[#56616B]">Valores corretos (preencha só o que mudou)</legend>
-              <Field label="Unidade de destino"><input className="input font-mono" placeholder="T4-32" value={vUnidade} onChange={(e) => setVUnidade(e.target.value)} /></Field>
+              <Field label="Unidade de destino"><input className="input font-mono" placeholder="D-32" value={vUnidade} onChange={(e) => setVUnidade(e.target.value)} /></Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Data real"><input type="date" className="input" value={vData} onChange={(e) => setVData(e.target.value)} /></Field>
                 <Field label="Hora real"><input type="time" className="input" value={vHora} onChange={(e) => setVHora(e.target.value)} /></Field>

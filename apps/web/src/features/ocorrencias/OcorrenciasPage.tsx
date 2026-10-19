@@ -295,7 +295,7 @@ function NovaOcorrenciaModal({ inicial, onClose, onFeito }: { inicial: Record<st
 
   async function salvar(e: FormEvent) {
     e.preventDefault();
-    if (unidadeInvalida) { setErro('Unidade inexistente. Use o formato T4-32 ou deixe em branco para área comum.'); return; }
+    if (unidadeInvalida) { setErro('Unidade inexistente. Use o formato D-32 ou deixe em branco para área comum.'); return; }
     if (problemas.length) { setErro(problemas.join(' ')); return; }
     setSalvando(true); setErro('');
     let o: Ocorrencia;
@@ -323,7 +323,7 @@ function NovaOcorrenciaModal({ inicial, onClose, onFeito }: { inicial: Record<st
         </div>
         <div className="grid grid-cols-[160px_minmax(0,1fr)] gap-3">
           <Field label="Unidade" erro={unidadeInvalida ? 'Unidade inexistente.' : undefined}>
-            <input className="input font-mono" value={unidade} onChange={(e) => setUnidade(e.target.value)} placeholder="T4-32" />
+            <input className="input font-mono" value={unidade} onChange={(e) => setUnidade(e.target.value)} placeholder="D-32" />
           </Field>
           <Field label="Envolvidos"><input className="input" value={envolvidos} onChange={(e) => setEnvolvidos(e.target.value)} placeholder="Nomes das pessoas envolvidas" /></Field>
         </div>

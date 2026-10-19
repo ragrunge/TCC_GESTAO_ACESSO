@@ -9,7 +9,7 @@
 //  - Atalho para o conteúdo dos eventos: só são publicados os hashes dos eventos selados. Conferir um palpite sobre o
 //    conteúdo de um deles exigiria o `hash_anterior` (hash do evento anterior, não publicado) e os uuids aleatórios do
 //    evento (pessoa, operador, unidade): inviável.
-// O que ele revela, e é aceito: o volume diário de eventos do condomínio inteiro (agregado das 165 unidades, sem
+// O que ele revela, e é aceito: o volume diário de eventos do condomínio inteiro (agregado das 162 unidades, sem
 // identificar ninguém) e que o sistema estava no ar naquele dia.
 //
 // Custo: a resposta fica em cache por CACHE_PUBLICO_MS (invalidada quando nasce um selo diário), então o banco é

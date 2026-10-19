@@ -38,7 +38,7 @@ test.describe('7. Auditoria (síndico)', () => {
     await entrarComo(page, 'Síndico');
 
     // Escrita feita pelo síndico durante o teste: autorização prévia sem solicitante
-    await page.goto('/unidades/T4-32');
+    await page.goto('/unidades/D-32');
     await page.getByRole('button', { name: 'Nova autorização prévia' }).click();
     const modal = page.getByRole('dialog');
     await modal.getByLabel('Pessoa autorizada').fill('Larissa Gomes');

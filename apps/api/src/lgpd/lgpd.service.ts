@@ -75,7 +75,7 @@ export class LgpdService {
     if (!p) throw erroApi(404, 'PESSOA_NAO_ENCONTRADA', 'Pessoa não encontrada.');
     const hoje = diaBrt(this.relogio.agora());
 
-    const vinculos = await this.db.select({ v: vinculoUnidade, torre: unidade.torre, numero: unidade.numero, conferidoPor: conferente.nome })
+    const vinculos = await this.db.select({ v: vinculoUnidade, bloco: unidade.bloco, numero: unidade.numero, conferidoPor: conferente.nome })
       .from(vinculoUnidade).innerJoin(unidade, eq(unidade.id, vinculoUnidade.unidadeId))
       .leftJoin(conferente, eq(conferente.id, vinculoUnidade.conferidoPorId))
       .where(eq(vinculoUnidade.pessoaId, id)).orderBy(asc(vinculoUnidade.registradoEm), asc(vinculoUnidade.id));
@@ -83,7 +83,7 @@ export class LgpdService {
     const unidadesValidas = (await this.db.select({ u: vinculoUnidade.unidadeId }).from(vinculoUnidade)
       .where(and(eq(vinculoUnidade.pessoaId, id), vinculoValidoSql(hoje)))).map((x) => x.u);
     const veiculos = unidadesValidas.length
-      ? await this.db.select({ placa: veiculo.placa, modelo: veiculo.modelo, cor: veiculo.cor, torre: unidade.torre, numero: unidade.numero })
+      ? await this.db.select({ placa: veiculo.placa, modelo: veiculo.modelo, cor: veiculo.cor, bloco: unidade.bloco, numero: unidade.numero })
         .from(veiculo).innerJoin(unidade, eq(unidade.id, veiculo.unidadeId))
         .where(and(inArray(veiculo.unidadeId, unidadesValidas), eq(veiculo.ativo, true))).orderBy(asc(veiculo.placa))
       : [];
@@ -94,7 +94,7 @@ export class LgpdService {
     }
     const eventos = await montarViews(this.db, linhas); // valores efetivos (correções aplicadas)
 
-    const encomendas = await this.db.select({ numero: encomenda.numero, recebidaEm: encomenda.recebidaEm, retiradaEm: encomenda.retiradaEm, torre: unidade.torre, numero2: unidade.numero })
+    const encomendas = await this.db.select({ numero: encomenda.numero, recebidaEm: encomenda.recebidaEm, retiradaEm: encomenda.retiradaEm, bloco: unidade.bloco, numero2: unidade.numero })
       .from(encomenda).innerJoin(unidade, eq(unidade.id, encomenda.unidadeId))
       .where(eq(encomenda.retiradaPorPessoaId, id)).orderBy(asc(encomenda.retiradaEm));
 
@@ -131,21 +131,21 @@ export class LgpdService {
         telefone: p.telefone ? mascararTelefone(p.telefone) : null, empresa: p.empresa, servico: p.servico,
         cadastradoEm: isoSP(p.criadoEm), anonimizadaEm: isoSP(p.anonimizadaEm),
       },
-      vinculos: vinculos.map(({ v, torre, numero, conferidoPor }) => ({
-        unidade: codigoUnidade({ torre, numero }), tipo: v.tipo, status: v.status, vigenciaInicio: v.vigenciaInicio, vigenciaFim: v.vigenciaFim,
+      vinculos: vinculos.map(({ v, bloco, numero, conferidoPor }) => ({
+        unidade: codigoUnidade({ bloco, numero }), tipo: v.tipo, status: v.status, vigenciaInicio: v.vigenciaInicio, vigenciaFim: v.vigenciaFim,
         prazoRegularizacao: v.prazoRegularizacao, decididoEm: isoSP(v.decididoEm), encerradoEm: isoSP(v.encerradoEm),
         comprovanteConferido: v.conferenciaTipoDocumento
           ? { tipo: v.conferenciaTipoDocumento, descricao: v.conferenciaDescricao, data: v.conferenciaData, conferidoPor: conferidoPor ?? null }
           : null,
       })),
-      veiculos: veiculos.map((x) => ({ unidade: codigoUnidade({ torre: x.torre, numero: x.numero }), placa: `${x.placa.slice(0, 3)}-${x.placa.slice(3)}`, modelo: x.modelo, cor: x.cor })),
+      veiculos: veiculos.map((x) => ({ unidade: codigoUnidade({ bloco: x.bloco, numero: x.numero }), placa: `${x.placa.slice(0, 3)}-${x.placa.slice(3)}`, modelo: x.modelo, cor: x.cor })),
       eventos: eventos.map((e) => ({
         codigo: e.codigo, tipo: e.tipo, ocorridoEm: isoSP(new Date(e.ocorridoEm)), pontoAcesso: e.pontoAcessoNome,
         unidade: e.unidadeDestinoId ? e.unidadeRotulo : null, areaComum: e.areaComumNome,
         meio: e.autorizadoPorTipo ? ROTULO_MEIO[e.autorizadoPorTipo] : null, retroativo: e.retroativo,
       })),
       encomendasRetiradas: encomendas.map((x) => ({
-        codigo: codigoEncomenda(x.numero), unidade: codigoUnidade({ torre: x.torre, numero: x.numero2 }), recebidaEm: isoSP(x.recebidaEm), retiradaEm: isoSP(x.retiradaEm),
+        codigo: codigoEncomenda(x.numero), unidade: codigoUnidade({ bloco: x.bloco, numero: x.numero2 }), recebidaEm: isoSP(x.recebidaEm), retiradaEm: isoSP(x.retiradaEm),
       })),
       documentos: docs,
       observacoes: [

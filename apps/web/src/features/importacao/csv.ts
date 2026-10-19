@@ -16,7 +16,7 @@ function dividir(linha: string, sep: string): string[] {
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
 const ALIAS: Record<keyof Omit<LinhaPlanilha, 'linha'>, string[]> = {
-  torre: ['torre', 'bloco'], unidade: ['unidade', 'apto', 'apartamento', 'ap'], nome: ['nome', 'morador', 'nomecompleto'],
+  bloco: ['bloco', 'torre', 'predio'], unidade: ['unidade', 'apto', 'apartamento', 'ap'], nome: ['nome', 'morador', 'nomecompleto'],
   documento: ['documento', 'cpf', 'rg', 'doc'], telefone: ['telefone', 'celular', 'fone'], tipo: ['tipo', 'vinculo', 'tipovinculo'],
 };
 
@@ -26,10 +26,10 @@ export function mapearMatriz(matriz: string[][]): { linhas: LinhaPlanilha[]; fal
   const cab = matriz[0].map(norm);
   const idx = {} as Record<string, number>;
   for (const [campo, aliases] of Object.entries(ALIAS)) idx[campo] = cab.findIndex((c) => aliases.includes(c));
-  const faltando = ['torre', 'unidade', 'nome'].filter((c) => idx[c] < 0);
+  const faltando = ['bloco', 'unidade', 'nome'].filter((c) => idx[c] < 0);
   const linhas = matriz.slice(1).map((c, i): LinhaPlanilha => {
     const v = (k: string) => (idx[k] >= 0 ? c[idx[k]] ?? '' : '');
-    return { linha: i + 2, torre: v('torre'), unidade: v('unidade'), nome: v('nome'), documento: v('documento'), telefone: v('telefone'), tipo: v('tipo') };
+    return { linha: i + 2, bloco: v('bloco'), unidade: v('unidade'), nome: v('nome'), documento: v('documento'), telefone: v('telefone'), tipo: v('tipo') };
   });
   return { linhas, faltando };
 }
@@ -61,32 +61,32 @@ function cpf(base: string): string {
   return d.join('').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
 }
 
-/** Planilha de exemplo, com inconsistências propositais (todos os dados são fictícios). */
+/** Planilha de exemplo, com inconsistências propositais (todos os dados são fictícios; I-15, I-51, J-11 e B-104 não existem). */
 export function csvExemplo(): string {
   const l = [
-    'Torre;Unidade;Nome;CPF;Telefone;Tipo',
-    `1;12;Ágata Mendonça Lopes;${cpf('123456780')};(11) 98877-1001;Proprietário`,
-    `1;12;Davi Mendonça Lopes;${cpf('223456780')};(11) 98877-1002;Dependente`,
-    `1;21;Elias Nogueira Tavares;${cpf('323456780')};(11) 98877-1003;Proprietário`,
-    `2;33;Fabiana Quintela Reis;${cpf('423456780')};(11) 98877-1004;Inquilino`,
-    `2;33;Gael Quintela Reis;${cpf('523456780')};(11) 98877-1005;Dependente`,
-    `3;24;Heloísa Barcellos Dias;${cpf('623456780')};(11) 98877-1006;Proprietário`,
-    `3;24;Heloísa Barcellos Dias;${cpf('623456780')};(11) 98877-1006;Proprietário`,
-    `3;52;Ícaro Valadares Prado;;(11) 98877-1007;Proprietário`,
-    `4;11;Júlia Albuquerque Neri;123.456.789-00;(11) 98877-1008;Inquilino`,
-    `4;32;Ana Ribeiro;***.456.789-**;(11) 98877-1009;Proprietário`,
-    `4;44;Kaique Sampaio Brito;${cpf('723456780')};98877;Proprietário`,
-    `5;13;Larissa Cordeiro Maia;${cpf('823456780')};(11) 98877-1010;Proprietário`,
-    `5;54;Murilo Espíndola Rocha;${cpf('923456780')};(11) 98877-1011;Proprietário`,
-    `6;31;Nádia Tamandaré Goes;${cpf('113456780')};(11) 98877-1012;Inquilino`,
-    `7;43;Otto Brandão Silveira;${cpf('213456780')};(11) 98877-1013;Proprietário`,
-    `8;14;Priscila Furtado Leal;${cpf('313456780')};(11) 98877-1014;Proprietário`,
-    `8;24;Quirino Alencar Pires;${cpf('413456780')};(11) 98877-1015;Proprietário`,
-    `9;12;Regina Salgado Veiga;${cpf('513456780')};(11) 98877-1016;Proprietário`,
-    `9;15;Saulo Madureira Costa;${cpf('613456780')};(11) 98877-1017;Proprietário`,
-    `9;21;Tereza Pimentel Alves;${cpf('713456780')};(11) 98877-1018;Proprietário`,
-    `10;11;Ulisses Carvalhal Neto;${cpf('813456780')};(11) 98877-1019;Proprietário`,
-    `2;104;Valéria Sobral Mattos;${cpf('913456780')};(11) 98877-1020;Proprietário`,
+    'Bloco;Unidade;Nome;CPF;Telefone;Tipo',
+    `A;12;Ágata Mendonça Lopes;${cpf('123456780')};(11) 98877-1001;Proprietário`,
+    `A;12;Davi Mendonça Lopes;${cpf('223456780')};(11) 98877-1002;Dependente`,
+    `A;21;Elias Nogueira Tavares;${cpf('323456780')};(11) 98877-1003;Proprietário`,
+    `B;33;Fabiana Quintela Reis;${cpf('423456780')};(11) 98877-1004;Inquilino`,
+    `B;33;Gael Quintela Reis;${cpf('523456780')};(11) 98877-1005;Dependente`,
+    `C;24;Heloísa Barcellos Dias;${cpf('623456780')};(11) 98877-1006;Proprietário`,
+    `C;24;Heloísa Barcellos Dias;${cpf('623456780')};(11) 98877-1006;Proprietário`,
+    `C;04;Ícaro Valadares Prado;;(11) 98877-1007;Proprietário`,
+    `D;11;Júlia Albuquerque Neri;123.456.789-00;(11) 98877-1008;Inquilino`,
+    `D;32;Ana Ribeiro;***.456.789-**;(11) 98877-1009;Proprietário`,
+    `D;44;Kaique Sampaio Brito;${cpf('723456780')};98877;Proprietário`,
+    `E;13;Larissa Cordeiro Maia;${cpf('823456780')};(11) 98877-1010;Proprietário`,
+    `E;04;Murilo Espíndola Rocha;${cpf('923456780')};(11) 98877-1011;Proprietário`,
+    `F;31;Nádia Tamandaré Goes;${cpf('113456780')};(11) 98877-1012;Inquilino`,
+    `G;43;Otto Brandão Silveira;${cpf('213456780')};(11) 98877-1013;Proprietário`,
+    `H;14;Priscila Furtado Leal;${cpf('313456780')};(11) 98877-1014;Proprietário`,
+    `H;24;Quirino Alencar Pires;${cpf('413456780')};(11) 98877-1015;Proprietário`,
+    `I;12;Regina Salgado Veiga;${cpf('513456780')};(11) 98877-1016;Proprietário`,
+    `I;15;Saulo Madureira Costa;${cpf('613456780')};(11) 98877-1017;Proprietário`,
+    `I;51;Tereza Pimentel Alves;${cpf('713456780')};(11) 98877-1018;Proprietário`,
+    `J;11;Ulisses Carvalhal Neto;${cpf('813456780')};(11) 98877-1019;Proprietário`,
+    `B;104;Valéria Sobral Mattos;${cpf('913456780')};(11) 98877-1020;Proprietário`,
   ];
   return l.join('\n') + '\n';
 }

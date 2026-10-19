@@ -5,7 +5,7 @@ test.describe('4. Autorização prévia (tela da unidade)', () => {
   test('sem "Morador que pediu" exige justificativa; vira exceção atribuída a quem cadastrou (relatório do síndico)', async ({ page }) => {
     // --- Administração cadastra a autorização prévia na tela da unidade
     await entrarComo(page, 'Administração');
-    await page.goto('/unidades/T4-32');
+    await page.goto('/unidades/D-32');
     await page.getByRole('button', { name: 'Nova autorização prévia' }).click();
     const modal = page.getByRole('dialog');
 
@@ -46,14 +46,14 @@ test.describe('4. Autorização prévia (tela da unidade)', () => {
     await trocarPara(page, 'Porteiro');
     await page.goto('/entrada');
     await escolherPessoa(page, 'Larissa Gomes');
-    await escolherUnidade(page, 'T4-32');
+    await escolherUnidade(page, 'D-32');
     await expect(page.getByRole('status').filter({ hasText: /Autorização prévia sem solicitante/ })).toBeVisible();
     await botaoConfirmarEntrada(page).click();
     await expect(toast(page, 'Entrada registrada').first()).toBeVisible();
 
     // O histórico marca como "Sem solicitante" (tratada como exceção)
     await filtrarHistoricoPorPessoa(page, 'Larissa Gomes');
-    await expect(linhaEvento(page, 'Larissa Gomes', 'T4-32', 'Sem solicitante')).toHaveCount(1);
+    await expect(linhaEvento(page, 'Larissa Gomes', 'D-32', 'Sem solicitante')).toHaveCount(1);
 
     // --- Síndico vê a exceção no relatório, atribuída a quem cadastrou a autorização (Paula), não ao porteiro
     await trocarPara(page, 'Síndico');

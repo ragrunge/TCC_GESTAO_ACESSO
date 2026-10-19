@@ -6,12 +6,14 @@ import { Button } from '../../components/Button';
 import { PageHeader } from '../../components/PageHeader';
 import { fmtData } from '@portaria/domain/time';
 import { mensagemErro } from '../../app/useAsync';
+import { useCatalogo } from '../../app/catalogo';
 import { csvExemplo, lerCsv, lerXlsx } from './csv';
 
 const COL = 'minmax(0,1.2fr) 130px 50px 50px 100px 150px';
 
 export function ImportacaoPage() {
   const api = useApi();
+  const { agrupamento } = useCatalogo();
   const [linhas, setLinhas] = useState<LinhaPlanilha[]>([]);
   const [rel, setRel] = useState<RelatorioImportacao | null>(null);
   const [res, setRes] = useState<ResultadoImportacao | null>(null);
@@ -58,7 +60,7 @@ export function ImportacaoPage() {
             className="flex h-60 flex-col items-center justify-center gap-[10px] rounded-xl border-2 border-dashed border-[#9AA7B0] bg-white hover:border-[#0B5563] hover:bg-[#F5FAFB]">
             <Upload className="h-9 w-9 text-[#0B5563]" strokeWidth={1.8} aria-hidden />
             <span className="text-[18px] font-semibold">Selecionar arquivo .csv ou .xlsx</span>
-            <span className="text-[14px] text-[#56616B]">Colunas esperadas: nome, CPF, torre, unidade, tipo de vínculo, telefone. O CPF não é guardado em claro; linha sem CPF entra como legado, a regularizar.</span>
+            <span className="text-[14px] text-[#56616B]">Colunas esperadas: nome, CPF, bloco (ou torre), unidade, tipo de vínculo, telefone. O CPF não é guardado em claro; linha sem CPF entra como legado, a regularizar.</span>
           </button>
           <Button className="self-start" onClick={() => void analisar('planilha-exemplo.csv', lerCsv(csvExemplo()).linhas)} carregando={ocupado}>Usar planilha de exemplo</Button>
         </>
@@ -76,7 +78,7 @@ export function ImportacaoPage() {
               <h2 className="border-b border-[#E6EAED] px-5 py-[14px] text-[16px] font-semibold">Pré-visualização</h2>
               <div role="table" aria-label="Pré-visualização das primeiras linhas da planilha">
                 <div role="row" style={{ gridTemplateColumns: COL }} className="grid gap-[10px] border-b border-[#E6EAED] px-5 py-[10px] text-[13px] font-semibold text-[#56616B]">
-                  <span role="columnheader">Nome</span><span role="columnheader">Documento</span><span role="columnheader">Torre</span><span role="columnheader">Un.</span><span role="columnheader">Vínculo</span><span role="columnheader">Situação</span>
+                  <span role="columnheader">Nome</span><span role="columnheader">Documento</span><span role="columnheader">{agrupamento}</span><span role="columnheader">Un.</span><span role="columnheader">Vínculo</span><span role="columnheader">Situação</span>
                 </div>
                 {linhas.slice(0, 8).map((l) => {
                   const ps = problemasDaLinha(l.linha);
@@ -84,7 +86,7 @@ export function ImportacaoPage() {
                     <div role="row" key={l.linha} style={{ gridTemplateColumns: COL }} className="grid items-center gap-[10px] border-b border-[#EEF1F3] px-5 py-2 text-[14px]">
                       <span className="truncate">{l.nome}</span>
                       <span className="font-mono text-[13px]">{l.documento ? l.documento.replace(/\d(?=.{4})/g, '•') : '—'}</span>
-                      <span className="font-mono">{l.torre}</span><span className="font-mono">{l.unidade}</span><span>{l.tipo}</span>
+                      <span className="font-mono">{l.bloco}</span><span className="font-mono">{l.unidade}</span><span>{l.tipo}</span>
                       {ps.length === 0 ? <span className="font-medium text-[#05603A]">Válida</span>
                         : <span className="inline-flex items-center gap-[5px] font-semibold text-[#93370D]"><TriangleAlert className="h-[14px] w-[14px]" strokeWidth={2.4} aria-hidden />{ps[0].tipo === 'erro' ? 'Inconsistente' : 'Aviso'}</span>}
                     </div>

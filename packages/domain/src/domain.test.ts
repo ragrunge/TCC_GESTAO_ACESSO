@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { acharUnidadePorTexto, andarDoNumero, codigoUnidade, gerarUnidades, parseCodigoUnidade, validarEstruturaUnidade } from './units';
+import {
+  acharUnidadePorTexto, andarDoNumero, chaveBloco, codigoUnidade, compararBlocos, doAgrupamento, nesteAgrupamento, gerarUnidades, leiturasDoCodigo, normalizarBloco, normalizarNumero,
+  parseCodigoUnidade, rotuloUnidade, validarEstruturaUnidade, type ConfigEstrutura,
+} from './units';
 import {
   cadastroCompleto, descreverJanela, elegivelRetencao, escalaVigente, estadoAutorizacaoPrevia, legadoVencido, meiosAceitos,
   podeEntregarEncomenda, restricoesVigentes, validarAutorizacaoEntrada, validarConferencia, validarDecisaoVinculo, validarEscala, vinculoValido,
@@ -9,32 +12,94 @@ import type { AutorizacaoPrevia, Funcionario, Pessoa, VinculoUnidade } from './t
 import { codigoEvento } from './hashChain';
 
 describe('unidades', () => {
-  it('estrutura inicial: exatamente 165 unidades (160 nas torres 1–8 + 5 na torre 9)', () => {
+  it('estrutura padrão: 9 blocos (A a I) x 18 unidades = 162 (térreo só com 03 e 04, provisório)', () => {
     const us = gerarUnidades();
-    expect(us.length).toBe(165);
-    expect(us.filter((u) => u.torre === 9).length).toBe(5);
-    expect(us.filter((u) => u.torre <= 8).length).toBe(160);
+    expect(us.length).toBe(162);
+    expect(new Set(us.map((u) => u.bloco))).toEqual(new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']));
+    expect(us.filter((u) => u.bloco === 'A').map((u) => u.numero)).toEqual([
+      '03', '04', '11', '12', '13', '14', '21', '22', '23', '24', '31', '32', '33', '34', '41', '42', '43', '44',
+    ]);
     const codigos = new Set(us.map(codigoUnidade));
-    expect(codigos.size).toBe(165);
-    expect(codigos.has('T4-32')).toBe(true);
-    expect(codigos.has('T2-104')).toBe(false);
-    expect(codigos.has('T9-21')).toBe(false);
-    expect(codigos.has('T1-61')).toBe(false);
+    expect(codigos.size).toBe(162);
+    expect(codigos.has('D-32')).toBe(true);
+    expect(codigos.has('A-01')).toBe(false);
+    expect(codigos.has('A-51')).toBe(false);
+    expect(codigos.has('J-11')).toBe(false);
   });
 
-  it('código é derivado; a busca por texto aceita "4-32", "T4 32" e acha pelo par torre/número', () => {
-    expect(parseCodigoUnidade('4-32')).toEqual({ torre: 4, numero: '32' });
-    expect(parseCodigoUnidade('t4 32')).toEqual({ torre: 4, numero: '32' });
-    expect(parseCodigoUnidade('T10-101')).toEqual({ torre: 10, numero: '101' });
+  it('configuração: ausente geral ou por bloco, agrupamento e ordem natural dos blocos', () => {
+    const base: ConfigEstrutura = { agrupamento: 'Torre', blocos: ['10', '2', 'b', 'A'], andares: [0, 1], finais: [1, 2], ausentes: [] };
+    expect(gerarUnidades(base).map(codigoUnidade)).toEqual([
+      '2-01', '2-02', '2-11', '2-12', '10-01', '10-02', '10-11', '10-12', 'A-01', 'A-02', 'A-11', 'A-12', 'B-01', 'B-02', 'B-11', 'B-12',
+    ]);
+    const com = gerarUnidades({ ...base, ausentes: ['1', 'B-12'] }).map(codigoUnidade);
+    expect(com).toHaveLength(16 - 4 - 1);
+    expect(com).not.toContain('A-01');
+    expect(com).not.toContain('B-12');
+    expect(com).toContain('A-12');
+    expect(() => gerarUnidades({ ...base, ausentes: ['A-99'] })).toThrow(/ausente/);
+    expect(() => gerarUnidades({ ...base, blocos: ['A', 'a'] })).toThrow(/repetido/);
+    expect(() => gerarUnidades({ ...base, blocos: ['ABCD'] })).toThrow(/formato/);
+    expect(() => gerarUnidades({ ...base, andares: [10] })).toThrow(/andar/);
+    expect(() => gerarUnidades({ ...base, finais: [0] })).toThrow(/final/);
+    expect(['B10', 'C', 'B2', '10', 'A', '2'].sort(compararBlocos)).toEqual(['2', '10', 'A', 'B2', 'B10', 'C']);
+    expect(chaveBloco('B2')).toBe('B002');
+  });
+
+  it('código "A-32" e rótulo pelo agrupamento configurado', () => {
+    expect(codigoUnidade({ bloco: 'A', numero: '32' })).toBe('A-32');
+    expect(rotuloUnidade({ bloco: 'A', numero: '32' }, 'Bloco')).toBe('BLOCO A · AP 32');
+    expect(rotuloUnidade({ bloco: '4', numero: '03' }, 'Torre', false)).toBe('Torre 4 · AP 03');
+  });
+
+  it('número normalizado com 2 dígitos no mínimo: "3" e "03" são a mesma unidade', () => {
+    expect(normalizarNumero('3')).toBe('03');
+    expect(normalizarNumero(' 03 ')).toBe('03');
+    expect(normalizarNumero('032')).toBe('32');
+    expect(normalizarNumero('101')).toBe('101');
+    expect(normalizarNumero('0')).toBe('00');
+    expect(normalizarNumero('3a')).toBe('3a');
+    expect(normalizarBloco(' b2 ')).toBe('B2');
+    expect(validarEstruturaUnidade('A', '03')).toBeNull();
+    expect(validarEstruturaUnidade('B2', '101')).toBeNull();
+    expect(validarEstruturaUnidade('a', '03')).not.toBeNull(); // espera valor já normalizado
+    expect(validarEstruturaUnidade('ABCD', '11')).not.toBeNull();
+    expect(validarEstruturaUnidade('', '11')).not.toBeNull();
+    expect(validarEstruturaUnidade('A', '3')).not.toBeNull();
+    expect(validarEstruturaUnidade('A', '00')).not.toBeNull();
+    expect(validarEstruturaUnidade('A', '3a')).not.toBeNull();
+    expect(validarEstruturaUnidade('A', '10000')).not.toBeNull();
+    expect(validarEstruturaUnidade('#', '11', 'Torre')).toMatch(/^A torre deve/);
+    expect(validarEstruturaUnidade('#', '11')).toMatch(/^O bloco deve/);
+    expect([doAgrupamento('Bloco'), nesteAgrupamento('Torre')]).toEqual(['do bloco', 'nesta torre']);
+  });
+
+  it('busca por texto: separador obrigatório, maiúsculas, compatibilidade com "T4-32" e "Bloco A 32"', () => {
+    expect(parseCodigoUnidade('A-32')).toEqual({ bloco: 'A', numero: '32' });
+    expect(parseCodigoUnidade('a 32')).toEqual({ bloco: 'A', numero: '32' });
+    expect(parseCodigoUnidade('A/32')).toEqual({ bloco: 'A', numero: '32' });
+    expect(parseCodigoUnidade('4-32')).toEqual({ bloco: '4', numero: '32' });
+    expect(parseCodigoUnidade('b2-3')).toEqual({ bloco: 'B2', numero: '03' });
+    expect(parseCodigoUnidade('Bloco A 32')).toEqual({ bloco: 'A', numero: '32' });
+    expect(parseCodigoUnidade('BLOCO A · AP 32')).toEqual({ bloco: 'A', numero: '32' });
+    expect(parseCodigoUnidade('Torre 4 · AP 32')).toEqual({ bloco: '4', numero: '32' });
+    expect(leiturasDoCodigo('T4-32')).toEqual([{ bloco: 'T4', numero: '32' }, { bloco: '4', numero: '32' }]);
+    expect(parseCodigoUnidade('432')).toBeNull();
+    expect(parseCodigoUnidade('A32')).toBeNull();
+    expect(parseCodigoUnidade('A-0')).toBeNull();
     expect(parseCodigoUnidade('Ana')).toBeNull();
-    const lista = [{ id: 'uuid-a', torre: 4, numero: '32', ativo: true }, { id: 'uuid-b', torre: 1, numero: '11', ativo: true }];
-    expect(acharUnidadePorTexto(lista, '4-32')?.id).toBe('uuid-a');
-    expect(acharUnidadePorTexto(lista, '4-33')).toBeUndefined();
+    const lista = [
+      { id: 'uuid-a', bloco: 'D', numero: '32', ativo: true }, { id: 'uuid-b', bloco: 'A', numero: '03', ativo: true },
+      { id: 'uuid-c', bloco: '4', numero: '32', ativo: true },
+    ];
+    expect(acharUnidadePorTexto(lista, 'd-32')?.id).toBe('uuid-a');
+    expect(acharUnidadePorTexto(lista, 'A-3')?.id).toBe('uuid-b');
+    expect(acharUnidadePorTexto(lista, 'T4-32')?.id).toBe('uuid-c');
+    expect(acharUnidadePorTexto([...lista, { id: 'uuid-t', bloco: 'T4', numero: '32', ativo: true }], 'T4-32')?.id).toBe('uuid-t');
+    expect(acharUnidadePorTexto(lista, 'D-33')).toBeUndefined();
     expect(andarDoNumero('32')).toBe(3);
+    expect(andarDoNumero('03')).toBe(0);
     expect(andarDoNumero('101')).toBe(1);
-    expect(validarEstruturaUnidade(0, '11')).not.toBeNull();
-    expect(validarEstruturaUnidade(4, '3a')).not.toBeNull();
-    expect(validarEstruturaUnidade(10, '101')).toBeNull();
   });
 
   it('código do evento deriva de seq', () => {
@@ -100,8 +165,8 @@ describe('regras puras', () => {
 
   it('restrição de condomínio pendente não vigora', () => {
     const r = { id: 'r', escopo: 'condominio' as const, unidadeId: 'T1-11', pessoaId: 'p', motivo: 'm', validaAte: brt(2026, 12, 31), cadastradaPorId: 'u', cadastradaEm: 0, solicitadaPorPessoaId: null, aprovadaPorId: null, aprovadaEm: null, revogadaEm: null, revogadaPorId: null };
-    expect(restricoesVigentes([r], 'p', 'T9-11', brt(2026, 10, 9))).toHaveLength(0);
-    expect(restricoesVigentes([{ ...r, aprovadaEm: 1 }], 'p', 'T9-11', brt(2026, 10, 9))).toHaveLength(1);
+    expect(restricoesVigentes([r], 'p', 'I-11', brt(2026, 10, 9))).toHaveLength(0);
+    expect(restricoesVigentes([{ ...r, aprovadaEm: 1 }], 'p', 'I-11', brt(2026, 10, 9))).toHaveLength(1);
   });
 
   it('RF-36: área comum só para prestador, por autorização prévia ou exceção', () => {

@@ -52,7 +52,7 @@ const SENHA = senhaSeed();
 const SUFIXO = Math.random().toString(36).slice(2, 7);
 const NOME = `Teste Ponta ${SUFIXO}`;
 const NOME_LEGADO = `Legado Ponta ${SUFIXO}`;
-const UNIDADE = 'T1-11';
+const UNIDADE = 'A-11';
 
 test.describe.serial('API real: pessoas, vínculos, conferência e legado', () => {
   test.beforeAll(async ({ request }) => {
@@ -115,7 +115,7 @@ test.describe.serial('API real: pessoas, vínculos, conferência e legado', () =
   test('o morador aprovado aparece na unidade e na busca do topo', async ({ page }) => {
     await entrarAdmin(page, SENHA!);
     await page.goto(`/unidades/${UNIDADE}`);
-    await expect(page.getByRole('heading', { name: 'Torre 1 · Apartamento 11' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Bloco A · Apartamento 11' })).toBeVisible();
     await expect(page.getByText(NOME, { exact: true })).toBeVisible();
 
     await page.getByLabel('Buscar por nome, documento, unidade ou placa').fill(NOME);
@@ -126,7 +126,7 @@ test.describe.serial('API real: pessoas, vínculos, conferência e legado', () =
   test('importação cria um legado; a conferência e a regularização o passam a aprovado', async ({ page }) => {
     await entrarAdmin(page, SENHA!);
     await page.goto('/importar');
-    const csv = `nome;cpf;torre;unidade;tipo;telefone\n${NOME_LEGADO};${cpfAleatorio()};1;12;dependente;11977771234\n`;
+    const csv = `nome;cpf;bloco;unidade;tipo;telefone\n${NOME_LEGADO};${cpfAleatorio()};A;12;dependente;11977771234\n`;
     await page.getByLabel('Selecionar arquivo da planilha').setInputFiles({ name: 'planilha-e2e.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'utf8') });
     await expect(page.getByText(/1 linhas lidas · 1 válidas/)).toBeVisible();
     await page.getByRole('button', { name: /Importar 1 moradores válidos/ }).click();
@@ -149,7 +149,7 @@ test.describe.serial('API real: pessoas, vínculos, conferência e legado', () =
     await registrarConferencia(page, 'Outro', 'Certidão de nascimento');
     await expect(regularizar).toBeEnabled();
     await regularizar.click();
-    await expect(toast(page, new RegExp(`Vínculo legado de ${NOME_LEGADO} \\(T1-12\\) regularizado`))).toBeVisible();
+    await expect(toast(page, new RegExp(`Vínculo legado de ${NOME_LEGADO} \\(A-12\\) regularizado`))).toBeVisible();
     await expect(item).toHaveCount(0);
   });
 });

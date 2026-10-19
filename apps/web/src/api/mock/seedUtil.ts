@@ -68,9 +68,9 @@ export function gerarTelefone(rand: () => number): string {
 
 // ----- Ids determinísticos (formato uuid) para o seed: os testes e os links do protótipo continuam estáveis. ------
 const hex12 = (n: string) => n.padStart(12, '0');
-/** Unidade do seed: "00000000-0000-4000-8000-TTTTNNNNNNNN" (torre em 4 dígitos, número em 8). */
-export const idUnidadeSeed = (torre: number, numero: string) =>
-  `00000000-0000-4000-8000-${hex12(String(torre).padStart(4, '0') + numero.padStart(8, '0'))}`;
+/** Unidade do seed: "00000000-0000-4000-8000-BBBBBBNNNNNN" (bloco em hex, 2 casas por caractere; número em 6). */
+export const idUnidadeSeed = (bloco: string, numero: string) =>
+  `00000000-0000-4000-8000-${hex12([...bloco].map((c) => c.charCodeAt(0).toString(16).padStart(2, '0')).join('').padStart(6, '0') + numero.padStart(6, '0'))}`;
 /** Área comum do seed (1, 2, ...). */
 export const idAreaComumSeed = (n: number) => `00000000-0000-4000-a000-${hex12(String(n))}`;
 /** Portaria social (único ponto de acesso do MVP). */

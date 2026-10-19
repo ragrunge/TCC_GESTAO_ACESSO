@@ -13,7 +13,7 @@ import { useToast } from '../../components/Toast';
 import { ROTULO_VINCULO, type EventoView, type TipoVinculo, type Veiculo } from '@portaria/domain/types';
 import { MIN_JUSTIFICATIVA, descreverJanela } from '@portaria/domain/rules';
 import { DIAS_SEMANA_ABREV, fmtData, fromInput, toInputDate, agora } from '@portaria/domain/time';
-import { acharUnidadePorTexto } from '@portaria/domain/units';
+import { acharUnidadePorTexto, codigoUnidade } from '@portaria/domain/units';
 import { mensagemErro, useAsync } from '../../app/useAsync';
 import { useCatalogo } from '../../app/catalogo';
 import { APOS_AUTORIZACAO, APOS_VEICULO, useInvalidar } from '../../app/consultas';
@@ -33,7 +33,7 @@ function SecaoEmBreve({ titulo, children }: { titulo: string; children?: ReactNo
   );
 }
 
-/** Detalhe da unidade (coluna direita do mestre-detalhe de Unidades). `id`: uuid ou código "T4-32". */
+/** Detalhe da unidade (coluna direita do mestre-detalhe de Unidades). `id`: uuid ou código "D-32". */
 export function UnidadeDetalhe({ id }: { id: string }) {
   const api = useApi();
   const nav = useNavigate();
@@ -53,11 +53,11 @@ export function UnidadeDetalhe({ id }: { id: string }) {
   const podeVeiculo = useCan('veiculo.cadastrar');
   const podeEditarUnidade = useCan('unidade.editar');
   const det = useUnidadeDetalhe(id);
-  /** Vínculo, autorização ou restrição novos mudam o detalhe, o resumo da torre, a fila de vínculos, a pessoa e o turno. */
+  /** Vínculo, autorização ou restrição novos mudam o detalhe, o resumo do bloco, a fila de vínculos, a pessoa e o turno. */
   const recarregar = () => invalidar(APOS_AUTORIZACAO);
 
   if (det.error) return <Alert tom="vermelho" role="alert">{mensagemErro(det.error)} <Link className="underline" to="/unidades">Voltar às unidades</Link></Alert>;
-  // Dado anterior (placeholder) só vale se for a MESMA unidade (troca de "T4-32" para o uuid). De outra unidade, não:
+  // Dado anterior (placeholder) só vale se for a MESMA unidade (troca de "D-32" para o uuid). De outra unidade, não:
   // os botões agiriam sobre a unidade anterior enquanto a nova carrega.
   const bruto = det.data;
   const mesma = !!bruto && (bruto.unidade.id === id || !!acharUnidadePorTexto([bruto.unidade], id));
@@ -89,7 +89,7 @@ export function UnidadeDetalhe({ id }: { id: string }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <h1 className="text-[30px] font-semibold">Torre {d?.unidade.torre} · Apartamento {d?.unidade.numero}</h1>
+        <h1 className="text-[30px] font-semibold">{catalogo.agrupamento} {d?.unidade.bloco} · Apartamento {d?.unidade.numero}</h1>
         <div className="flex flex-wrap gap-2">
           {d && ativa && podePrevia && suporta('autorizacoes.criar') && <Button variante="primario" onClick={() => setModo('previa')}>Nova autorização prévia</Button>}
           {d && ativa && podeRestricao && suporta('restricoes.criar') && <Button onClick={() => setModo('restricao')}>Nova restrição</Button>}
@@ -198,7 +198,7 @@ export function UnidadeDetalhe({ id }: { id: string }) {
       {d && modo === 'veiculo' && <VeiculoModal unidade={uid} onClose={() => setModo(null)} onFeito={() => { setModo(null); avisar({ texto: 'Veículo cadastrado.' }); void invalidar(APOS_VEICULO); }} />}
       {d && veiculoEditado && <VeiculoModal unidade={uid} atual={veiculoEditado} onClose={() => setVeiculoEditado(null)}
         onFeito={(texto) => { setVeiculoEditado(null); avisar({ texto }); void invalidar(APOS_VEICULO); }} />}
-      {d && modo === 'editar' && <EditarUnidadeModal id={uid} torre={d.unidade.torre} numero={d.unidade.numero} onClose={() => setModo(null)}
+      {d && modo === 'editar' && <EditarUnidadeModal id={uid} bloco={d.unidade.bloco} numero={d.unidade.numero} onClose={() => setModo(null)}
         onFeito={(cod, novoId) => { feito(`Unidade alterada para ${cod}.`); nav(`/unidades/${novoId}`, { replace: true }); }} />}
     </div>
   );
@@ -209,27 +209,31 @@ const UnidadeTitulo = ({ unidade }: { unidade: string }) => {
   return <div className="font-mono text-[22px] font-semibold text-[#0B3F49]">{codigo(unidade)}</div>;
 };
 
-/** RF-01: corrige torre/número de unidade ainda sem registros (a API recusa a referenciada com 422). */
-export function EditarUnidadeModal({ id, torre, numero, onClose, onFeito }: {
-  id: string | null; torre?: number; numero?: string; onClose: () => void; onFeito: (codigo: string, id: string) => void | Promise<void>;
+/**
+ * RF-01: cadastra unidade (exceção à estrutura inicial) ou corrige bloco/número de unidade ainda sem registros (a API
+ * recusa a referenciada com 422). Bloco em maiúsculas (letras e dígitos); a API normaliza o número ("3" -> "03").
+ */
+export function EditarUnidadeModal({ id, bloco, numero, onClose, onFeito }: {
+  id: string | null; bloco?: string; numero?: string; onClose: () => void; onFeito: (codigo: string, id: string) => void | Promise<void>;
 }) {
   const acoes = useAcoesUnidade();
-  const [t, setT] = useState(torre ? String(torre) : '');
+  const { agrupamento } = useCatalogo();
+  const [b, setB] = useState(bloco ?? '');
   const [n, setN] = useState(numero ?? '');
   const [erro, setErro] = useState('');
   async function salvar(e: FormEvent) {
     e.preventDefault();
     try {
       // mutateAsync resolve depois da invalidação (onSuccess): o catálogo já conhece a unidade quando a tela navega
-      const u = id ? await acoes.editar.mutateAsync({ id, torre: Number(t), numero: n.trim() }) : await acoes.criar.mutateAsync({ torre: Number(t), numero: n.trim() });
-      await onFeito(`T${u.torre}-${u.numero}`, u.id);
+      const u = id ? await acoes.editar.mutateAsync({ id, bloco: b, numero: n.trim() }) : await acoes.criar.mutateAsync({ bloco: b, numero: n.trim() });
+      await onFeito(codigoUnidade(u), u.id);
     } catch (err) { setErro(mensagemErro(err)); }
   }
   return (
     <Modal titulo={id ? 'Editar número da unidade' : 'Nova unidade'} onClose={onClose} largura={480} rodape={rodapeForm(onClose, 'f-un', id ? 'Salvar' : 'Cadastrar unidade')}>
       <form id="f-un" onSubmit={salvar} className="flex flex-col gap-[14px]">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Torre"><input data-autofocus className="input font-mono" inputMode="numeric" value={t} onChange={(e) => setT(e.target.value.replace(/\D/g, '').slice(0, 2))} /></Field>
+          <Field label={agrupamento}><input data-autofocus className="input font-mono uppercase" autoComplete="off" value={b} onChange={(e) => setB(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3))} /></Field>
           <Field label="Apartamento"><input className="input font-mono" inputMode="numeric" value={n} onChange={(e) => setN(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
         </div>
         {id && <Alert tom="neutro">Só é possível alterar o número de unidade sem vínculos, acessos ou encomendas. Com histórico, desative-a e cadastre a correta.</Alert>}

@@ -35,7 +35,7 @@ async function nomes(exec: Executor, i: { pessoas: string[]; usuarios: string[];
   const [ps, us, uns, as] = await Promise.all([
     i.pessoas.length ? exec.select({ id: pessoa.id, nome: pessoa.nome }).from(pessoa).where(inArray(pessoa.id, i.pessoas)) : [],
     i.usuarios.length ? exec.select({ id: usuarioSistema.id, nome: usuarioSistema.nome, papel: usuarioSistema.papel }).from(usuarioSistema).where(inArray(usuarioSistema.id, i.usuarios)) : [],
-    i.unidades.length ? exec.select({ id: unidade.id, torre: unidade.torre, numero: unidade.numero }).from(unidade).where(inArray(unidade.id, i.unidades)) : [],
+    i.unidades.length ? exec.select({ id: unidade.id, bloco: unidade.bloco, numero: unidade.numero }).from(unidade).where(inArray(unidade.id, i.unidades)) : [],
     i.areas.length ? exec.select({ id: areaComum.id, nome: areaComum.nome }).from(areaComum).where(inArray(areaComum.id, i.areas)) : [],
   ]);
   const p = new Map(ps.map((x) => [x.id, x.nome]));

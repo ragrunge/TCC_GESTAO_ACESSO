@@ -12,7 +12,7 @@ test.describe('2. Entrada pelo porteiro (/entrada)', () => {
 
   test('interfone com morador escolhido: "Entrada registrada" e evento no histórico com "autorizado por"', async ({ page }) => {
     await escolherPessoa(page, 'Márcia Pereira');
-    await escolherUnidade(page, 'T4-32');
+    await escolherUnidade(page, 'D-32');
     await escolherMeio(page, 'Interfone');
     await escolherMorador(page, 'Ana Ribeiro');
     await expect(page.getByText('Falta:')).toHaveCount(0);
@@ -22,7 +22,7 @@ test.describe('2. Entrada pelo porteiro (/entrada)', () => {
     await expect(page).toHaveURL(/\/painel$/);
 
     await filtrarHistoricoPorPessoa(page, 'Márcia Pereira');
-    const linha = linhaEvento(page, 'Márcia Pereira', 'T4-32');
+    const linha = linhaEvento(page, 'Márcia Pereira', 'D-32');
     await expect(linha).toHaveCount(1);
     await expect(linha).toContainText('Interfone');
     await expect(linha).toContainText('Ana Ribeiro'); // quem autorizou
@@ -36,7 +36,7 @@ test.describe('2. Entrada pelo porteiro (/entrada)', () => {
 
   test('exceção do porteiro exige justificativa de pelo menos 15 caracteres e aparece como "Exceção"', async ({ page }) => {
     await escolherPessoa(page, 'Márcia Pereira');
-    await escolherUnidade(page, 'T4-32');
+    await escolherUnidade(page, 'D-32');
     await escolherMeio(page, 'Exceção do porteiro');
 
     const just = page.getByLabel(/Justificativa \(obrigatória/);
@@ -69,7 +69,7 @@ test.describe('2. Entrada pelo porteiro (/entrada)', () => {
 
   test('"Morador recusou" grava evento "Recusado" e o histórico mostra "Recusado por …"', async ({ page }) => {
     await escolherPessoa(page, 'Márcia Pereira');
-    await escolherUnidade(page, 'T4-32');
+    await escolherUnidade(page, 'D-32');
     await escolherMeio(page, 'Interfone');
     await escolherMorador(page, 'Ana Ribeiro');
     await page.getByRole('button', { name: 'Morador recusou' }).click();
@@ -94,18 +94,18 @@ test.describe('2. Entrada pelo porteiro (/entrada)', () => {
   });
 
   test('pessoa com restrição: modal "Entrada não permitida" e cancelar grava UM único evento negado', async ({ page }) => {
-    // Seed: Bruno Teixeira tem restrição na T4-32 e já possui 1 evento "Negado" (08/10)
+    // Seed: Bruno Teixeira tem restrição na D-32 e já possui 1 evento "Negado" (08/10)
     await filtrarHistoricoPorPessoa(page, 'Bruno Teixeira');
     await expect(linhaEvento(page, 'Bruno Teixeira', 'Negado')).toHaveCount(1);
     const negadosAntes = 1;
 
     await page.goto('/entrada');
     await escolherPessoa(page, 'Bruno Teixeira');
-    await escolherUnidade(page, 'T4-32');
+    await escolherUnidade(page, 'D-32');
 
     const modal = page.getByRole('alertdialog');
     await expect(modal).toBeVisible();
-    await expect(modal).toContainText('Entrada não permitida para T4-32');
+    await expect(modal).toContainText('Entrada não permitida para D-32');
     await expect(modal).toContainText('Morador não autoriza a entrada');
     // Não existe opção de liberar: só registrar ocorrência ou cancelar
     await expect(modal.getByRole('button')).toHaveText([/Registrar ocorrência/, /Cancelar/]);
@@ -120,9 +120,9 @@ test.describe('2. Entrada pelo porteiro (/entrada)', () => {
   });
 
   test('Rodrigo Alves (vínculo pendente) não consegue autorizar como morador na própria unidade', async ({ page }) => {
-    // Vínculo pendente não dá acesso de morador: T9-13 só lista a moradora aprovada (Marta Siqueira)
+    // Vínculo pendente não dá acesso de morador: I-13 só lista a moradora aprovada (Marta Siqueira)
     await escolherPessoa(page, 'Márcia Pereira');
-    await escolherUnidade(page, 'T9-13');
+    await escolherUnidade(page, 'I-13');
     await escolherMeio(page, 'Interfone');
     const grupo = page.getByRole('radiogroup', { name: /Morador que autorizou/ });
     await expect(grupo.getByText('Marta Siqueira', { exact: true })).toBeVisible();
@@ -135,7 +135,7 @@ test.describe('2b. Funcionário com restrição de condomínio', () => {
     // 1) Síndico cadastra a restrição (a UI só cria restrição a partir da tela de uma unidade;
     //    o escopo "todo o condomínio" fica pendente até o síndico aprovar — RN-06)
     await entrarComo(page, 'Síndico');
-    await page.goto('/unidades/T4-32');
+    await page.goto('/unidades/D-32');
     await page.getByRole('button', { name: 'Nova restrição' }).click();
     const form = page.getByRole('dialog');
     await form.getByLabel('Pessoa que não pode entrar').fill('Válter');

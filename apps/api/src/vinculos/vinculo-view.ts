@@ -7,6 +7,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import type { Executor } from '../database/database.module';
 import { importacao, pessoa, unidade, usuarioSistema, vinculoUnidade as v } from '../db/schema';
 import { cadastroCompletoDe } from '../pessoas/pessoa-view';
+import { ORDEM_UNIDADES } from '../unidades/ordem';
 
 const registrador = alias(usuarioSistema, 'registrador');
 const decisor = alias(usuarioSistema, 'decisor');
@@ -50,7 +51,7 @@ export function selecionarVinculos(exec: Executor) {
     pessoaNome: pessoa.nome, pessoaSemCpf: pessoa.semCpf, pessoaMascarado: pessoa.documentoMascarado,
     pessoaTelefone: pessoa.telefone, pessoaAnonimizadaEm: pessoa.anonimizadaEm,
     pessoaTemCpf: sql<boolean>`(${pessoa.documentoBusca} IS NOT NULL)`.mapWith(Boolean),
-    torre: unidade.torre, numero: unidade.numero,
+    bloco: unidade.bloco, numero: unidade.numero,
     registradoPorNome: registrador.nome, decididoPorNome: decisor.nome, conferidoPorNome: conferente.nome,
     arquivo: importacao.arquivoNome,
   }).from(v)
@@ -89,7 +90,7 @@ export function paraVinculoApi(l: LinhaView, hoje: string): VinculoApi {
     pessoaNome: l.pessoaNome,
     pessoaDocumento: documento,
     pessoaCadastroCompleto: cadastroCompletoDe({ semCpf: l.pessoaSemCpf, anonimizadaEm: l.pessoaAnonimizadaEm, telefone: l.pessoaTelefone, temCpf: l.pessoaTemCpf }),
-    unidadeCodigo: codigoUnidade({ torre: l.torre, numero: l.numero }),
+    unidadeCodigo: codigoUnidade({ bloco: l.bloco, numero: l.numero }),
     decididoPorNome: l.decididoPorNome, registradoPorNome: l.registradoPorNome, conferidoPorNome: l.conferidoPorNome,
     legadoVencido: x.status === 'legado' && x.prazoRegularizacao !== null && x.prazoRegularizacao < hoje,
   };
@@ -98,6 +99,6 @@ export function paraVinculoApi(l: LinhaView, hoje: string): VinculoApi {
 /** Vínculos que casam com `filtro`, na ordem de exibição da unidade e da ficha (unidade, pessoa). Conjunto pequeno. */
 export async function carregarVinculos(exec: Executor, filtro: SQL, hoje: string): Promise<VinculoApi[]> {
   const linhas = await selecionarVinculos(exec).where(filtro)
-    .orderBy(asc(unidade.torre), asc(sql`${unidade.numero}::numeric`), asc(pessoa.nome), asc(v.id));
+    .orderBy(...ORDEM_UNIDADES, asc(pessoa.nome), asc(v.id));
   return linhas.map((l) => paraVinculoApi(l, hoje));
 }

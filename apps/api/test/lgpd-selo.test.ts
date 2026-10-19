@@ -30,19 +30,19 @@ async function montar(extra: Parameters<typeof novaApi>[0] = {}) {
   const cookies = {} as Record<PapelTeste, string>;
   for (const p of ['sindico', 'administracao', 'porteiro', 'auditor'] as PapelTeste[]) cookies[p] = (await api.como(p)).cookie;
   const id = async (nome: string) => (await api.db.select().from(s.pessoa).where(eq(s.pessoa.nome, nome)))[0]!.id;
-  const un = async (torre: number, numero: string) => (await api.db.select().from(s.unidade).where(and(eq(s.unidade.torre, torre), eq(s.unidade.numero, numero))))[0]!;
+  const un = async (bloco: string, numero: string) => (await api.db.select().from(s.unidade).where(and(eq(s.unidade.bloco, bloco), eq(s.unidade.numero, numero))))[0]!;
   const get = (papel: PapelTeste, url: string) => api.http().get(`${V1}${url}`).set('Cookie', cookies[papel]);
   const post = (papel: PapelTeste, url: string, corpo?: object) => api.http().post(`${V1}${url}`).set('Cookie', cookies[papel]).send(corpo);
-  const t432 = await un(4, '32');
+  const d32 = await un('D', '32');
   async function entrada(pessoaId: string) {
-    const e = await post('porteiro', '/eventos-acesso', { pessoaId, unidadeDestinoId: t432.id, autorizadoPorTipo: 'excecao_porteiro', justificativa: JUST });
+    const e = await post('porteiro', '/eventos-acesso', { pessoaId, unidadeDestinoId: d32.id, autorizadoPorTipo: 'excecao_porteiro', justificativa: JUST });
     if (e.status !== 201) throw new Error(`entrada falhou: ${JSON.stringify(e.body)}`);
     await post('porteiro', `/eventos-acesso/${e.body.data.id}/saida`);
     return e.body.data.id as string;
   }
   const visitante = async (nome: string) => (await api.db.insert(s.pessoa).values({ nome, categoria: 'visitante', telefone: '11955550000', semCpf: true }).returning())[0]!;
   const cofre = api.app.get(CofreDocumentos, { strict: false });
-  return { api, ancora, cookies, id, get, post, t432, entrada, visitante, cofre };
+  return { api, ancora, cookies, id, get, post, d32, entrada, visitante, cofre };
 }
 type M = Awaited<ReturnType<typeof montar>>;
 
@@ -83,7 +83,7 @@ describe('exportação do titular (GET /lgpd/pessoas/:id/exportacao, spec §9.3)
 
   it('moradora: cadastro mascarado, vínculo com a conferência, veículos da unidade, encomenda retirada; nada de HMAC nem telefone', async () => {
     const ana = await m.id('Ana Ribeiro');
-    const enc = await m.post('porteiro', '/encomendas', { unidadeId: m.t432.id, destinatario: 'Ana Ribeiro', unidadeConfirmada: true });
+    const enc = await m.post('porteiro', '/encomendas', { unidadeId: m.d32.id, destinatario: 'Ana Ribeiro', unidadeConfirmada: true });
     expect((await m.post('porteiro', `/encomendas/${enc.body.data.id}/retirada`, { pessoaId: ana })).status).toBe(200);
     const r = await m.get('administracao', `/lgpd/pessoas/${ana}/exportacao`);
     expect(r.status).toBe(200);
@@ -92,10 +92,10 @@ describe('exportação do titular (GET /lgpd/pessoas/:id/exportacao, spec §9.3)
     expect(c).toMatchObject({ tipo: 'portaria-parque/lgpd-exportacao', versao: 1, geradoPor: 'Paula Nogueira' });
     expect(c.titular).toMatchObject({ nome: 'Ana Ribeiro', categoria: 'Morador', cpf: '***.982.247-**', semCpf: false, telefone: '(**) *****-0001' });
     expect(c.vinculos).toHaveLength(1);
-    expect(c.vinculos[0]).toMatchObject({ unidade: 'T4-32', tipo: 'proprietario', status: 'aprovado', comprovanteConferido: { tipo: 'escritura' } });
+    expect(c.vinculos[0]).toMatchObject({ unidade: 'D-32', tipo: 'proprietario', status: 'aprovado', comprovanteConferido: { tipo: 'escritura' } });
     expect(c.vinculos[0].comprovanteConferido.conferidoPor).toBeTruthy();
     expect(c.veiculos.map((v: { placa: string }) => v.placa).sort()).toEqual(['FKR-2C41', 'GHT-8J20']);
-    expect(c.encomendasRetiradas).toEqual([expect.objectContaining({ codigo: enc.body.data.codigo, unidade: 'T4-32' })]);
+    expect(c.encomendasRetiradas).toEqual([expect.objectContaining({ codigo: enc.body.data.codigo, unidade: 'D-32' })]);
     // Minimização: sem HMAC do CPF, sem número de CPF, sem telefone completo, sem hash de nada
     const texto = r.body.data.conteudo as string;
     expect(texto).not.toMatch(/documento_?[bB]usca/);
@@ -118,7 +118,7 @@ describe('exportação do titular (GET /lgpd/pessoas/:id/exportacao, spec §9.3)
     const c = JSON.parse(r.body.data.conteudo);
     expect(r.body.data.quantidade).toBe(2);
     expect(c.eventos.map((e: { tipo: string }) => e.tipo)).toEqual(['entrada', 'saida']);
-    expect(c.eventos[0]).toMatchObject({ unidade: 'T4-32', meio: expect.any(String), pontoAcesso: expect.any(String), retroativo: false });
+    expect(c.eventos[0]).toMatchObject({ unidade: 'D-32', meio: expect.any(String), pontoAcesso: expect.any(String), retroativo: false });
     expect(c.documentos).toEqual([expect.objectContaining({ tipo: 'anexo_ocorrencia', origem: `ocorrência ${oc.body.data.codigo}`, mime: 'image/png', tamanhoBytes: PNG.length, eliminadoEm: null })]);
     expect(r.body.data.conteudo).not.toContain('ANEXO-EM-CLARO');
     expect(r.body.data.conteudo).not.toContain('Discussão na portaria'); // descrição da ocorrência (terceiros) fica fora
@@ -191,10 +191,10 @@ describe('anonimização a pedido (POST /lgpd/pessoas/:id/anonimizar)', () => {
     expect(busca.body.data.itens ?? busca.body.data).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: bruno })]));
     const anon = await m.post('porteiro', '/pessoas/busca', { q: 'anonimizada' });
     expect(JSON.stringify(anon.body.data)).not.toContain(bruno);
-    const e = await m.post('porteiro', '/eventos-acesso', { pessoaId: bruno, unidadeDestinoId: m.t432.id, autorizadoPorTipo: 'excecao_porteiro', justificativa: JUST });
+    const e = await m.post('porteiro', '/eventos-acesso', { pessoaId: bruno, unidadeDestinoId: m.d32.id, autorizadoPorTipo: 'excecao_porteiro', justificativa: JUST });
     expect(e.status).toBe(422);
     expect(e.body.code).toBe('PESSOA_ANONIMIZADA');
-    const v = await m.post('administracao', '/vinculos', { pessoaId: bruno, unidadeId: m.t432.id, tipo: 'dependente' });
+    const v = await m.post('administracao', '/vinculos', { pessoaId: bruno, unidadeId: m.d32.id, tipo: 'dependente' });
     expect(v.status).toBe(422);
     expect(v.body.code).toBe('PESSOA_ANONIMIZADA');
   });
@@ -227,7 +227,7 @@ describe('retenção (POST /lgpd/retencao, RNF-09)', () => {
     ids.ex = ex!.id;
     await m.api.client.exec(`ALTER TABLE vinculo_unidade DISABLE TRIGGER vinculo_unidade_transicao;
       INSERT INTO vinculo_unidade (pessoa_id, unidade_id, tipo, status, registrado_por_id, vigencia_inicio, encerrado_em)
-      VALUES ('${ex!.id}', '${m.t432.id}', 'proprietario', 'encerrado', '${adm}', '2018-01-01', now() - interval '4 years');
+      VALUES ('${ex!.id}', '${m.d32.id}', 'proprietario', 'encerrado', '${adm}', '2018-01-01', now() - interval '4 years');
       ALTER TABLE vinculo_unidade ENABLE TRIGGER vinculo_unidade_transicao;`);
   });
   afterAll(async () => { await m.api.app.close(); await m.api.client.close(); });

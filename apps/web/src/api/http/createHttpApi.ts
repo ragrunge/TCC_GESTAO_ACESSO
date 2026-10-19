@@ -8,14 +8,15 @@
 // { data: [...], pagination: { cursor, hasNextPage } }; 204 sem corpo.
 import type { AxiosRequestConfig } from 'axios';
 import type {
-  AreaComum, AutorizacaoPrevia, AutorizacaoRetirada, ConferenciaComprovante, EventoView, Funcionario, Pessoa, RegistroAlteracao, Restricao, Unidade, UsuarioSistema, Veiculo,
+  AutorizacaoPrevia, AutorizacaoRetirada, ConferenciaComprovante, EventoView, Funcionario, Pessoa, RegistroAlteracao, Restricao, Unidade, UsuarioSistema, Veiculo,
   VinculoUnidade,
 } from '@portaria/domain/types';
 import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
 import type { Rota } from '@portaria/domain/rbac';
 import { brt, toInputDate } from '@portaria/domain/time';
+import { AGRUPAMENTOS } from '@portaria/domain/units';
 import type {
-  Api, AutorizacaoView, Autorizador, ConferenciaAncora, EstadoSelos, ExecucaoRetencao, ResultadoAnonimizacao, ResultadoRetencao, ResultadoSelar,
+  Api, AutorizacaoView, Autorizador, Catalogo, ConferenciaAncora, EstadoSelos, ExecucaoRetencao, ResultadoAnonimizacao, ResultadoRetencao, ResultadoSelar,
   SeloCadeia, EncomendaView, FichaPessoa, FiltroEncomendas, FiltroOcorrencias, OcorrenciaView, ResumoEncomendas, FiltroAlteracoesPagina, FiltroEventos, FiltroEventosPagina, FiltroRelatorio, FuncionarioView,
   LinhaPlanilha, Pagina, PacoteExportacao, PessoaBusca, PessoaLista, RelatorioImportacao, RelatorioResumo, RestricaoView, ResultadoBuscaGlobal,
   ResultadoImportacao, ResultadoRestricao, ResumoTurno, UnidadeDetalhe, UnidadeResumo, UsuarioComSenhaTemporaria, UsuarioSessao, VinculoView,
@@ -72,7 +73,7 @@ function paginaDe<T>(corpo: unknown): Pagina<T> {
 }
 
 /** A API manda campos a mais no catálogo (código e rótulo); a interface usa só os da Unidade. */
-const unidadeDe = (u: Unidade): Unidade => ({ id: u.id, torre: u.torre, numero: u.numero, ativo: u.ativo });
+const unidadeDe = (u: Unidade): Unidade => ({ id: u.id, bloco: u.bloco, numero: u.numero, ativo: u.ativo });
 
 // ----- Conversões (formato da API -> domínio) ---------------------------------------------------
 
@@ -313,16 +314,16 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
     },
     catalogo: {
       async obter() {
-        const c = dados<{ unidades: Unidade[]; areasComuns: AreaComum[] }>((await http.get('/catalogo')).data);
-        if (!c || !Array.isArray(c.unidades) || !Array.isArray(c.areasComuns)) throw respostaInvalida();
-        return { unidades: c.unidades.map(unidadeDe), areasComuns: c.areasComuns };
+        const c = dados<Catalogo>((await http.get('/catalogo')).data);
+        if (!c || !Array.isArray(c.unidades) || !Array.isArray(c.areasComuns) || !AGRUPAMENTOS.includes(c.agrupamento)) throw respostaInvalida();
+        return { agrupamento: c.agrupamento, unidades: c.unidades.map(unidadeDe), areasComuns: c.areasComuns };
       },
     },
     unidades: {
       async listar() { return todasAsPaginas<UnidadeResumo>('/unidades'); },
       async listarPagina(f = {}) {
         const params: Record<string, string | number> = { limite: f.limite ?? 50 };
-        if (f.torre !== undefined) params.torre = f.torre;
+        if (f.bloco !== undefined) params.bloco = f.bloco;
         if (f.cursor) params.cursor = f.cursor;
         return paginaDe<UnidadeResumo>((await http.get('/unidades', { params })).data);
       },
@@ -342,8 +343,8 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
         };
         return det;
       },
-      async criar(i) { return unidadeDe(dados<Unidade>((await http.post('/unidades', { torre: i.torre, numero: i.numero })).data)); },
-      async editar(i) { return unidadeDe(dados<Unidade>((await http.patch(`/unidades/${id(i.id)}`, { torre: i.torre, numero: i.numero })).data)); },
+      async criar(i) { return unidadeDe(dados<Unidade>((await http.post('/unidades', { bloco: i.bloco, numero: i.numero })).data)); },
+      async editar(i) { return unidadeDe(dados<Unidade>((await http.patch(`/unidades/${id(i.id)}`, { bloco: i.bloco, numero: i.numero })).data)); },
       async desativar(u) { return unidadeDe(dados<Unidade>((await http.post(`/unidades/${id(u)}/desativar`)).data)); },
       async reativar(u) { return unidadeDe(dados<Unidade>((await http.post(`/unidades/${id(u)}/reativar`)).data)); },
     },

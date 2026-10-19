@@ -14,7 +14,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { Body, Controller, HttpCode, Inject, Injectable, Module, Param, Post } from '@nestjs/common';
 import { cpfValido } from '@portaria/domain/rules';
-import { codigoUnidade } from '@portaria/domain/units';
+import { codigoUnidade, leiturasDoBloco, normalizarNumero } from '@portaria/domain/units';
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { AuditoriaService, type EntradaAuditoria } from '../auditoria/auditoria.service';
@@ -35,7 +35,7 @@ const LOTE = 400;
 
 const Linha = z.strictObject({
   linha: z.number().int().min(0).max(1_000_000),
-  torre: z.string().max(20), unidade: z.string().max(20), nome: z.string().max(150),
+  bloco: z.string().max(20), unidade: z.string().max(20), nome: z.string().max(150),
   documento: z.string().max(30), telefone: z.string().max(30), tipo: z.string().max(40).optional(),
 });
 type LinhaPlanilha = z.infer<typeof Linha>;
@@ -74,23 +74,23 @@ export class ImportacaoService {
 
   /** HMAC das linhas em forma canônica (ordem fixa de campos), com separação de domínio da chave do CPF. */
   private impressao(linhas: LinhaPlanilha[]) {
-    const canon = JSON.stringify(linhas.map((l) => [l.linha, l.torre, l.unidade, l.nome, l.documento, l.telefone, l.tipo ?? null]));
+    const canon = JSON.stringify(linhas.map((l) => [l.linha, l.bloco, l.unidade, l.nome, l.documento, l.telefone, l.tipo ?? null]));
     return createHmac('sha256', this.config.hmacCpfKey).update(`importacao:v1|${canon}`, 'utf8').digest('hex');
   }
 
   /** Regras da planilha contra o estado atual do banco (`exec`: a transação da confirmação, ou o pool na análise). */
   private async analisarLinhas(exec: Executor, linhas: LinhaPlanilha[]) {
-    const unidades = await exec.select({ id: unidade.id, torre: unidade.torre, numero: unidade.numero }).from(unidade).where(eq(unidade.ativo, true));
-    const porCodigo = new Map(unidades.map((u) => [`${u.torre}|${u.numero}`, u]));
+    const unidades = await exec.select({ id: unidade.id, bloco: unidade.bloco, numero: unidade.numero }).from(unidade).where(eq(unidade.ativo, true));
+    const porCodigo = new Map(unidades.map((u) => [codigoUnidade(u), u]));
     const inc: Inconsistencia[] = [];
     const candidatas: Omit<LinhaValida, 'existenteId' | 'reaproveitar'>[] = [];
     const vistos = new Set<string>();
     let duplicadas = 0;
     for (const l of linhas) {
-      const torre = Number(l.torre.replace(/\D/g, ''));
-      const numero = l.unidade.replace(/\D/g, '');
-      const un = porCodigo.get(`${torre}|${numero}`);
-      if (!un) { inc.push({ linha: l.linha, codigo: 'UNIDADE_INEXISTENTE', mensagem: `Unidade ${l.torre}/${l.unidade} não existe no condomínio (ou está desativada). Linha não importada.`, tipo: 'erro' }); continue; }
+      // "A", "Bloco A", "4" ou o antigo "T4"; número só com dígitos e normalizado ("3" -> "03"), como no cadastro.
+      const numero = normalizarNumero(l.unidade.replace(/\D/g, ''));
+      const un = leiturasDoBloco(l.bloco).map((bloco) => porCodigo.get(codigoUnidade({ bloco, numero }))).find(Boolean);
+      if (!un) { inc.push({ linha: l.linha, codigo: 'UNIDADE_INEXISTENTE', mensagem: `Unidade ${l.bloco}/${l.unidade} não existe no condomínio (ou está desativada). Linha não importada.`, tipo: 'erro' }); continue; }
       const nome = l.nome.trim();
       if (!nome) { inc.push({ linha: l.linha, codigo: 'NOME_AUSENTE', mensagem: 'Nome ausente. Linha não importada.', tipo: 'erro' }); continue; }
       const codigo = codigoUnidade(un);
