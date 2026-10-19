@@ -1,7 +1,7 @@
 // Adaptador HTTP (axios) com o transporte mockado: um `adapter` de teste no lugar da rede. Cobre o desembrulho dos
 // formatos da API, a conversão de erro em ApiError, o aviso único de sessão expirada e o 429 com Retry-After.
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
-import { createHttpApi, diaParaMs, MENSAGEM_MODULO_INDISPONIVEL, msParaDia, nomeDoAnexo } from '../api/http/createHttpApi';
+import { createHttpApi, diaParaMs, msParaDia, nomeDoAnexo } from '../api/http/createHttpApi';
 import { brt } from '@portaria/domain/time';
 import { segundosRetryAfter } from '../api/http/cliente';
 import { ApiError, type EventoSessao } from '../api/types';
@@ -179,18 +179,17 @@ describe('adaptador HTTP (axios)', () => {
     expect(await esperaErro(lista.api.usuarios.listar())).toMatchObject({ code: 'RESPOSTA_INVALIDA' });
   });
 
-  it('módulo sem API real: 501 local com mensagem amigável, sem ir à rede', async () => {
+  it('rotas e operações disponíveis: todas as do backend, incluindo LGPD e selo; operação desconhecida não', async () => {
     const { api, adapter } = montar(() => ({ status: 200 }));
-    const e = await esperaErro(api.lgpd.exportarPessoa('p1'));
-    expect(e).toMatchObject({ status: 501, code: 'MODULO_INDISPONIVEL', message: MENSAGEM_MODULO_INDISPONIVEL });
     expect(adapter).not.toHaveBeenCalled();
     expect(api.modo).toBe('http');
     expect(api.rotasDisponiveis).toEqual(['painel', 'entrada', 'pessoas', 'historico', 'relatorios', 'usuarios', 'unidades', 'cadastro', 'vinculos', 'funcionarios', 'importar', 'encomendas', 'ocorrencias']);
     for (const op of ['unidades.criar', 'veiculos.criar', 'autorizacoes.criar', 'restricoes.aprovar', 'eventos.criar', 'auditoria.exportar', 'relatorios.exportarCsv',
-      'encomendas.listarPagina', 'encomendas.entregar', 'encomendas.autorizarRetirada', 'ocorrencias.criar', 'ocorrencias.anexar', 'ocorrencias.baixarAnexo']) {
+      'encomendas.listarPagina', 'encomendas.entregar', 'encomendas.autorizarRetirada', 'ocorrencias.criar', 'ocorrencias.anexar', 'ocorrencias.baixarAnexo',
+      'lgpd.exportarPessoa', 'lgpd.anonimizar', 'lgpd.aplicarRetencao', 'lgpd.ultimaRetencao', 'auditoria.selos', 'auditoria.selar', 'auditoria.conferirAncora']) {
       expect(api.suporta!(op), op).toBe(true);
     }
-    expect(api.suporta!('lgpd.exportarPessoa')).toBe(false);
+    expect(api.suporta!('modulo.inexistente')).toBe(false);
   });
 });
 
@@ -767,5 +766,81 @@ describe('mock: encomendas, ocorrências e restrição (mesmo contrato da API)',
     expect((await api.restricoes.criar({
       pessoaId: id.marcos, unidadeId: un('T4-32'), motivo: 'Morador não autoriza', validaAte: brt(2026, 12, 31), solicitadaPorPessoaId: id.ana,
     })).unidadeId).toBe(un('T4-32'));
+  });
+});
+
+describe('adaptador HTTP: LGPD (spec 9.3) e selo da cadeia (spec 4.6)', () => {
+  const corpo = (c: InternalAxiosRequestConfig) => (c.data ? JSON.parse(c.data as string) : undefined);
+  const RET = {
+    visitantesPrestadores: 2, moradores: 1, registrosRedigidos: 5, pessoaIds: ['p1', 'p2', 'p3'], eventosDescartados: 40, eventosVencidosSemSelo: 0,
+    trilhaDescartada: 12, fotosEliminadas: 0, anexosEliminados: 0, prazoAnexosDefinido: false, arquivosOrfaosRemovidos: 1, registrosSemArquivo: 0,
+  };
+  const SELO = {
+    id: 's1', data: '2026-10-17', tipo: 'diario', ultimoSeq: 42, ultimoHash: 'c'.repeat(64), criadoEm: 1_760_000_000_000,
+    enviadoPara: 'email:sindico@condominio.test', enviadoEm: 1_760_000_100_000,
+  };
+
+  it('exportar: GET da pessoa (id codificado) e devolve o pacote; anonimizar converte retidoAte para o início do dia BRT', async () => {
+    const { api, adapter } = montar((c) => {
+      if (c.url?.endsWith('/exportacao')) return { status: 200, data: { data: { nomeArquivo: 'lgpd-p1.json', conteudo: '{}', quantidade: 3 } } };
+      return { status: 200, data: { data: { pessoaId: 'p 1', registrosRedigidos: 4, retido: ['Eventos'], eventosRetidos: 3, retidoAte: '2029-10-17', documentosEliminados: 1 } } };
+    });
+    expect(await api.lgpd.exportarPessoa('p 1')).toEqual({ nomeArquivo: 'lgpd-p1.json', conteudo: '{}', quantidade: 3 });
+    expect(adapter.mock.calls[0]![0]).toMatchObject({ method: 'get', url: '/lgpd/pessoas/p%201/exportacao' });
+    const r = await api.lgpd.anonimizar('p 1');
+    expect(adapter.mock.calls[1]![0]).toMatchObject({ method: 'post', url: '/lgpd/pessoas/p%201/anonimizar' });
+    expect(r).toEqual({ pessoaId: 'p 1', registrosRedigidos: 4, retido: ['Eventos'], eventosRetidos: 3, retidoAte: brt(2029, 10, 17), documentosEliminados: 1 });
+  });
+
+  it('anonimizar sem eventos retidos: retidoAte nulo continua nulo; erro 422 da regra chega como ApiError', async () => {
+    const ok = montar(() => ({ status: 200, data: { data: { pessoaId: 'p1', registrosRedigidos: 0, retido: [], eventosRetidos: 0, retidoAte: null, documentosEliminados: 0 } } }));
+    expect((await ok.api.lgpd.anonimizar('p1')).retidoAte).toBeNull();
+    const regra = montar(() => ({ status: 422, data: { code: 'PESSOA_COM_VINCULO_VALIDO', message: 'A pessoa tem vínculo válido.' } }));
+    expect(await esperaErro(regra.api.lgpd.anonimizar('p1'))).toMatchObject({ status: 422, code: 'PESSOA_COM_VINCULO_VALIDO' });
+  });
+
+  it('retenção: POST /lgpd/retencao sem corpo; última execução (ou null); resposta fora do contrato é RESPOSTA_INVALIDA', async () => {
+    let ultima: unknown = { em: 1_760_000_000_000, porNome: 'Agendador', resultado: RET };
+    const { api, adapter } = montar((c) => (c.method === 'post' ? { status: 200, data: { data: RET } } : { status: 200, data: { data: { ultima } } }));
+    expect(await api.lgpd.aplicarRetencao()).toEqual(RET);
+    expect(adapter.mock.calls[0]![0]).toMatchObject({ method: 'post', url: '/lgpd/retencao' });
+    expect(await api.lgpd.ultimaRetencao()).toEqual({ em: 1_760_000_000_000, porNome: 'Agendador', resultado: RET });
+    expect(adapter.mock.calls[1]![0]).toMatchObject({ method: 'get', url: '/lgpd/retencao' });
+    ultima = null;
+    expect(await api.lgpd.ultimaRetencao()).toBeNull();
+    ultima = { em: 'ontem', porNome: 'x', resultado: RET };
+    expect(await esperaErro(api.lgpd.ultimaRetencao())).toMatchObject({ code: 'RESPOSTA_INVALIDA' });
+    const torto = montar(() => ({ status: 200, data: { data: { moradores: 1 } } }));
+    expect(await esperaErro(torto.api.lgpd.aplicarRetencao())).toMatchObject({ code: 'RESPOSTA_INVALIDA' });
+    const semUltima = montar(() => ({ status: 200, data: { data: {} } }));
+    expect(await esperaErro(semUltima.api.lgpd.ultimaRetencao())).toMatchObject({ code: 'RESPOSTA_INVALIDA' });
+  });
+
+  it('selos: estado com a data do selo em ms (dia BRT); selar; conferir manda seq e hash normalizado no corpo', async () => {
+    const { api, adapter } = montar((c) => {
+      if (c.url === '/auditoria/selos' && c.method === 'get') return { status: 200, data: { data: { ultimo: SELO, pendentesEnvio: 0, destinos: ['email'], agendador: true } } };
+      if (c.url === '/auditoria/selos') return { status: 200, data: { data: { selo: { ...SELO, tipo: 'manual', enviadoPara: null, enviadoEm: null }, novo: true, ancora: 'pendente' } } };
+      return { status: 200, data: { data: { confere: false, motivo: 'hash_divergente', seq: 42, hashNoBanco: 'd'.repeat(64), seloRegistrado: true } } };
+    });
+    const e = await api.auditoria.selos();
+    expect(e).toEqual({ ultimo: { ...SELO, data: brt(2026, 10, 17) }, pendentesEnvio: 0, destinos: ['email'], agendador: true });
+    const r = await api.auditoria.selar();
+    expect(adapter.mock.calls[1]![0]).toMatchObject({ method: 'post', url: '/auditoria/selos' });
+    expect(r).toMatchObject({ novo: true, ancora: 'pendente', selo: { tipo: 'manual', data: brt(2026, 10, 17), enviadoEm: null } });
+    const c = await api.auditoria.conferirAncora({ seq: 42, hash: `  ${'C'.repeat(64)} ` });
+    expect(adapter.mock.calls[2]![0]).toMatchObject({ method: 'post', url: '/auditoria/selos/conferir' });
+    expect(corpo(adapter.mock.calls[2]![0])).toEqual({ seq: 42, hash: 'c'.repeat(64) });
+    expect(c).toMatchObject({ confere: false, motivo: 'hash_divergente' });
+  });
+
+  it('selos: sem selo ainda (ultimo nulo); âncora fora do contrato e selo sem hash são RESPOSTA_INVALIDA', async () => {
+    const vazio = montar(() => ({ status: 200, data: { data: { ultimo: null, pendentesEnvio: 0, destinos: [], agendador: false } } }));
+    expect(await vazio.api.auditoria.selos()).toEqual({ ultimo: null, pendentesEnvio: 0, destinos: [], agendador: false });
+    const ancora = montar(() => ({ status: 200, data: { data: { selo: SELO, novo: true, ancora: 'talvez' } } }));
+    expect(await esperaErro(ancora.api.auditoria.selar())).toMatchObject({ code: 'RESPOSTA_INVALIDA' });
+    const semHash = montar(() => ({ status: 200, data: { data: { ultimo: { ...SELO, ultimoHash: undefined }, pendentesEnvio: 0, destinos: [], agendador: true } } }));
+    expect(await esperaErro(semHash.api.auditoria.selos())).toMatchObject({ code: 'RESPOSTA_INVALIDA' });
+    const conflito = montar(() => ({ status: 409, data: { code: 'SELO_EM_ANDAMENTO', message: 'Já há um selo em andamento.' } }));
+    expect(await esperaErro(conflito.api.auditoria.selar())).toMatchObject({ status: 409, code: 'SELO_EM_ANDAMENTO' });
   });
 });

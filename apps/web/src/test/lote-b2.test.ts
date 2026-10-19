@@ -388,4 +388,25 @@ describe('LGPD (spec 9.3) e retenção (RNF-09)', () => {
     expect(reg.depois).toMatchObject({ visitantesPrestadores: 1, moradores: 1 });
     expect(JSON.stringify(reg)).not.toContain('Osvaldo');
   });
+
+  it('última execução da retenção: null antes de rodar; depois, a mais recente com quem rodou e as contagens; só o síndico', async () => {
+    const api = novaApi();
+    await entrarComo(api, 'paula.nogueira');
+    expect((await esperaErro(api.lgpd.ultimaRetencao())).status).toBe(403);
+    await entrarComo(api, 'roberto.faria');
+    expect(await api.lgpd.ultimaRetencao()).toBeNull();
+    await api.lgpd.aplicarRetencao();
+    await api.lgpd.aplicarRetencao();
+    const u = await api.lgpd.ultimaRetencao();
+    expect(u).toMatchObject({ porNome: 'Roberto Faria', resultado: { visitantesPrestadores: 0, moradores: 0, registrosRedigidos: 0, pessoaIds: [] } });
+    expect(typeof u!.em).toBe('number');
+  });
+
+  it('selo e âncora externa não existem no mock: suporta() falso e 501 legível; o resto continua suportado', async () => {
+    const api = novaApi();
+    await entrarComo(api, 'roberto.faria');
+    for (const op of ['auditoria.selos', 'auditoria.selar', 'auditoria.conferirAncora']) expect(api.suporta!(op), op).toBe(false);
+    for (const op of ['lgpd.exportarPessoa', 'lgpd.ultimaRetencao', 'auditoria.verificarIntegridade', 'veiculos.criar']) expect(api.suporta!(op), op).toBe(true);
+    expect(await esperaErro(api.auditoria.selar())).toMatchObject({ status: 501, code: 'MODULO_INDISPONIVEL' });
+  });
 });

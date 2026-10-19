@@ -615,8 +615,15 @@ export function createMockApi(opts: MockOptions = {}): Api {
   // O mock nunca exige troca de senha: a demonstração entra com qualquer senha.
   const comSessao = (u: UsuarioSistema) => ({ ...clone(u), deveTrocarSenha: false });
 
+  // Selo e âncora externa (spec 4.6) dependem do banco e de um destino fora dele: só existem na API real.
+  const SEM_SELO_NO_MOCK = new Set(['auditoria.selos', 'auditoria.selar', 'auditoria.conferirAncora']);
+  const semSelo = async (): Promise<never> => {
+    throw new ApiError(501, 'MODULO_INDISPONIVEL', 'Selo e âncora externa só existem na API real.');
+  };
+
   const api: Api = {
     modo: 'mock',
+    suporta: (op) => !SEM_SELO_NO_MOCK.has(op),
     auth: {
       // 2FA fica para a fase de segurança (pós-MVP): login é só usuário + senha para todos os papéis.
       async login({ login, senha }) {
@@ -1776,6 +1783,9 @@ export function createMockApi(opts: MockOptions = {}): Api {
           observacao: 'Arquivo de hashes para verificação. Este protótipo gera o arquivo no navegador; não há assinatura digital nem âncora externa.',
         });
       },
+      selos: semSelo,
+      selar: semSelo,
+      conferirAncora: semSelo,
     },
 
     usuarios: {
@@ -1919,6 +1929,23 @@ export function createMockApi(opts: MockOptions = {}): Api {
           // retencao_execucao do schema: só contagens e ids, sem dado pessoal
           registrar(d, u, 'lgpd.retencao', 'retencao', '-', null, { visitantesPrestadores, moradores, registrosRedigidos, pessoaIds });
           return { visitantesPrestadores, moradores, registrosRedigidos, pessoaIds };
+        });
+      },
+      // Última execução: o registro lgpd.retencao mais recente da trilha (o `depois` guarda as contagens).
+      async ultimaRetencao() {
+        exige('lgpd.retencao');
+        return ler((d) => {
+          const r = [...d.auditLog].reverse().find((x) => x.acao === 'lgpd.retencao');
+          if (!r) return null;
+          const x = (r.depois ?? {}) as Record<string, unknown>;
+          const num = (k: string) => (typeof x[k] === 'number' ? (x[k] as number) : 0);
+          return {
+            em: r.em, porNome: r.usuarioNome,
+            resultado: {
+              visitantesPrestadores: num('visitantesPrestadores'), moradores: num('moradores'), registrosRedigidos: num('registrosRedigidos'),
+              pessoaIds: Array.isArray(x.pessoaIds) ? (x.pessoaIds as string[]) : [],
+            },
+          };
         });
       },
     },

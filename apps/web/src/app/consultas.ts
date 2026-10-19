@@ -50,6 +50,10 @@ export const CHAVES = {
   /** Verificação da cadeia inteira: cara na API real; a gaveta reaproveita o resultado por alguns segundos. */
   integridade: ['auditoria', 'integridade'] as const,
   alteracoes: (acao: string) => ['auditoria', 'alteracoes', acao] as const,
+  /** Último selo da cadeia e estado da âncora externa (spec 4.6). */
+  selos: ['auditoria', 'selos'] as const,
+  /** Última execução da retenção (LGPD, RNF-09). */
+  retencao: ['lgpd', 'retencao'] as const,
 };
 
 /** Escritas que mudam vínculo: a fila, o badge, a unidade (moradores e resumo), a pessoa (ficha, categoria) e a busca. */
@@ -65,6 +69,11 @@ export const APOS_FUNCIONARIO = [CHAVES.funcionarios, CHAVES.pessoas, CHAVES.bus
  */
 export const APOS_EVENTO = [CHAVES.eventos, CHAVES.turno, CHAVES.unidades, CHAVES.pessoas, CHAVES.busca, CHAVES.autorizacoes, CHAVES.integridade, ['auditoria', 'alteracoes']] as const;
 /** Autorização prévia e restrição: o detalhe da unidade, o turno (contagens), as listas de hoje e as pendências. */
+/**
+ * Anonimização e retenção: pessoas (lista, ficha, busca, filas), a última execução, os eventos e a integridade (a
+ * retenção descarta o prefixo selado da cadeia) e a trilha de alterações (redação).
+ */
+export const APOS_LGPD = [...APOS_PESSOA, CHAVES.retencao, CHAVES.eventos, CHAVES.integridade, CHAVES.selos, ['auditoria', 'alteracoes']] as const;
 export const APOS_AUTORIZACAO = [...APOS_VINCULO, CHAVES.turno, CHAVES.autorizacoes, CHAVES.restricoes] as const;
 
 /** Receber, entregar ou autorizar retirada: as filas, as contagens, o painel (turno) e a trilha de alterações. */

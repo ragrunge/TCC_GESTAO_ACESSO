@@ -112,6 +112,18 @@ test.describe('10. Lote B2', () => {
     await expect(ficha.getByText('O que fica retido')).toBeVisible();
   });
 
+  test('retenção (LGPD): síndico aplica na seção de Usuários e vê a última execução', async ({ page }) => {
+    await entrarComo(page, 'Síndico');
+    await page.getByRole('link', { name: 'Usuários' }).click();
+    const secao = page.getByRole('region', { name: 'Retenção (LGPD)' });
+    await expect(secao.getByText('A retenção ainda não foi executada.')).toBeVisible();
+    await secao.getByRole('button', { name: 'Aplicar retenção agora' }).click();
+    await secao.getByRole('button', { name: 'Confirmar retenção' }).click();
+    await expect(toast(page, /Retenção aplicada/)).toBeVisible();
+    await expect(secao.getByText(/Última execução: .*, por Roberto Faria\./)).toBeVisible();
+    await expect(secao.getByText('Visitantes e prestadores anonimizados')).toBeVisible();
+  });
+
   test('RF-33: administração altera papel de usuário, mas não mexe no síndico', async ({ page }) => {
     await entrarComo(page, 'Administração');
     await page.getByRole('link', { name: 'Usuários' }).click();

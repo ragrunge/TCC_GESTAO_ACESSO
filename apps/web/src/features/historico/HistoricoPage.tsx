@@ -19,6 +19,7 @@ import { APOS_EVENTO, CHAVES, useInvalidar } from '../../app/consultas';
 import { AutorizacaoEvento, destaqueEvento, quandoCurto } from '../common/evento';
 import { EventoGaveta } from './EventoGaveta';
 import { baixarArquivo } from './download';
+import { SeloAncora } from './SeloAncora';
 import { TrilhaAlteracoes } from './TrilhaAlteracoes';
 
 /** Eventos por página (a lista cresce com "Carregar mais"; a trilha inteira não vem de uma vez). */
@@ -75,7 +76,7 @@ export function HistoricoPage() {
     try {
       const r = await api.auditoria.verificarIntegridade();
       setInteg(r);
-      void invalidar([CHAVES.integridade]);
+      void invalidar([CHAVES.integridade, CHAVES.selos]);
       if (r.valido) avisar({ titulo: 'Trilha íntegra', texto: `${r.verificados} registros verificados; a cadeia de hashes está consistente.` });
       else avisar({ tom: 'vermelho', titulo: 'Adulteração detectada', texto: `Primeiro registro divergente: seq ${r.primeiroSeqInvalido}.` });
     } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); } finally { setVerificando(false); }
@@ -92,6 +93,8 @@ export function HistoricoPage() {
   const dados = useMemo(() => (lista.data?.pages ?? []).flatMap((p) => p.itens), [lista.data]);
   const invalidoSeq = integ && !integ.valido ? integ.primeiroSeqInvalido : undefined;
   const limpar = () => { setDe(toInputDate(agora() - 7 * DIA)); setAte(toInputDate(agora())); setUnidade(''); setPessoa(''); setOperadorId(''); setTipo(''); setMeio(''); setExc(false); setRetro(false); };
+  // Selo e âncora externa (spec 4.6): só na API real (o mock não tem selo).
+  const mostraSelo = podeVerificar && (api.suporta?.('auditoria.selos') ?? true);
   const campo = 'flex flex-col gap-1 text-[13px] font-medium';
   const entrada = 'input !h-10 !px-[10px] !text-[14px]';
 
@@ -117,6 +120,8 @@ export function HistoricoPage() {
         : <Alert tom="vermelho" role="alert" titulo="ADULTERAÇÃO DETECTADA NA TRILHA">
             O primeiro registro inconsistente é o de sequência <strong>{integ.primeiroSeqInvalido}</strong> ({integ.motivo === 'hash_divergente' ? 'o conteúdo não bate com o hash gravado' : integ.motivo === 'hash_anterior_incoerente' ? 'o encadeamento com o registro anterior está quebrado' : integ.motivo === 'selo_divergente' ? 'a cadeia não bate com o selo diário: foi recalculada depois de alterada' : 'há lacuna na sequência'}). Os {integ.verificados} registros anteriores estão íntegros. Preserve o arquivo exportado e acione o síndico.
           </Alert>)}
+
+      {mostraSelo && <SeloAncora />}
 
       <form className="grid grid-cols-4 items-end gap-x-4 gap-y-3 rounded-[10px] border border-[#DCE1E5] bg-white px-5 py-4" onSubmit={(e) => e.preventDefault()} aria-label="Filtros">
         <div className={campo}>Período

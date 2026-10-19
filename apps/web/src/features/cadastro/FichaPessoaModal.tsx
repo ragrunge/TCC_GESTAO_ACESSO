@@ -12,9 +12,9 @@ import { useToast } from '../../components/Toast';
 import { Avatar } from '../../components/UnitTag';
 import { ROTULO_CATEGORIA, ROTULO_VINCULO, type Pessoa } from '@portaria/domain/types';
 import { formatarTelefone } from '@portaria/domain/cpf';
-import { agora, fmtDataHora } from '@portaria/domain/time';
+import { agora, fmtData, fmtDataHora } from '@portaria/domain/time';
 import { mensagemErro } from '../../app/useAsync';
-import { APOS_PESSOA, CHAVES, useInvalidar } from '../../app/consultas';
+import { APOS_LGPD, APOS_PESSOA, CHAVES, useInvalidar } from '../../app/consultas';
 import { chipDoEvento, quandoCurto, textoAutorizacao } from '../common/evento';
 import { baixarArquivo } from '../historico/download';
 
@@ -42,6 +42,7 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
       const p = await api.lgpd.exportarPessoa(id);
       baixarArquivo(p.nomeArquivo, p.conteudo, 'application/json');
       avisar({ titulo: 'Dados exportados', texto: `Arquivo ${p.nomeArquivo} gerado. A exportação fica registrada na trilha.` });
+      void invalidar([['auditoria', 'alteracoes']]); // a exportação entra na trilha (lgpd.exportar)
     } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
   }
   async function anonimizar() {
@@ -50,7 +51,7 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
       const r = await api.lgpd.anonimizar(id);
       setResultado(r); setAnonimizando(false);
       avisar({ tom: 'ambar', titulo: 'Pessoa anonimizada', texto: `Dados pessoais removidos; ${r.registrosRedigidos} registro(s) da trilha redigido(s).` });
-      void invalidar(APOS_PESSOA);
+      void invalidar(APOS_LGPD);
     } catch (e) { setErro(mensagemErro(e)); }
   }
 
@@ -74,7 +75,14 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
           </div>
           {anonimizada && <Alert tom="neutro" role="status">Cadastro anonimizado em {fmtDataHora(f.pessoa.anonimizadaEm!)}. Os eventos de acesso continuam na trilha só pelo id, até o fim do prazo de retenção.</Alert>}
           {resultado && (
-            <Alert tom="ambar" titulo="O que fica retido">
+            <Alert tom="ambar" titulo="O que fica retido" role="status">
+              {resultado.eventosRetidos !== undefined && (
+                <p className="mb-1">
+                  {resultado.eventosRetidos === 0 ? 'Nenhum evento de acesso desta pessoa fica retido.'
+                    : <>{resultado.eventosRetidos} evento(s) de acesso ficam retidos só pelo id{resultado.retidoAte ? <> até {fmtData(resultado.retidoAte)}</> : null}.</>}
+                  {resultado.documentosEliminados ? <> {resultado.documentosEliminados} arquivo(s) da pessoa eliminado(s) do armazenamento.</> : null}
+                </p>
+              )}
               <ul className="list-disc pl-5">{resultado.retido.map((r) => <li key={r}>{r}</li>)}</ul>
             </Alert>
           )}

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Copy, TriangleAlert } from 'lucide-react';
-import { useApi, type NovoUsuarioInput, type UsuarioComSenhaTemporaria } from '../../api';
+import { type NovoUsuarioInput, type UsuarioComSenhaTemporaria } from '../../api';
 import { useAuth, useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
 import { Badge } from '../../components/Badge';
@@ -13,6 +13,7 @@ import { useToast } from '../../components/Toast';
 import { ROTULO_PAPEL, type Papel, type UsuarioSistema } from '@portaria/domain/types';
 import { fmtDataHora } from '@portaria/domain/time';
 import { mensagemErro } from '../../app/useAsync';
+import { RetencaoLgpd } from './RetencaoLgpd';
 import { useAcoesUsuario, useUsuarios } from './useUsuarios';
 
 const COLUNAS = 'minmax(0,1.3fr) 140px 100px 190px 280px';
@@ -21,7 +22,6 @@ const COLUNAS = 'minmax(0,1.3fr) 140px 100px 190px 280px';
 interface SenhaExibida extends UsuarioComSenhaTemporaria { motivo: 'criado' | 'redefinido' }
 
 export function UsuariosPage() {
-  const api = useApi();
   const { usuario: eu } = useAuth();
   const { avisar } = useToast();
   const podeGerenciar = useCan('usuario.gerenciar');
@@ -33,16 +33,9 @@ export function UsuariosPage() {
   const [redefinir, setRedefinir] = useState<UsuarioSistema | null>(null);
   // RNF-04: administração gerencia usuários, exceto síndico; ninguém altera o próprio papel
   const gerenciaSindico = useCan('usuario.gerenciar_sindico');
-  // Retenção (LGPD) ainda não existe na API real: o botão só aparece no modo demonstração.
-  const podeRetencao = useCan('lgpd.retencao') && api.modo === 'mock';
+  // Retenção (LGPD, RNF-09): só o síndico; existe no mock e na API real.
+  const podeRetencao = useCan('lgpd.retencao');
   const papeisPermitidos = (Object.keys(ROTULO_PAPEL) as Papel[]).filter((p) => p !== 'sindico' || gerenciaSindico);
-
-  async function aplicarRetencao() {
-    try {
-      const r = await api.lgpd.aplicarRetencao();
-      avisar({ tom: 'ambar', titulo: 'Retenção aplicada (RNF-09)', texto: `${r.visitantesPrestadores} visitante(s)/prestador(es) e ${r.moradores} ex-morador(es) anonimizados; ${r.registrosRedigidos} registro(s) da trilha redigido(s). Os eventos de acesso não foram apagados.` });
-    } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
-  }
 
   /** Ação de linha: sucesso vira toast; erro (403 de permissão, 422 de regra) vira toast vermelho com a mensagem da API. */
   async function executar(fn: () => Promise<unknown>, ok?: string) {
@@ -58,7 +51,6 @@ export function UsuariosPage() {
     <div className="flex flex-col gap-5">
       <PageHeader titulo="Usuários do sistema" descricao="Cada operador tem login próprio. Usuários desativados mantêm o histórico."
         acoes={<>
-          {podeRetencao && <Button onClick={() => void aplicarRetencao()}>Aplicar retenção (LGPD)</Button>}
           {podeGerenciar && <Button variante="primario" onClick={() => setNovo(true)}>Novo usuário</Button>}
         </>} />
       {lista.error && <Alert tom="vermelho" role="alert">{mensagemErro(lista.error)}</Alert>}
@@ -87,6 +79,7 @@ export function UsuariosPage() {
           </ListaLinha>
         ))}
       </Lista>
+      {podeRetencao && <RetencaoLgpd />}
 
       {novo && <NovoUsuarioModal onClose={() => setNovo(false)}
         onSalvar={async (f) => { await acoes.criar.mutateAsync(f); setNovo(false); }} />}

@@ -1,7 +1,7 @@
 // Implementação HTTP da interface Api contra o backend NestJS (spec §5.1 e §6). Hoje cobre autenticação, sessão,
 // usuários, unidades, catálogo, busca, pessoas, funcionários, veículos, vínculos, importação, registro de acesso
-// (eventos, presentes, turno), autorizações prévias, restrições, auditoria, relatórios, encomendas e ocorrências (com
-// anexos cifrados). LGPD lança 501 até a API real tê-la (a UI mostra "disponível em breve").
+// (eventos, presentes, turno), autorizações prévias, restrições, auditoria (com selo e âncora externa), relatórios,
+// encomendas, ocorrências (com anexos cifrados) e LGPD (exportação do titular, anonimização e retenção).
 // Formatos que o adaptador converte para o domínio: data de calendário 'YYYY-MM-DD' (dia BRT) <-> número do início do
 // dia BRT; placa 'ABC1D23' -> 'ABC-1D23' (como o mock exibe).
 // Formato REST (skill rest-api): todo 2xx com corpo vem em { data }; listas paginadas em
@@ -15,7 +15,8 @@ import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
 import type { Rota } from '@portaria/domain/rbac';
 import { brt, toInputDate } from '@portaria/domain/time';
 import type {
-  Api, AutorizacaoView, Autorizador, EncomendaView, FichaPessoa, FiltroEncomendas, FiltroOcorrencias, OcorrenciaView, ResumoEncomendas, FiltroAlteracoesPagina, FiltroEventos, FiltroEventosPagina, FiltroRelatorio, FuncionarioView,
+  Api, AutorizacaoView, Autorizador, ConferenciaAncora, EstadoSelos, ExecucaoRetencao, ResultadoAnonimizacao, ResultadoRetencao, ResultadoSelar,
+  SeloCadeia, EncomendaView, FichaPessoa, FiltroEncomendas, FiltroOcorrencias, OcorrenciaView, ResumoEncomendas, FiltroAlteracoesPagina, FiltroEventos, FiltroEventosPagina, FiltroRelatorio, FuncionarioView,
   LinhaPlanilha, Pagina, PacoteExportacao, PessoaBusca, PessoaLista, RelatorioImportacao, RelatorioResumo, RestricaoView, ResultadoBuscaGlobal,
   ResultadoImportacao, ResultadoRestricao, ResumoTurno, UnidadeDetalhe, UnidadeResumo, UsuarioComSenhaTemporaria, UsuarioSessao, VinculoView,
 } from '../types';
@@ -48,13 +49,11 @@ export const OPERACOES_HTTP: ReadonlySet<string> = new Set([
   'encomendas.autorizarRetirada',
   'ocorrencias.listar', 'ocorrencias.listarPagina', 'ocorrencias.obter', 'ocorrencias.criar', 'ocorrencias.alterarStatus',
   'ocorrencias.vincularEventos', 'ocorrencias.anexar', 'ocorrencias.baixarAnexo',
+  'auditoria.selos', 'auditoria.selar', 'auditoria.conferirAncora',
+  'lgpd.exportarPessoa', 'lgpd.anonimizar', 'lgpd.aplicarRetencao', 'lgpd.ultimaRetencao',
 ]);
 
 export const MENSAGEM_MODULO_INDISPONIVEL = 'Módulo ainda não disponível na API real';
-
-const indisponivel = () => async (): Promise<never> => {
-  throw new ApiError(501, 'MODULO_INDISPONIVEL', MENSAGEM_MODULO_INDISPONIVEL);
-};
 
 const respostaInvalida = () => new ApiError(502, 'RESPOSTA_INVALIDA', 'Resposta inesperada do servidor.');
 
@@ -195,6 +194,18 @@ export function nomeDoAnexo(disposicao: unknown): string {
   return m?.[1] ?? 'anexo';
 }
 
+// ----- LGPD e selo (spec 4.6 e 9.3) -------------------------------------------------------------
+
+type SeloApi = Omit<SeloCadeia, 'data'> & { data: string };
+function seloDe(s: SeloApi | null | undefined): SeloCadeia {
+  if (!s || typeof s.id !== 'string' || typeof s.ultimoSeq !== 'number' || typeof s.ultimoHash !== 'string') throw respostaInvalida();
+  return { ...s, data: diaParaMs(s.data)!, enviadoPara: s.enviadoPara ?? null, enviadoEm: s.enviadoEm ?? null };
+}
+function retencaoDe(r: ResultadoRetencao | null | undefined): ResultadoRetencao {
+  if (!r || typeof r.visitantesPrestadores !== 'number' || typeof r.moradores !== 'number' || !Array.isArray(r.pessoaIds)) throw respostaInvalida();
+  return r;
+}
+
 function pacoteDe(corpo: unknown): PacoteExportacao {
   const p = dados<PacoteExportacao>(corpo);
   if (!p || typeof p.nomeArquivo !== 'string' || typeof p.conteudo !== 'string') throw respostaInvalida();
@@ -218,7 +229,6 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
   const cliente = criarCliente(base, opcoes);
   const { http } = cliente;
   const id = (v: string) => encodeURIComponent(v);
-  const n = indisponivel;
 
   /** Percorre a listagem por cursor até `hasNextPage` falso (a interface Api devolve a lista inteira). */
   async function todasAsPaginas<T>(caminho: string, extra: Record<string, string> = {}): Promise<T[]> {
@@ -654,8 +664,39 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
         return todasAsPaginas<RegistroAlteracao>('/auditoria/alteracoes', extra);
       },
       async exportar(f = {}) { return pacoteDe((await http.post('/auditoria/exportacoes', filtroCorpo(f))).data); },
+      async selos() {
+        const r = dados<Omit<EstadoSelos, 'ultimo'> & { ultimo: SeloApi | null }>((await http.get('/auditoria/selos')).data);
+        if (!r || typeof r.pendentesEnvio !== 'number' || !Array.isArray(r.destinos)) throw respostaInvalida();
+        return { ultimo: r.ultimo ? seloDe(r.ultimo) : null, pendentesEnvio: r.pendentesEnvio, destinos: r.destinos, agendador: r.agendador === true };
+      },
+      async selar() {
+        const r = dados<Omit<ResultadoSelar, 'selo'> & { selo: SeloApi }>((await http.post('/auditoria/selos')).data);
+        if (!r || typeof r.novo !== 'boolean' || !['enviada', 'pendente', 'sem_destino'].includes(r.ancora)) throw respostaInvalida();
+        return { selo: seloDe(r.selo), novo: r.novo, ancora: r.ancora };
+      },
+      async conferirAncora({ seq, hash }) {
+        const r = dados<ConferenciaAncora>((await http.post('/auditoria/selos/conferir', { seq, hash: hash.trim().toLowerCase() })).data);
+        if (!r || typeof r.confere !== 'boolean' || typeof r.motivo !== 'string') throw respostaInvalida();
+        return r;
+      },
     },
-    lgpd: { exportarPessoa: n(), anonimizar: n(), aplicarRetencao: n() },
+    lgpd: {
+      async exportarPessoa(pid) { return pacoteDe((await http.get(`/lgpd/pessoas/${id(pid)}/exportacao`)).data); },
+      async anonimizar(pid) {
+        const r = dados<Omit<ResultadoAnonimizacao, 'retidoAte'> & { retidoAte?: string | null }>((await http.post(`/lgpd/pessoas/${id(pid)}/anonimizar`)).data);
+        if (!r || typeof r.pessoaId !== 'string' || typeof r.registrosRedigidos !== 'number' || !Array.isArray(r.retido)) throw respostaInvalida();
+        return { ...r, retidoAte: diaParaMs(r.retidoAte ?? null) };
+      },
+      async aplicarRetencao() { return retencaoDe(dados<ResultadoRetencao>((await http.post('/lgpd/retencao')).data)); },
+      async ultimaRetencao() {
+        const r = dados<{ ultima?: ExecucaoRetencao | null } | null>((await http.get('/lgpd/retencao')).data);
+        if (!r || !('ultima' in r)) throw respostaInvalida();
+        const u = r.ultima;
+        if (u === null || u === undefined) return null;
+        if (typeof u.em !== 'number' || typeof u.porNome !== 'string') throw respostaInvalida();
+        return { em: u.em, porNome: u.porNome, resultado: retencaoDe(u.resultado) };
+      },
+    },
     importacao: {
       async analisar({ arquivo, linhas }) {
         const r = dados<RelatorioApi>((await http.post('/importacoes', { arquivo, linhas })).data);

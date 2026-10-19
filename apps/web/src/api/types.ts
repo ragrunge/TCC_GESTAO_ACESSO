@@ -231,9 +231,50 @@ export interface ResultadoBuscaGlobal {
 }
 
 /** LGPD art. 18 (spec 9.3). */
-export interface ResultadoAnonimizacao { pessoaId: string; registrosRedigidos: number; retido: string[] }
+export interface ResultadoAnonimizacao {
+  pessoaId: string; registrosRedigidos: number; retido: string[];
+  /** API real: eventos da pessoa que ficam retidos (só pelo id) e até quando (início do dia BRT, ms). Ausentes no mock. */
+  eventosRetidos?: number; retidoAte?: number | null;
+  /** API real: arquivos da pessoa (foto) eliminados do storage. */
+  documentosEliminados?: number;
+}
 export interface ResultadoRetencao {
   visitantesPrestadores: number; moradores: number; registrosRedigidos: number; pessoaIds: string[];
+  // Só na API real (o mock só anonimiza pessoas):
+  /** Eventos do prefixo da cadeia descartados (com selo no seq de corte). */
+  eventosDescartados?: number;
+  /** Eventos com mais de 3 anos que ficaram por falta de selo no ponto de corte. */
+  eventosVencidosSemSelo?: number;
+  /** Registros da trilha de alterações com mais de 3 anos descartados. */
+  trilhaDescartada?: number;
+  fotosEliminadas?: number;
+  anexosEliminados?: number;
+  /** false: o prazo dos anexos de ocorrência não foi definido (decisão em aberto) e nenhum anexo foi eliminado. */
+  prazoAnexosDefinido?: boolean;
+  arquivosOrfaosRemovidos?: number;
+  /** Registros de documento cujo arquivo não está no volume (só registrado em log; nada é alterado). */
+  registrosSemArquivo?: number;
+}
+/** Última execução da retenção (agendador ou sob demanda). */
+export interface ExecucaoRetencao { em: number; porNome: string; resultado: ResultadoRetencao }
+
+/** Selo da cadeia de hashes (spec 4.6). `data` = início do dia BRT (ms). */
+export interface SeloCadeia {
+  id: string; data: number; tipo: 'diario' | 'manual'; ultimoSeq: number; ultimoHash: string; criadoEm: number;
+  /** Destino da âncora externa; nulo enquanto o envio estiver pendente. */
+  enviadoPara: string | null; enviadoEm: number | null;
+}
+export interface EstadoSelos {
+  ultimo: SeloCadeia | null; pendentesEnvio: number;
+  /** Destinos configurados para a âncora (vazio = sem destino). */
+  destinos: string[];
+  /** O agendador diário está ligado nesta API. */
+  agendador: boolean;
+}
+export interface ResultadoSelar { selo: SeloCadeia; novo: boolean; ancora: 'enviada' | 'pendente' | 'sem_destino' }
+export interface ConferenciaAncora {
+  confere: boolean; motivo: 'confere' | 'hash_divergente' | 'seq_descartado' | 'seq_inexistente'; seq: number;
+  hashNoBanco: string | null; seloRegistrado: boolean;
 }
 
 export interface UnidadeResumo {
@@ -439,6 +480,12 @@ export interface Api {
     /** Uma página da trilha de alterações (cursor). Padrão de 50. */
     alteracoesPagina(f?: FiltroAlteracoesPagina): Promise<Pagina<RegistroAlteracao>>;
     exportar(f?: FiltroEventos): Promise<PacoteExportacao>;
+    /** Último selo da cadeia e estado da âncora externa (spec 4.6). Só na API real. */
+    selos(): Promise<EstadoSelos>;
+    /** Sela a cabeça da cadeia agora e envia a âncora (SI/AU). */
+    selar(): Promise<ResultadoSelar>;
+    /** Confere seq + hash recebidos por fora (e-mail da âncora) contra o banco. */
+    conferirAncora(i: { seq: number; hash: string }): Promise<ConferenciaAncora>;
   };
   usuarios: {
     listar(): Promise<UsuarioSistema[]>;
@@ -455,8 +502,10 @@ export interface Api {
     exportarPessoa(pessoaId: string): Promise<PacoteExportacao>;
     /** Eliminação a pedido (SI): só sem vínculo válido; informa o que fica retido. */
     anonimizar(pessoaId: string): Promise<ResultadoAnonimizacao>;
-    /** RNF-09 (SI): anonimiza quem passou do prazo de 3 anos. Eventos não são apagados. */
+    /** RNF-09 (SI): anonimiza quem passou do prazo de 3 anos. Na API real também descarta eventos selados e arquivos vencidos. */
     aplicarRetencao(): Promise<ResultadoRetencao>;
+    /** Última execução da retenção, ou null se nunca rodou. SI. */
+    ultimaRetencao(): Promise<ExecucaoRetencao | null>;
   };
   importacao: {
     analisar(i: { arquivo: string; linhas: LinhaPlanilha[] }): Promise<RelatorioImportacao>;
