@@ -31,7 +31,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
   return { data, error, loading, recarregar };
 }
 
-/** Hora simulada atual, atualizada a cada segundo. */
+/** Hora atual (relógio do navegador), atualizada a cada `intervaloMs`. */
 import { agora } from '@portaria/domain/time';
 export function useAgora(intervaloMs = 1000): number {
   const [t, setT] = useState(agora());

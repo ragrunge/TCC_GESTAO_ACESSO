@@ -44,7 +44,7 @@ function Relogio() {
   const p = partes(t);
   const d = (n: number) => String(n).padStart(2, '0');
   return (
-    <div className="text-right leading-[1.2]" aria-label="Horário simulado do sistema">
+    <div className="text-right leading-[1.2]" aria-label="Horário do sistema">
       <div className="font-mono text-[19px] font-semibold">{d(p.hh)}:{d(p.mm)}</div>
       <div className="text-[12px] text-[#56616B]">{DIAS_EXTENSO[p.dow]}, {d(p.dia)}/{d(p.mes)}/{p.ano}</div>
     </div>
@@ -165,7 +165,7 @@ export function Layout() {
             </nav>
           );
         })}
-        <div className="mt-auto px-3 text-[12px] leading-[1.5] text-[#8DA2A9]">Protótipo acadêmico · dados fictícios</div>
+        <div className="mt-auto px-3 text-[12px] leading-[1.5] text-[#8DA2A9]">Projeto acadêmico · TCC</div>
       </aside>
 
       <div className="flex h-screen min-w-0 flex-col">

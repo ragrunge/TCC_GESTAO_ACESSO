@@ -1,5 +1,5 @@
 // Pessoas, vínculos e veículos FICTÍCIOS de desenvolvimento (só PORTARIA_AMBIENTE=dev), para a busca e o resumo das
-// unidades terem o que mostrar. Mesmos nomes e unidades do seed do mock (apps/web/src/api/mock/seed.ts).
+// unidades terem o que mostrar. Os e2e do front (apps/web/e2e) contam com estes nomes e unidades.
 // - CPF válido (dígitos verificadores corretos) e fictício; o banco recebe só a máscara e o HMAC com a chave do ambiente.
 // - Idempotente por família: se a primeira pessoa já existe (mesmo HMAC), a família inteira é pulada. Cada família numa
 //   transação: ou entra inteira, ou não entra.

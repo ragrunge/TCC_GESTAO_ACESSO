@@ -1,8 +1,7 @@
-import { expect, test } from '@playwright/test';
-import { botaoConfirmarEntrada, entrarComo, escolherMeio, escolherUnidade, filtrarHistoricoPorPessoa, linhaEvento, toast } from './helpers';
+import { expect, test, botaoConfirmarEntrada, entrarComo, escolherMeio, escolherUnidade, filtrarHistoricoPorPessoa, linhaEvento, toast } from './helpers';
 
-// CPFs válidos (dígitos verificadores corretos) usados apenas nos testes
-const CPF_VALIDO = '529.982.247-25';
+// CPFs válidos (dígitos verificadores corretos) usados apenas nos testes; nenhum está no seed do e2e
+const CPF_VALIDO = '908.901.238-96';
 const CPF_INVALIDO = '123.456.789-00';
 const TELEFONE = '(11) 91234-5678';
 
@@ -50,8 +49,8 @@ test.describe('3. Cadastro de nova pessoa na entrada', () => {
 
     await expect(toast(page, /Carlos Teste Valido cadastrado\(a\) como visitante/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Trocar', exact: true })).toBeVisible();
-    await expect(page.getByText('***.982.247-**')).toBeVisible(); // CPF só aparece mascarado
-    await expect(page.getByText('529.982.247-25')).toHaveCount(0);
+    await expect(page.getByText('***.901.238-**')).toBeVisible(); // CPF só aparece mascarado
+    await expect(page.getByText(CPF_VALIDO)).toHaveCount(0);
 
     // Com CPF, todos os meios ficam disponíveis (aqui: escolhe a unidade e confere os rótulos)
     await escolherUnidade(page, 'D-32');

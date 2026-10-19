@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-import { entrarComo, sair } from './helpers';
+import { API_E2E, expect, preencherLogin, test, entrarComo, sair } from './helpers';
 
 test('usuários: redefinir acesso: formato, copiar mensagem, linha própria', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -20,7 +19,7 @@ test('usuários: redefinir acesso: formato, copiar mensagem, linha própria', as
   expect(txt).toMatch(/\nVálida até \d{2}\/\d{2} às \d{2}:\d{2}\n/);
 });
 
-test('usuários: senha temporária vence em 72 h: aviso na lista e recusa no login', async ({ page }) => {
+test('usuários: senha temporária vence em 72 h: aviso na lista e recusa no login', async ({ page, request }) => {
   await entrarComo(page, 'Síndico');
   await page.goto('/usuarios');
   const linha = page.getByRole('row').filter({ hasText: 'joao.lima' });
@@ -28,22 +27,19 @@ test('usuários: senha temporária vence em 72 h: aviso na lista e recusa no log
   await linha.getByRole('button', { name: 'Redefinir acesso' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Redefinir acesso' }).click();
   await expect(page.getByRole('dialog')).toContainText(/Válida até \d{2}\/\d{2} às \d{2}:\d{2}/);
+  const temporaria = (await page.locator('output').innerText()).trim();
   await page.getByRole('button', { name: 'Já copiei, fechar' }).click();
   await expect(linha).toContainText(/Senha temporária vence em \d{2}\/\d{2} \d{2}:\d{2}/);
 
-  // Relógio simulado + 73 h: o mock retoma o relógio de `salvoEm` ao recarregar.
-  await page.evaluate(() => {
-    const k = 'portaria-parque:db:v1';
-    const d = JSON.parse(localStorage.getItem(k)!) as { salvoEm: number };
-    d.salvoEm += 73 * 3600 * 1000;
-    localStorage.setItem(k, JSON.stringify(d));
-  });
+  // Sem esperar 72 h: o prazo da senha temporária do João vai para o passado, direto no banco de teste (rota que só
+  // existe no servidor de e2e). A tela e a API comparam com a hora real.
+  expect((await request.post(`${API_E2E}/__e2e/vencer-senha-temporaria`, { data: { login: 'joao.lima' } })).ok()).toBe(true);
   await page.reload();
   await expect(linha).toContainText('Senha temporária vencida — redefina');
 
+  // Com a senha temporária CERTA a API diz que venceu (com a errada, só "usuário ou senha inválidos").
   await sair(page);
-  await page.getByLabel('Usuário').fill('joao.lima');
-  await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+  await preencherLogin(page, 'joao.lima', temporaria);
   await expect(page.getByRole('alert')).toContainText('Senha temporária vencida. Peça a redefinição à administração.');
   await expect(page).toHaveURL(/\/login$/);
 });

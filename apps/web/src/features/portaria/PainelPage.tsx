@@ -34,7 +34,6 @@ export function PainelPage() {
   const [evento, setEvento] = useState<EventoView | null>(null);
 
   const invalidar = useInvalidar();
-  const suporta = (op: string) => api.suporta?.(op) ?? true;
   // React Query: registrar entrada, saída ou correção em outra tela invalida estas chaves (APOS_EVENTO)
   const resumo = useQuery({ queryKey: CHAVES.turno, queryFn: () => api.turno.resumo(), staleTime: 0 });
   const eventos = useQuery({
@@ -42,8 +41,8 @@ export function PainelPage() {
     queryFn: async () => (await api.eventos.listarPagina({ limite: 10, excluirTipos: ['saida'] })).itens,
   });
   const previas = useQuery({ queryKey: CHAVES.autorizacoesHoje, queryFn: () => api.autorizacoes.hoje(), staleTime: 0 });
-  // Atrasadas pela contagem da API (sem carregar a fila); sem o módulo, nada de 501 em loop: o cartão mostra só o total do turno
-  const encs = useQuery({ queryKey: CHAVES.encomendasResumo, queryFn: () => api.encomendas.resumo(), enabled: suporta('encomendas.resumo'), staleTime: 0 });
+  // Atrasadas pela contagem da API (sem carregar a fila)
+  const encs = useQuery({ queryKey: CHAVES.encomendasResumo, queryFn: () => api.encomendas.resumo(), staleTime: 0 });
   const pendentes = useQuery({ queryKey: CHAVES.restricoesPendentes, queryFn: () => api.restricoes.pendentes(), staleTime: 0 });
 
   async function aprovar(id: string) {

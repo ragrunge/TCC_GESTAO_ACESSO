@@ -6,7 +6,7 @@ Sistema de controle de acesso e gestão de portaria do Condomínio Residencial d
 
 | Pasta | Conteúdo | Status |
 |---|---|---|
-| `apps/web` | SPA React 18 + Vite 5 + TS + Tailwind (`@portaria/web`), com API mock em memória | funcional (protótipo) |
+| `apps/web` | SPA React 18 + Vite 5 + TS + Tailwind (`@portaria/web`), cliente HTTP da API (sem mock) | funcional |
 | `apps/api` | Backend NestJS + Drizzle + PostgreSQL | esqueleto NestJS (`/api/v1/saude`) + camada de banco (schema, migrações, testes); regras e auth pendentes |
 | `packages/domain` | Regras puras, RBAC, hash chain, tempo, unidades (`@portaria/domain`, sem build, exporta `.ts`) | funcional, com testes |
 | `db` | Bootstrap de roles, guia de migração e testes (o `docker-compose.yml` fica na raiz) | funcional |
@@ -39,7 +39,7 @@ Runbook completo (VPS, proxy, TLS, Vercel, âncora, backup, restore, checklist e
 
 | Peça | Onde |
 |---|---|
-| Front (Vercel) | `apps/web/vercel.json`: rewrite `/api/*` para a VPS antes do fallback da SPA, mais headers de segurança. Projeto Vercel com **Root Directory = `apps/web`**. `VITE_API_MODE=http` (Production) **só depois** que a API estiver no ar (sem ela, o front fica em `mock`) |
+| Front (Vercel) | `apps/web/vercel.json`: rewrite `/api/*` para a VPS antes do fallback da SPA, mais headers de segurança. Projeto Vercel com **Root Directory = `apps/web`**. Só a branch `main` publica (`git.deploymentEnabled`: sem previews, que escreveriam na produção); ver `docs/deploy.md` §6 |
 | API + banco (VPS) | `docker-compose.prod.yml` (projeto `tcc-portaria`, API em `127.0.0.1:3100`, banco sem porta) e `.env.producao.example` |
 | Backup | `db/backup/` (script, timer systemd e crontab de exemplo) |
 | Âncora do selo | `.github/workflows/ancora-selo.yml` + `scripts/ancoras/anexar-selos.mjs` (abaixo) |

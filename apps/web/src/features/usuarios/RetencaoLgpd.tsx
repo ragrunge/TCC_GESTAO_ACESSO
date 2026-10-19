@@ -9,7 +9,7 @@ import { fmtDataHora } from '@portaria/domain/time';
 import { mensagemErro } from '../../app/useAsync';
 import { APOS_LGPD, CHAVES, useInvalidar } from '../../app/consultas';
 
-/** Contagens do resultado, só as presentes (o mock tem só as 4 de pessoas; a API real traz eventos, trilha e arquivos). */
+/** Contagens do resultado, só as presentes (pessoas, eventos, trilha e arquivos). */
 function linhasDoResultado(r: ResultadoRetencao): [string, string][] {
   const l: [string, string][] = [
     ['Visitantes e prestadores anonimizados', String(r.visitantesPrestadores)],
@@ -66,9 +66,9 @@ export function RetencaoLgpd() {
       acoes={!confirmando && <Button onClick={() => { setConfirmando(true); setErro(''); }}>Aplicar retenção agora</Button>}>
       <div className="flex flex-col gap-3">
         <p className="text-[14px] text-[#33424B]">
-          {api.modo === 'http'
-            ? 'O agendador da API aplica a retenção uma vez por dia: anonimiza quem passou de 3 anos sem acesso ou sem vínculo, descarta eventos e registros da trilha com mais de 3 anos e elimina arquivos vencidos. Eventos só saem até um selo da cadeia no ponto de corte. Rodar de novo é seguro.'
-            : 'Anonimiza visitantes e prestadores sem acesso há mais de 3 anos e ex-moradores cujo último vínculo terminou há mais de 3 anos. No modo demonstração, os eventos não são apagados.'}
+          O agendador da API aplica a retenção uma vez por dia: anonimiza quem passou de 3 anos sem acesso ou sem vínculo, descarta
+          eventos e registros da trilha com mais de 3 anos e elimina arquivos vencidos. Eventos só saem até um selo da cadeia no ponto
+          de corte. Rodar de novo é seguro.
         </p>
         {confirmando && (
           <div className="flex flex-col gap-3 rounded-[10px] border-2 border-[#B54708] bg-[#FFFAEB] p-4 text-[#7A2E0E]">

@@ -1,4 +1,4 @@
-// Unidades (RF-01), catálogo leve e áreas comuns (RF-36). Mesmas regras do mock (apps/web/src/api/mock):
+// Unidades (RF-01), catálogo leve e áreas comuns (RF-36). Regras:
 // - bloco e número normalizados ("a" -> "A", "3" -> "03") e únicos (ativa ou desativada): 409 UNIDADE_DUPLICADA;
 // - unidade já referenciada (vínculo, veículo, autorização, restrição, encomenda, ocorrência, evento) não muda de número:
 //   422 UNIDADE_REFERENCIADA (mudaria o sentido do que já foi registrado nela; o caminho é desativar e cadastrar a certa);

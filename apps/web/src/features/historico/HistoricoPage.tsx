@@ -93,8 +93,8 @@ export function HistoricoPage() {
   const dados = useMemo(() => (lista.data?.pages ?? []).flatMap((p) => p.itens), [lista.data]);
   const invalidoSeq = integ && !integ.valido ? integ.primeiroSeqInvalido : undefined;
   const limpar = () => { setDe(toInputDate(agora() - 7 * DIA)); setAte(toInputDate(agora())); setUnidade(''); setPessoa(''); setOperadorId(''); setTipo(''); setMeio(''); setExc(false); setRetro(false); };
-  // Selo e âncora externa (spec 4.6): só na API real (o mock não tem selo).
-  const mostraSelo = podeVerificar && (api.suporta?.('auditoria.selos') ?? true);
+  // Selo e âncora externa (spec 4.6): para quem verifica a integridade.
+  const mostraSelo = podeVerificar;
   const campo = 'flex flex-col gap-1 text-[13px] font-medium';
   const entrada = 'input !h-10 !px-[10px] !text-[14px]';
 

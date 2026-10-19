@@ -1,15 +1,11 @@
-import { expect, test } from '@playwright/test';
-import { NOME_PERFIL, ROTA_INICIAL, entrarComo, type Perfil } from './helpers';
+import { NOME_PERFIL, ROTA_INICIAL, LOGIN_PERFIL, entrarComo, expect, preencherLogin, test, type Perfil } from './helpers';
 
 test.describe('1. Login', () => {
   const perfis: Perfil[] = ['Porteiro', 'Administração', 'Síndico', 'Auditor'];
 
   for (const perfil of perfis) {
-    test(`${perfil} entra sem etapa de 2FA e cai na rota inicial`, async ({ page }) => {
-      await page.goto('/login');
-      await page.getByRole('button', { name: perfil, exact: true }).click();
-      await expect(page.getByRole('button', { name: perfil, exact: true })).toHaveAttribute('aria-pressed', 'true');
-      await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+    test(`${perfil} entra com usuário e senha, sem etapa de 2FA, e cai na rota inicial`, async ({ page }) => {
+      await preencherLogin(page, LOGIN_PERFIL[perfil]);
 
       // Sem 2FA: não aparece nenhum campo de código/token em nenhum momento do fluxo
       await expect(page).toHaveURL(ROTA_INICIAL[perfil]);
@@ -21,19 +17,25 @@ test.describe('1. Login', () => {
     });
   }
 
-  test('qualquer senha é aceita, e a sessão sobrevive a recarregar a página', async ({ page }) => {
+  test('tela de login sem atalhos de demonstração; senha errada é recusada; a sessão sobrevive a recarregar', async ({ page }) => {
     await page.goto('/login');
-    await page.getByLabel('Senha').fill('qualquer-coisa-123');
-    await page.getByRole('button', { name: 'Entrar', exact: true }).click();
-    await expect(page).toHaveURL(/\/painel$/);
+    await expect(page.getByLabel('Usuário')).toHaveValue('');
+    await expect(page.getByLabel('Senha')).toHaveValue('');
+    await expect(page.getByText('Perfil de demonstração')).toHaveCount(0);
+    await expect(page.getByText(/qualquer senha/i)).toHaveCount(0);
+    await expect(page.getByText(/dados fictícios/i)).toHaveCount(0);
+
+    await preencherLogin(page, 'joao.lima', 'qualquer-coisa-123');
+    await expect(page.getByRole('alert')).toHaveText('Usuário ou senha inválidos.');
+    await expect(page).toHaveURL(/\/login$/);
+
+    await entrarComo(page, 'Porteiro');
     await page.reload();
     await expect(page).toHaveURL(/\/painel$/);
   });
 
   test('usuário inexistente mostra erro e fica na tela de login', async ({ page }) => {
-    await page.goto('/login');
-    await page.getByLabel('Usuário').fill('fulano.inexistente');
-    await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+    await preencherLogin(page, 'fulano.inexistente');
     await expect(page.getByRole('alert')).toBeVisible();
     await expect(page).toHaveURL(/\/login$/);
   });
@@ -44,5 +46,6 @@ test.describe('1. Login', () => {
     await entrarComo(page, 'Porteiro');
     await page.getByRole('button', { name: 'Sair', exact: true }).click();
     await expect(page).toHaveURL(/\/login$/);
+    expect((await page.request.get('/api/v1/auth/me')).status()).toBe(401);
   });
 });

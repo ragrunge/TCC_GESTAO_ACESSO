@@ -1,7 +1,6 @@
-import { expect, test } from '@playwright/test';
 import {
-  botaoConfirmarEntrada, entrarComo, escolherMeio, escolherMorador, escolherPessoa, escolherUnidade, filtrarHistoricoPorPessoa,
-  linhaEvento, toast, trocarPara,
+  expect, test, botaoConfirmarEntrada, entrarComo, escolherMeio, escolherMorador, escolherPessoa, escolherUnidade, filtrarHistoricoPorPessoa,
+  diaSP, linhaEvento, toast, trocarPara,
 } from './helpers';
 
 test.describe('2. Entrada pelo porteiro (/entrada)', () => {
@@ -94,7 +93,7 @@ test.describe('2. Entrada pelo porteiro (/entrada)', () => {
   });
 
   test('pessoa com restrição: modal "Entrada não permitida" e cancelar grava UM único evento negado', async ({ page }) => {
-    // Seed: Bruno Teixeira tem restrição na D-32 e já possui 1 evento "Negado" (08/10)
+    // Seed do e2e: Bruno Teixeira tem restrição na D-32 e já possui 1 evento "Negado" (tentativa barrada)
     await filtrarHistoricoPorPessoa(page, 'Bruno Teixeira');
     await expect(linhaEvento(page, 'Bruno Teixeira', 'Negado')).toHaveCount(1);
     const negadosAntes = 1;
@@ -142,14 +141,13 @@ test.describe('2b. Funcionário com restrição de condomínio', () => {
     await form.getByRole('button', { name: /Válter Souza/ }).click();
     await form.getByLabel(/Morador que pediu a restrição/).selectOption({ label: 'Ana Ribeiro' });
     await form.getByLabel('Motivo').fill('Conduta incompatível com a função');
-    await form.getByLabel(/Vale até/).fill('2026-12-31');
+    await form.getByLabel(/Vale até/).fill(diaSP(60));
     await form.getByLabel(/Pedir restrição para todo o condomínio/).check();
     await form.getByRole('button', { name: 'Cadastrar restrição' }).click();
     await expect(toast(page, /Pedido de restrição para todo o condomínio registrado/)).toBeVisible();
 
     // 2) Síndico aprova no painel (RN-06: só o síndico aprova)
     await page.goto('/painel');
-    // (o seed já traz um pedido pendente de Edu Barreto: aprova só o do Válter)
     const pendencias = page.getByRole('region', { name: 'Pendências do síndico' });
     await pendencias.locator('div', { hasText: 'Válter Souza' }).getByRole('button', { name: 'Aprovar' }).last().click();
     await expect(toast(page, 'Restrição para todo o condomínio aprovada.')).toBeVisible();

@@ -5,7 +5,6 @@ import { Navigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useApi, type TrocarSenhaInput, type UsuarioSessao } from '../api';
 import { useToast } from '../components/Toast';
-import { ModuloIndisponivel } from '../components/ModuloIndisponivel';
 import { pode, ROTAS, rotaInicial, type Acao, type Rota } from '@portaria/domain/rbac';
 
 interface AuthCtx {
@@ -96,14 +95,11 @@ export function useCan(acao: Acao): boolean {
 
 /** Guarda de rota: sem sessão -> login; troca pendente -> troca; sem papel -> página inicial do perfil. */
 export function RequireRole({ rota, children }: { rota: Rota; children: ReactNode }) {
-  const api = useApi();
   const { usuario, pronto } = useAuth();
   if (!pronto) return <p className="p-8">Carregando…</p>;
   if (!usuario) return <Navigate to="/login" replace />;
   if (usuario.deveTrocarSenha) return <Navigate to="/trocar-senha" replace />;
   if (!ROTAS[rota].includes(usuario.papel)) return <Navigate to={`/${rotaInicial(usuario.papel)}`} replace />;
-  // Modo http: módulo sem API real não monta a tela (nenhuma chamada, nenhum erro em loop).
-  if (api.rotasDisponiveis && !api.rotasDisponiveis.includes(rota)) return <ModuloIndisponivel />;
   return <>{children}</>;
 }
 

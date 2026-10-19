@@ -299,31 +299,37 @@ para o `curl` de diagnóstico. `TRUST_PROXY` continua 2.
 
 ## 6. Vercel (front)
 
-O `apps/web/vercel.json` já tem o rewrite `/api/:caminho*` → `https://179-197-78-78.sslip.io/api/:caminho*`, **antes**
+O `apps/web/vercel.json` tem o rewrite `/api/:caminho*` → `https://179-197-78-78.sslip.io/api/:caminho*`, **antes**
 do fallback da SPA, e os headers de segurança (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`,
-`Permissions-Policy`, COOP). A CSP foi conferida localmente sem violação (login do mock com 2FA, seis telas,
-exportação por blob, fontes).
+`Permissions-Policy`, COOP). O front é só cliente HTTP: não existe mais modo mock nem a variável `VITE_API_MODE`.
 
-Variáveis de **build** (Project → Settings → Environment Variables), **só no escopo Production**:
+Variáveis de **build** (Project → Settings → Environment Variables), escopo Production:
 
-| Variável | Valor | Quando |
+| Variável | Valor | Observação |
 |---|---|---|
-| `VITE_API_MODE` | `http` | **só na fase 3**, com a API respondendo pelo rewrite |
-| `VITE_API_URL` | `/api/v1` | junto (é o padrão; explícita para não depender dele) |
+| `VITE_API_URL` | `/api/v1` | é o padrão; explícita para não depender dele |
+| ~~`VITE_API_MODE`~~ | — | **remover** do painel: o código não a lê mais (sobra inofensiva, mas engana quem lê) |
 
-**Ordem segura.** `VITE_API_MODE` sem valor é `mock` (`apps/web/src/api/index.tsx`), e é o que está publicado hoje:
+**Sem deploy de Preview.** Sem o mock, um preview usaria o mesmo rewrite `/api` e leria e **escreveria no banco de
+produção** (trilhas append-only: nada se desfaz). Por isso o `vercel.json` traz
+`"git": { "deploymentEnabled": { "main": true, "**": false } }`: as chaves são globs (minimatch) de branch; `**` casa
+qualquer branch (inclusive com `/`, como `feature/x`), e quando um branch casa mais de uma regra basta UMA ser `true`
+para publicar, então `main` continua publicando e todo o resto não gera deploy. Limites, a conferir no painel
+(Project → Settings → Git / Deployments):
 
-1. O commit com o `vercel.json` novo pode ir para o `main` a qualquer momento. Em `mock`, o front nunca chama `/api`:
-   o rewrite fica inerte e o site continua funcionando.
-2. Fase 2: API de pé atrás do proxy. Conferir pelo rewrite, sem mexer no front:
-   `curl -s https://tccgestaoacesso.vercel.app/api/v1/saude` → `{"data":{"status":"ok",...}}`.
-3. Fase 3: definir `VITE_API_MODE=http` (Production) e fazer **Redeploy** do último deploy de produção (variável
-   `VITE_*` é de build: sem redeploy, nada muda).
-4. Rollback do front: **Instant Rollback** para o deploy anterior (volta para `mock` na hora) e depois remover a
-   variável, para o próximo deploy não reativá-la.
+- a Vercel lê o `vercel.json` **do commit** que vai publicar: um branch criado a partir de um commit anterior a esta
+  regra ainda gera preview. Apague/rebaseie esses branches ou desligue também pelo painel;
+- deploy manual (`vercel` na CLI, "Redeploy" de um preview antigo) não passa por essa regra;
+- se o projeto tiver Deployment Protection ou previews de PR de fork, conferir que não há preview ativo apontando
+  para a produção (Deployments → filtrar por Preview).
 
-Os deploys de Preview continuam em `mock` (variável só em Production): a demonstração offline da banca segue
-disponível numa URL de preview.
+**Rollback do front:** **Instant Rollback** para um deploy anterior de produção. Ele **não** "volta para o mock" (o
+mock não existe mais): o deploy anterior também fala com a API da VPS. Se o problema for da API, o rollback é o da
+API (§11), não o do front. Um deploy de produção antigo, de antes desta mudança, ainda pode estar em `mock` se a
+variável `VITE_API_MODE` não estava definida naquele build: não promova deploys anteriores à fase 3.
+
+Para desenvolver o front sem tocar em produção: `npm run dev:pglite -w apps/api` e
+`API_PROXY_ALVO=http://127.0.0.1:3101 npm run dev -w apps/web` (ver `apps/web/README.md`).
 
 ---
 

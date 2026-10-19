@@ -1,8 +1,8 @@
 // Lote B2: telas novas do MVP (funcionários, CRUD de unidades, legados, ficha com LGPD, papéis, retirada autorizada,
-// prestador em área comum). Cada teste parte do seed limpo (contexto de navegador novo).
-import { expect, test, type Page } from '@playwright/test';
+// prestador em área comum). Cada teste parte do banco semeado do e2e (reset automático em helpers.ts).
+import type { Page } from '@playwright/test';
 import {
-  botaoConfirmarEntrada, entrarComo, escolherMeio, escolherPessoa, filtrarHistoricoPorPessoa, linhaEvento, toast, trocarPara,
+  expect, test, botaoConfirmarEntrada, dataBR, entrarComo, escolherMeio, escolherPessoa, filtrarHistoricoPorPessoa, linhaEvento, toast, trocarPara,
 } from './helpers';
 
 /** Abre a ficha da pessoa pela busca global do topo. */
@@ -24,7 +24,7 @@ test.describe('10. Lote B2', () => {
     await page.getByRole('button', { name: 'Novo funcionário' }).click();
     const modal = page.getByRole('dialog', { name: 'Novo funcionário' });
     await modal.getByLabel('Nome completo').fill('Nilo Vigia');
-    await modal.getByLabel('CPF').fill('529.982.247-25');
+    await modal.getByLabel('CPF').fill('909.012.349-07');
     await modal.getByLabel('Telefone').fill('(11) 97777-6666');
     await modal.getByLabel('Função').fill('Vigia noturno');
     await modal.getByLabel('Início do turno').fill('22:00');
@@ -79,7 +79,8 @@ test.describe('10. Lote B2', () => {
     await page.getByRole('tab', { name: /Legados/ }).click();
     await expect(page.getByText(/Importados da planilha \(RN-09\)/)).toBeVisible();
     await page.getByRole('list', { name: 'Fila' }).getByRole('button', { name: /Lúcia Ribeiro/ }).click();
-    await expect(page.getByText(/Legado válido até 31\/03\/2027/)).toBeVisible();
+    // Seed de dev: prazo de regularização de 90 dias a partir da carga (RN-09)
+    await expect(page.getByText(`Legado válido até ${dataBR(Date.now() + 90 * 86_400_000)}`)).toBeVisible();
     // RN-09 + RF-05: regularizar exige a conferência do comprovante
     await page.getByLabel('Tipo do documento conferido').selectOption({ label: 'Outro' });
     await page.getByLabel('Descrição do documento').fill('Certidão de nascimento');
@@ -139,21 +140,21 @@ test.describe('10. Lote B2', () => {
   test('RN-08: morador autoriza outra pessoa a retirar a encomenda; o porteiro entrega a ela', async ({ page }) => {
     await entrarComo(page, 'Porteiro');
     await page.goto('/encomendas');
-    await page.getByRole('button', { name: 'Autorizar retirada da encomenda K108' }).click();
-    const modal = page.getByRole('dialog', { name: 'Autorizar retirada da encomenda K108' });
+    await page.getByRole('button', { name: 'Autorizar retirada da encomenda K1' }).click();
+    const modal = page.getByRole('dialog', { name: 'Autorizar retirada da encomenda K1' });
     await modal.getByLabel(/Morador que autoriza/).selectOption({ label: 'Ana Ribeiro (Proprietário)' });
     await modal.getByLabel('Quem vai retirar (cadastro com CPF)').fill('Marcos Pereira');
     await modal.getByRole('button', { name: /Marcos Pereira/ }).click();
     await modal.getByRole('button', { name: 'Autorizar retirada' }).click();
-    await expect(toast(page, 'Marcos Pereira autorizado(a) a retirar a encomenda K108.')).toBeVisible();
+    await expect(toast(page, 'Marcos Pereira autorizado(a) a retirar a encomenda K1.')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Entregar encomenda K108' }).click();
-    const entregar = page.getByRole('dialog', { name: 'Entregar encomenda K108' });
+    await page.getByRole('button', { name: 'Entregar encomenda K1' }).click();
+    const entregar = page.getByRole('dialog', { name: 'Entregar encomenda K1' });
     await entregar.getByLabel('Quem está retirando?').fill('Marcos Pereira');
     await entregar.getByRole('button', { name: /Marcos Pereira/ }).click();
     await expect(entregar.getByText(/Autorizado\(a\) a retirar por Ana Ribeiro/)).toBeVisible();
     await entregar.getByRole('button', { name: /Confirmar entrega/ }).click();
-    await expect(toast(page, 'Encomenda K108 entregue a Marcos Pereira.')).toBeVisible();
+    await expect(toast(page, 'Encomenda K1 entregue a Marcos Pereira.')).toBeVisible();
     await page.getByRole('tab', { name: /Entregues/ }).click();
     await expect(page.getByText('Marcos Pereira (autorizado por Ana Ribeiro)')).toBeVisible();
   });

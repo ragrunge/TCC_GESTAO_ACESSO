@@ -1,26 +1,14 @@
-// E2E contra a API real (Docker local): encomendas e ocorrências pela tela. Receber (com a conferência da unidade) e
+// E2E contra a API real (servidor de e2e sobre PGlite; banco semeado no início da spec): encomendas e ocorrências pela tela. Receber (com a conferência da unidade) e
 // entregar a um dependente, com a fila e o painel atualizados; autorizar um terceiro a retirar e entregar a ele; abrir
 // ocorrência a partir de um negado (link "Registrar ocorrência" do alerta de restrição), com anexo cifrado, andar o
 // status até encerrada; e o síndico baixar o anexo (o conteúdo volta idêntico).
-// Cada execução cadastra pessoas novas (nome e CPF fictícios aleatórios), uma restrição, encomendas e uma ocorrência;
-// tudo se acumula no banco de dev (as trilhas são append-only); para limpar, docker compose down -v.
+// Pessoas novas com nome e CPF fictícios aleatórios, uma restrição, encomendas e uma ocorrência.
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { API_E2E, SENHA_E2E, resetarBanco } from './helpers';
 
-const API = 'http://127.0.0.1:3000/api/v1';
+const API = `${API_E2E}/api/v1`;
 
-function senhaSeed(): string | undefined {
-  if (process.env.SEED_SENHA_DEV) return process.env.SEED_SENHA_DEV;
-  try {
-    const env = readFileSync(resolve(process.cwd(), '../../.env'), 'utf8');
-    const m = /^SEED_SENHA_DEV=(.*)$/m.exec(env);
-    return m?.[1]?.trim().replace(/^['"]|['"]$/g, '') || undefined;
-  } catch { return undefined; }
-}
-async function apiDePe(request: APIRequestContext) {
-  try { return (await request.get(`${API}/saude`, { timeout: 3_000 })).ok(); } catch { return false; }
-}
 function cpfAleatorio(): string {
   const d = Array.from({ length: 9 }, (_, i) => (i === 0 ? 1 + Math.floor(Math.random() * 9) : Math.floor(Math.random() * 10)));
   const dv = (n: number[]) => { const s = n.reduce((a, x, i) => a + x * (n.length + 1 - i), 0); const r = (s * 10) % 11; return r === 10 ? 0 : r; };
@@ -37,7 +25,7 @@ async function entrar(page: Page, login: string, senha: string, rota: RegExp) {
   await expect(page).toHaveURL(rota); // espera o cookie antes do próximo goto
 }
 
-const SENHA = senhaSeed();
+const SENHA = SENHA_E2E;
 const SUFIXO = Math.random().toString(36).slice(2, 7);
 const P = { restrita: `Visita Encomenda ${SUFIXO} Restrita`, terceiro: `Visita Encomenda ${SUFIXO} Terceiro` };
 const RASTREIO = { dependente: `E2E${SUFIXO}DEP`.toUpperCase(), terceiro: `E2E${SUFIXO}TER`.toUpperCase() };
@@ -67,8 +55,7 @@ async function receber(page: Page, rastreio: string): Promise<string> {
 
 test.describe.serial('API real: encomendas e ocorrências', () => {
   test.beforeAll(async ({ request, playwright }) => {
-    test.skip(!(await apiDePe(request)), 'API local fora do ar (docker compose up)');
-    test.skip(!SENHA, 'SEED_SENHA_DEV ausente');
+    await resetarBanco(request); // banco semeado; os testes desta spec compartilham o estado (serial)
     // Administração: a pessoa com restrição na D-32 (a pedido da Ana) e o terceiro que vai retirar uma encomenda
     const ctx = await playwright.request.newContext();
     try {

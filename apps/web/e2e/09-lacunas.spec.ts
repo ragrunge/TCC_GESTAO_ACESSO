@@ -1,6 +1,5 @@
-import { expect, test } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
-import { entrarComo, escolherPessoa, escolherUnidade, linhaEvento, toast } from './helpers';
+import { expect, test, diaSP, entrarComo, escolherPessoa, escolherUnidade, linhaEvento, toast } from './helpers';
 
 const XLSX = fileURLToPath(new URL('./fixtures/moradores.xlsx', import.meta.url));
 
@@ -16,8 +15,8 @@ test.describe('9. Lacunas do MVP', () => {
     await filtros.getByLabel('Tipo de pessoa').selectOption('prestador');
     await expect(page.getByText(/acessos no período/)).not.toHaveText(totalGeral);
     await filtros.getByLabel('Meio de autorização').selectOption('interfone');
-    await filtros.getByLabel('De', { exact: true }).fill('2026-10-09');
-    await filtros.getByLabel('Até', { exact: true }).fill('2026-10-09');
+    await filtros.getByLabel('De', { exact: true }).fill(diaSP());
+    await filtros.getByLabel('Até', { exact: true }).fill(diaSP());
     await expect(page.getByText(/^\d+ de \d+ unidades|\d+ acessos no período/).first()).toBeVisible();
 
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Exportar CSV' }).click()]);

@@ -1,5 +1,5 @@
-// Registro de acesso (RF-12, RF-13, RF-16, RF-17, RF-35, RN-01, RN-04, RN-07, RN-11, UC02 A4). Mesmas regras de
-// `eventos` do mock (apps/web/src/api/mock/createMockApi.ts), na mesma ordem:
+// Registro de acesso (RF-12, RF-13, RF-16, RF-17, RF-35, RN-01, RN-04, RN-07, RN-11, UC02 A4). Ordem das
+// validações:
 //   pessoa (404, anonimizada) -> unidade/área para novo uso (UNIDADE_INATIVA) -> instante (retroativo) -> categoria
 //   efetiva ("morador" sem vínculo válido vira visitante) -> RESTRIÇÃO VIGENTE (grava "negado" e responde 422 com o id)
 //   -> autorização (RN-01, RF-17, RN-07, escala, RF-36) -> "já está dentro" -> grava.

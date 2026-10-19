@@ -1,26 +1,11 @@
-// E2E contra a API real (Docker local): cadastro de pessoa, vínculo pendente, conferência do comprovante (RF-05),
+// E2E contra a API real (servidor de e2e sobre PGlite; banco semeado no início da spec): cadastro de pessoa, vínculo pendente, conferência do comprovante (RF-05),
 // aprovação (RN-02), o morador na unidade e na busca do topo, e a regularização de um legado (RN-09) criado aqui mesmo
 // pela importação da planilha (RF-11), para o teste não depender de um legado do seed que uma execução anterior já
-// tenha regularizado. Cada execução cria pessoas novas (nome e CPF fictícios aleatórios): elas se acumulam no banco de
-// dev; para limpar, docker compose down -v. A senha do seed vem de SEED_SENHA_DEV e nunca é impressa.
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+// tenha regularizado.
+// Pessoas novas com nome e CPF fictícios aleatórios.
+import { expect, test, type Page } from '@playwright/test';
+import { SENHA_E2E, resetarBanco } from './helpers';
 
-const API = 'http://127.0.0.1:3000/api/v1';
-
-function senhaSeed(): string | undefined {
-  if (process.env.SEED_SENHA_DEV) return process.env.SEED_SENHA_DEV;
-  try {
-    const env = readFileSync(resolve(process.cwd(), '../../.env'), 'utf8');
-    const m = /^SEED_SENHA_DEV=(.*)$/m.exec(env);
-    return m?.[1]?.trim().replace(/^['"]|['"]$/g, '') || undefined;
-  } catch { return undefined; }
-}
-
-async function apiDePe(request: APIRequestContext) {
-  try { return (await request.get(`${API}/saude`, { timeout: 3_000 })).ok(); } catch { return false; }
-}
 
 /** Entra e espera a rota inicial: sem isso o próximo goto sai antes do cookie e cai no /login. */
 async function entrarAdmin(page: Page, senha: string) {
@@ -48,7 +33,7 @@ async function registrarConferencia(page: Page, tipo: string, descricao?: string
   await page.getByRole('button', { name: 'Registrar conferência' }).click();
 }
 
-const SENHA = senhaSeed();
+const SENHA = SENHA_E2E;
 const SUFIXO = Math.random().toString(36).slice(2, 7);
 const NOME = `Teste Ponta ${SUFIXO}`;
 const NOME_LEGADO = `Legado Ponta ${SUFIXO}`;
@@ -56,8 +41,7 @@ const UNIDADE = 'A-11';
 
 test.describe.serial('API real: pessoas, vínculos, conferência e legado', () => {
   test.beforeAll(async ({ request }) => {
-    test.skip(!(await apiDePe(request)), 'API local fora do ar (docker compose up)');
-    test.skip(!SENHA, 'SEED_SENHA_DEV ausente');
+    await resetarBanco(request); // banco semeado; os testes desta spec compartilham o estado (serial)
   });
 
   test('administração cadastra pessoa, pede o vínculo, registra a conferência e aprova', async ({ page }) => {

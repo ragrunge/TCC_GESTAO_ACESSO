@@ -1,26 +1,10 @@
-// E2E contra a API real (Docker local): catálogo e badge no Layout, busca do topo por nome e por unidade, detalhe da
-// unidade com moradores e veículos da API e as demais seções "em breve", e o CRUD de unidade (criar e desativar). Depende do seed de dev com as pessoas fictícias
-// (docker compose exec api node dist/cli/seed-dev.js). A senha do seed vem de SEED_SENHA_DEV e nunca é impressa.
-// Unidade de teste: bloco Z, número aleatório, desativada no fim (não há exclusão: as inativas se acumulam no bloco Z;
-// para limpar, docker compose down -v).
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+// E2E contra a API real (servidor de e2e sobre PGlite; banco semeado no início da spec): catálogo e badge no Layout, busca do topo por nome e por unidade, detalhe da
+// unidade com moradores e veículos da API e as demais seções "em breve", e o CRUD de unidade (criar e desativar).
+// Depende do seed de dev com as pessoas fictícias, que o servidor de e2e carrega.
+// Unidade de teste: bloco Z, número aleatório, desativada no fim.
+import { expect, test, type Page } from '@playwright/test';
+import { SENHA_E2E, resetarBanco } from './helpers';
 
-const API = 'http://127.0.0.1:3000/api/v1';
-
-function senhaSeed(): string | undefined {
-  if (process.env.SEED_SENHA_DEV) return process.env.SEED_SENHA_DEV;
-  try {
-    const env = readFileSync(resolve(process.cwd(), '../../.env'), 'utf8');
-    const m = /^SEED_SENHA_DEV=(.*)$/m.exec(env);
-    return m?.[1]?.trim().replace(/^['"]|['"]$/g, '') || undefined;
-  } catch { return undefined; }
-}
-
-async function apiDePe(request: APIRequestContext) {
-  try { return (await request.get(`${API}/saude`, { timeout: 3_000 })).ok(); } catch { return false; }
-}
 
 async function entrar(page: Page, login: string, senha: string) {
   await page.goto('/login');
@@ -29,14 +13,13 @@ async function entrar(page: Page, login: string, senha: string) {
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
 }
 
-const SENHA = senhaSeed();
+const SENHA = SENHA_E2E;
 const NUMERO = String(1000 + Math.floor(Math.random() * 9000));
 const CODIGO = `Z-${NUMERO}`;
 
 test.describe.serial('API real: catálogo, badge, busca e unidades', () => {
   test.beforeAll(async ({ request }) => {
-    test.skip(!(await apiDePe(request)), 'API local fora do ar (docker compose up)');
-    test.skip(!SENHA, 'SEED_SENHA_DEV ausente');
+    await resetarBanco(request); // banco semeado; os testes desta spec compartilham o estado (serial)
   });
 
   test('administração vê o catálogo na grade de unidades e o badge de vínculos pendentes', async ({ page }) => {

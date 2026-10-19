@@ -1,5 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
-import { entrarComo, toast } from './helpers';
+import type { Page } from '@playwright/test';
+import { expect, test, entrarComo, toast } from './helpers';
 
 test.describe('6. Vínculo', () => {
   test.beforeEach(async ({ page }) => {

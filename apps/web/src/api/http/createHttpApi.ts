@@ -3,7 +3,7 @@
 // (eventos, presentes, turno), autorizações prévias, restrições, auditoria (com selo e âncora externa), relatórios,
 // encomendas, ocorrências (com anexos cifrados) e LGPD (exportação do titular, anonimização e retenção).
 // Formatos que o adaptador converte para o domínio: data de calendário 'YYYY-MM-DD' (dia BRT) <-> número do início do
-// dia BRT; placa 'ABC1D23' -> 'ABC-1D23' (como o mock exibe).
+// dia BRT; placa 'ABC1D23' -> 'ABC-1D23' (como a tela exibe).
 // Formato REST (skill rest-api): todo 2xx com corpo vem em { data }; listas paginadas em
 // { data: [...], pagination: { cursor, hasNextPage } }; 204 sem corpo.
 import type { AxiosRequestConfig } from 'axios';
@@ -12,7 +12,6 @@ import type {
   VinculoUnidade,
 } from '@portaria/domain/types';
 import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
-import type { Rota } from '@portaria/domain/rbac';
 import { brt, toInputDate } from '@portaria/domain/time';
 import { AGRUPAMENTOS } from '@portaria/domain/units';
 import type {
@@ -23,38 +22,6 @@ import type {
 } from '../types';
 import { ApiError } from '../types';
 import { criarCliente } from './cliente';
-
-/** Rotas da UI com backend pronto. Atualizar a cada módulo novo implementado na API. */
-export const ROTAS_HTTP: readonly Rota[] = [
-  'painel', 'entrada', 'pessoas', 'historico', 'relatorios', 'usuarios', 'unidades', 'cadastro', 'vinculos', 'funcionarios', 'importar',
-  'encomendas', 'ocorrencias',
-];
-
-/** Operações com backend pronto, para a UI esconder as ações que dariam 501 (`api.suporta`). */
-export const OPERACOES_HTTP: ReadonlySet<string> = new Set([
-  'auth.login', 'auth.logout', 'auth.me', 'auth.trocarSenha',
-  'usuarios.listar', 'usuarios.criar', 'usuarios.desativar', 'usuarios.reativar', 'usuarios.redefinirAcesso', 'usuarios.alterarPapel',
-  'busca.global', 'pessoas.buscar', 'catalogo.obter', 'vinculos.contar',
-  'pessoas.listar', 'pessoas.listarPagina', 'pessoas.ficha', 'pessoas.criar', 'pessoas.editar', 'pessoas.funcionario',
-  'funcionarios.listar', 'funcionarios.criar', 'funcionarios.editar', 'veiculos.criar', 'veiculos.editar',
-  'vinculos.listar', 'vinculos.listarPagina', 'vinculos.criar', 'vinculos.registrarConferencia', 'vinculos.decidir',
-  'vinculos.regularizar', 'vinculos.encerrar', 'vinculos.autorizadores', 'importacao.analisar', 'importacao.confirmar',
-  'unidades.listar', 'unidades.listarPagina', 'unidades.detalhe', 'unidades.criar', 'unidades.editar', 'unidades.desativar', 'unidades.reativar',
-  'eventos.criar', 'eventos.registrarRecusa', 'eventos.registrarSaida', 'eventos.corrigir', 'eventos.listar', 'eventos.listarPagina',
-  'eventos.correcoesDe', 'eventos.obter', 'eventos.presentes', 'turno.resumo',
-  'autorizacoes.criar', 'autorizacoes.revogar', 'autorizacoes.vigentes', 'autorizacoes.hoje',
-  'restricoes.verificar', 'restricoes.criar', 'restricoes.aprovar', 'restricoes.revogar', 'restricoes.pendentes',
-  'relatorios.resumo', 'relatorios.exportarCsv',
-  'auditoria.verificarIntegridade', 'auditoria.alteracoes', 'auditoria.alteracoesPagina', 'auditoria.exportar',
-  'encomendas.listar', 'encomendas.listarPagina', 'encomendas.resumo', 'encomendas.obter', 'encomendas.receber', 'encomendas.entregar',
-  'encomendas.autorizarRetirada',
-  'ocorrencias.listar', 'ocorrencias.listarPagina', 'ocorrencias.obter', 'ocorrencias.criar', 'ocorrencias.alterarStatus',
-  'ocorrencias.vincularEventos', 'ocorrencias.anexar', 'ocorrencias.baixarAnexo',
-  'auditoria.selos', 'auditoria.selar', 'auditoria.conferirAncora',
-  'lgpd.exportarPessoa', 'lgpd.anonimizar', 'lgpd.aplicarRetencao', 'lgpd.ultimaRetencao',
-]);
-
-export const MENSAGEM_MODULO_INDISPONIVEL = 'Módulo ainda não disponível na API real';
 
 const respostaInvalida = () => new ApiError(502, 'RESPOSTA_INVALIDA', 'Resposta inesperada do servidor.');
 
@@ -157,7 +124,7 @@ function filtroCorpo(f: FiltroEventos): Record<string, unknown> {
   });
 }
 
-/** O evento vem pronto da API (mesma EventoView do mock, instantes em epoch ms); aqui só se confere o formato. */
+/** O evento vem pronto da API (EventoView do domínio, instantes em epoch ms); aqui só se confere o formato. */
 function eventoDe(e: EventoView): EventoView {
   if (!e || typeof e.id !== 'string' || typeof e.seq !== 'number' || typeof e.ocorridoEm !== 'number') throw respostaInvalida();
   return e;
@@ -180,7 +147,7 @@ function filtroRelatorio(f?: number | FiltroRelatorio): Record<string, string> {
   return q;
 }
 
-/** A encomenda vem pronta da API (mesma EncomendaView do mock, instantes em epoch ms); aqui só se confere o formato. */
+/** A encomenda vem pronta da API (EncomendaView do domínio, instantes em epoch ms); aqui só se confere o formato. */
 function encomendaDe(e: EncomendaView): EncomendaView {
   if (!e || typeof e.id !== 'string' || typeof e.recebidaEm !== 'number' || !Array.isArray(e.autorizacoes)) throw respostaInvalida();
   return e;
@@ -259,9 +226,6 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
   const linhasImportacao = new Map<string, LinhaPlanilha[]>();
 
   return {
-    modo: 'http',
-    rotasDisponiveis: ROTAS_HTTP,
-    suporta: (op) => OPERACOES_HTTP.has(op),
     aoEventoSessao: (cb) => cliente.aoEvento(cb),
     auth: {
       async login(i) {
@@ -545,7 +509,7 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
       },
       async correcoesDe(eid) { return listaDe<EventoView>((await http.get(`/eventos-acesso/${id(eid)}/correcoes`)).data, eventoDe); },
       async obter(eid) { return eventoDe(dados<EventoView>((await http.get(`/eventos-acesso/${id(eid)}`)).data)); },
-      // Todas as páginas; a ordem final é pela hora efetiva, como no mock (a API pagina por seq).
+      // Todas as páginas; a ordem final é pela hora efetiva (a API pagina por seq).
       async presentes() {
         return (await todasAsPaginas<EventoView>('/acessos/presentes')).map(eventoDe).sort((a, b) => b.ocorridoEm - a.ocorridoEm);
       },
@@ -596,7 +560,7 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
         return { ...p, itens: p.itens.map(ocorrenciaDe) };
       },
       async obter(oid) { return ocorrenciaDe(dados<OcorrenciaView>((await http.get(`/ocorrencias/${id(oid)}`)).data)); },
-      // Os anexos não vão aqui (só nomes, no mock): a tela envia cada arquivo por `anexar` depois de criar.
+      // Os anexos não vão aqui: a tela envia cada arquivo por `anexar` depois de criar.
       async criar(i) {
         return ocorrenciaDe(dados<OcorrenciaView>((await http.post('/ocorrencias', {
           tipo: i.tipo, descricao: i.descricao, unidadeId: i.unidadeId, envolvidos: i.envolvidos ?? '', eventoIds: i.eventoIds ?? [],

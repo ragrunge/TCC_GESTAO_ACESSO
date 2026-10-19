@@ -41,8 +41,6 @@ export function UnidadeDetalhe({ id }: { id: string }) {
   const { avisar } = useToast();
   const catalogo = useCatalogo();
   const acoes = useAcoesUnidade();
-  /** Operação com backend (mock: todas). Ação sem backend some da tela em vez de falhar com 501. */
-  const suporta = (op: string) => api.suporta?.(op) ?? true;
   const [modo, setModo] = useState<Modo>(null);
   const [evento, setEvento] = useState<EventoView | null>(null);
   const [veiculoEditado, setVeiculoEditado] = useState<Veiculo | null>(null);
@@ -91,9 +89,9 @@ export function UnidadeDetalhe({ id }: { id: string }) {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <h1 className="text-[30px] font-semibold">{catalogo.agrupamento} {d?.unidade.bloco} · Apartamento {d?.unidade.numero}</h1>
         <div className="flex flex-wrap gap-2">
-          {d && ativa && podePrevia && suporta('autorizacoes.criar') && <Button variante="primario" onClick={() => setModo('previa')}>Nova autorização prévia</Button>}
-          {d && ativa && podeRestricao && suporta('restricoes.criar') && <Button onClick={() => setModo('restricao')}>Nova restrição</Button>}
-          {d && ativa && podeVinculo && suporta('vinculos.criar') && <Button onClick={() => setModo('vinculo')}>Solicitar vínculo</Button>}
+          {d && ativa && podePrevia && <Button variante="primario" onClick={() => setModo('previa')}>Nova autorização prévia</Button>}
+          {d && ativa && podeRestricao && <Button onClick={() => setModo('restricao')}>Nova restrição</Button>}
+          {d && ativa && podeVinculo && <Button onClick={() => setModo('vinculo')}>Solicitar vínculo</Button>}
           {d && podeEditarUnidade && <Button onClick={() => setModo('editar')}>Editar número</Button>}
           {d && podeEditarUnidade && <Button disabled={acoes.alternarAtivo.isPending} onClick={() => void alternarAtivo()}>{ativa ? 'Desativar unidade' : 'Reativar unidade'}</Button>}
         </div>
@@ -122,11 +120,11 @@ export function UnidadeDetalhe({ id }: { id: string }) {
           <div className="grid grid-cols-3 gap-4">
             <section className={cartao}>
               <div className="flex items-center justify-between gap-2"><h2 className="text-[16px] font-semibold">Veículos</h2>
-                {podeVeiculo && suporta('veiculos.criar') && <button type="button" className={link} onClick={() => setModo('veiculo')}>+ Novo</button>}</div>
+                {podeVeiculo && <button type="button" className={link} onClick={() => setModo('veiculo')}>+ Novo</button>}</div>
               {d.veiculos.map((v) => (
                 <div key={v.id} className="flex items-start justify-between gap-2">
                   <div className="flex flex-col"><span className="font-mono text-[17px] font-semibold">{v.placa}</span><span className="text-[14px] text-[#56616B]">{v.modelo} · {v.cor}</span></div>
-                  {podeVeiculo && suporta('veiculos.editar') && <button type="button" className={link} aria-label={`Editar veículo ${v.placa}`} onClick={() => setVeiculoEditado(v)}>Editar</button>}
+                  {podeVeiculo && <button type="button" className={link} aria-label={`Editar veículo ${v.placa}`} onClick={() => setVeiculoEditado(v)}>Editar</button>}
                 </div>
               ))}
               {d.veiculos.length === 0 && <span className={vazio}>Nenhum veículo cadastrado.</span>}

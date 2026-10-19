@@ -1,13 +1,7 @@
-import { expect, test } from '@playwright/test';
-import { entrarComo, linhaEvento, toast } from './helpers';
-
-// window.__adulterarEvento é a ferramenta de demonstração do mock (altera um evento sem recalcular o hash)
-declare global {
-  interface Window { __adulterarEvento: (ref: string | number) => Promise<void> }
-}
+import { API_E2E, expect, test, diaSP, entrarComo, linhaEvento, toast } from './helpers';
 
 test.describe('7. Auditoria (síndico)', () => {
-  test('verificar integridade: "Trilha íntegra"; após adulterar e recarregar, aponta adulteração', async ({ page }) => {
+  test('verificar integridade: "Trilha íntegra"; após adulterar e recarregar, aponta adulteração', async ({ page, request }) => {
     await entrarComo(page, 'Síndico');
     await page.goto('/historico');
 
@@ -16,8 +10,9 @@ test.describe('7. Auditoria (síndico)', () => {
     await expect(toast(page, 'Trilha íntegra')).toBeVisible();
     await expect(page.getByText(/Integridade verificada: \d+ registros/)).toBeVisible();
 
-    // Adultera o evento e4808 (Thiago Moura, 08/10) sem recalcular o hash, e recarrega a página
-    await page.evaluate(() => window.__adulterarEvento('e4808'));
+    // Adultera, direto no banco e sem recalcular o hash, o primeiro evento do Thiago Moura (seed do e2e), como faria
+    // quem tem acesso ao banco. A rota /__e2e/adulterar-evento só existe no servidor de e2e (PGlite).
+    expect((await request.post(`${API_E2E}/__e2e/adulterar-evento`, { data: { pessoa: 'Thiago Moura' } })).ok()).toBe(true);
     await page.reload();
     await expect(page.getByRole('button', { name: 'Verificar integridade da trilha' })).toBeVisible();
 
@@ -43,7 +38,7 @@ test.describe('7. Auditoria (síndico)', () => {
     const modal = page.getByRole('dialog');
     await modal.getByLabel('Pessoa autorizada').fill('Larissa Gomes');
     await modal.getByRole('button', { name: /Larissa Gomes/ }).click();
-    await modal.getByLabel(/Válida até/).fill('2026-10-30');
+    await modal.getByLabel(/Válida até/).fill(diaSP(10));
     await modal.getByLabel(/Justificativa \(obrigatória sem morador/).fill('Cadastro direto pelo síndico para a visita de sábado');
     await modal.getByRole('button', { name: 'Cadastrar autorização' }).click();
     await expect(toast(page, 'Autorização prévia cadastrada.')).toBeVisible();

@@ -120,7 +120,6 @@ function DetalheModal({ id, inicial, onClose, podeOperarDe }: {
   const { avisar } = useToast();
   const { codigo } = useCatalogo();
   const invalidar = useInvalidar();
-  const suporta = (op: string) => api.suporta?.(op) ?? true;
   const podeBaixar = useCan('documento.ver');
   const podeVincular = useCan('ocorrencia.operar');
   const [enviando, setEnviando] = useState(false);
@@ -150,7 +149,7 @@ function DetalheModal({ id, inicial, onClose, podeOperarDe }: {
   const aberta = o.status !== 'encerrada';
   const docs = o.documentos ?? [];
   const nAnexos = Math.max(docs.length, o.anexos.length);
-  const podeAnexar = podeOperar && aberta && nAnexos < ANEXO_MAX_POR_OCORRENCIA && suporta('ocorrencias.anexar');
+  const podeAnexar = podeOperar && aberta && nAnexos < ANEXO_MAX_POR_OCORRENCIA;
 
   async function anexar(f: File | undefined) {
     if (!f) return;
@@ -194,7 +193,7 @@ function DetalheModal({ id, inicial, onClose, podeOperarDe }: {
                 <Paperclip className="h-4 w-4 shrink-0 text-[#56616B]" aria-hidden />
                 <span className="font-mono">{d.nome}</span>
                 <span className="text-[#56616B]">{tamanho(d.tamanhoBytes)} · {d.enviadoPorNome} · {fmtDataHora(d.enviadoEm)}</span>
-                {podeBaixar && suporta('ocorrencias.baixarAnexo') && (
+                {podeBaixar && (
                   <Button pequeno className="ml-auto" icone={Download} aria-label={`Baixar ${d.nome}`} onClick={() => void baixar(d.id)}>Baixar</Button>
                 )}
               </li>
@@ -219,7 +218,7 @@ function DetalheModal({ id, inicial, onClose, podeOperarDe }: {
             <span>{quandoCurto(e.ocorridoEm, agoraSim())} · {e.pessoaNome} · {e.unidadeRotulo ?? 'Condomínio'} · {chipDoEvento(e).texto} · {textoAutorizacao(e)}</span>
           </div>
         ))}
-        {podeVincular && aberta && suporta('ocorrencias.vincularEventos') && (
+        {podeVincular && aberta && (
           vinculando ? (
             <div className="flex flex-col gap-2">
               <SeletorEventos selecionados={selecionados} onChange={setSelecionados} ocultar={o.eventoIds} />
@@ -274,7 +273,6 @@ const TIPOS = Object.keys(ROTULO_TIPO_OCORRENCIA) as TipoOcorrencia[];
 
 function NovaOcorrenciaModal({ inicial, onClose, onFeito }: { inicial: Record<string, string>; onClose: () => void; onFeito: (o: Ocorrencia, falhas: string[]) => void }) {
   const api = useApi();
-  const suporta = (op: string) => api.suporta?.(op) ?? true;
   const [tipo, setTipo] = useState<TipoOcorrencia>((TIPOS as string[]).includes(inicial.tipo) ? (inicial.tipo as TipoOcorrencia) : 'outro');
   const [descricao, setDescricao] = useState('');
   const [unidade, setUnidade] = useState(inicial.unidade ?? '');
@@ -328,14 +326,12 @@ function NovaOcorrenciaModal({ inicial, onClose, onFeito }: { inicial: Record<st
           <Field label="Envolvidos"><input className="input" value={envolvidos} onChange={(e) => setEnvolvidos(e.target.value)} placeholder="Nomes das pessoas envolvidas" /></Field>
         </div>
         <Field label="Descrição"><textarea className="input" rows={4} value={descricao} onChange={(e) => setDescricao(e.target.value)} /></Field>
-        {suporta('ocorrencias.anexar') && (
-          <div className="flex flex-wrap items-center gap-2">
-            <label htmlFor="anexos-oc" className="text-[14px] font-medium">Anexos</label>
-            <input id="anexos-oc" type="file" multiple accept={ACEITOS} className="text-[14px]" onChange={(e) => setArquivos(Array.from(e.target.files ?? []))} />
-            <span className="text-[13px] text-[#56616B]">JPEG, PNG ou PDF, até {MB} MB cada, no máximo {ANEXO_MAX_POR_OCORRENCIA}</span>
-            {problemas.length > 0 && <Alert tom="ambar">{problemas.join(' ')}</Alert>}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="anexos-oc" className="text-[14px] font-medium">Anexos</label>
+          <input id="anexos-oc" type="file" multiple accept={ACEITOS} className="text-[14px]" onChange={(e) => setArquivos(Array.from(e.target.files ?? []))} />
+          <span className="text-[13px] text-[#56616B]">JPEG, PNG ou PDF, até {MB} MB cada, no máximo {ANEXO_MAX_POR_OCORRENCIA}</span>
+          {problemas.length > 0 && <Alert tom="ambar">{problemas.join(' ')}</Alert>}
+        </div>
         <div className="rounded-[10px] border border-[#DCE1E5]">
           <div className="flex items-center justify-between px-[14px] py-[10px]">
             <span className="text-[14px] font-medium">Eventos de acesso vinculados{vinc.length > 0 ? ` (${vinc.length})` : ''}</span>

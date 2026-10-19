@@ -1,26 +1,12 @@
-// E2E contra a API real (Docker local). Fluxo: login do síndico, listar usuários, criar um usuário de teste (senha
+// E2E contra a API real (servidor de e2e sobre PGlite; banco semeado no início da spec). Fluxo: login do síndico, listar usuários, criar um usuário de teste (senha
 // temporária mostrada uma vez), login dele com troca obrigatória, logout, 401 depois do logout e sessão expirada.
 // Não toca na senha dos usuários do seed: a troca obrigatória é exercida num usuário criado aqui, desativado no fim.
-// A senha do seed vem de SEED_SENHA_DEV (ambiente ou .env da raiz) e nunca é impressa.
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+// Senha: a dos usuários do e2e (SENHA_E2E).
 import { randomBytes } from 'node:crypto';
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { API_E2E, SENHA_E2E, resetarBanco } from './helpers';
 
-const API = 'http://127.0.0.1:3000/api/v1';
-
-function senhaSeed(): string | undefined {
-  if (process.env.SEED_SENHA_DEV) return process.env.SEED_SENHA_DEV;
-  try {
-    const env = readFileSync(resolve(process.cwd(), '../../.env'), 'utf8');
-    const m = /^SEED_SENHA_DEV=(.*)$/m.exec(env);
-    return m?.[1]?.trim().replace(/^['"]|['"]$/g, '') || undefined;
-  } catch { return undefined; }
-}
-
-async function apiDePe(request: APIRequestContext) {
-  try { return (await request.get(`${API}/saude`, { timeout: 3_000 })).ok(); } catch { return false; }
-}
+const API = `${API_E2E}/api/v1`;
 
 async function entrar(page: Page, login: string, senha: string) {
   await page.goto('/login');
@@ -29,7 +15,7 @@ async function entrar(page: Page, login: string, senha: string) {
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
 }
 
-const SENHA = senhaSeed();
+const SENHA = SENHA_E2E;
 const sufixo = `${Date.now().toString(36)}${randomBytes(2).toString('hex')}`;
 const LOGIN_TESTE = `e2e.${sufixo}`;
 const NOME_TESTE = `Teste E2E ${sufixo}`;
@@ -38,8 +24,7 @@ test.describe.serial('API real: login, sessão e usuários', () => {
   let idTeste: string | null = null;
 
   test.beforeAll(async ({ request }) => {
-    test.skip(!(await apiDePe(request)), 'API local fora do ar (docker compose up)');
-    test.skip(!SENHA, 'SEED_SENHA_DEV ausente');
+    await resetarBanco(request); // banco semeado; os testes desta spec compartilham o estado (serial)
   });
 
   test.afterAll(async ({ playwright }) => {
@@ -54,7 +39,7 @@ test.describe.serial('API real: login, sessão e usuários', () => {
     await ctx.dispose();
   });
 
-  test('tela de login do modo http não tem atalhos de demonstração; credencial errada dá mensagem única', async ({ page }) => {
+  test('tela de login não tem atalhos de demonstração; credencial errada dá mensagem única', async ({ page }) => {
     await page.goto('/login');
     await expect(page.getByLabel('Usuário')).toHaveValue('');
     await expect(page.getByText('Perfil de demonstração')).toHaveCount(0);

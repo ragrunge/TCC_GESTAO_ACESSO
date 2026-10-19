@@ -9,7 +9,7 @@ import {
 } from './rules';
 import { brt, HORA, menosAnos } from './time';
 import type { AutorizacaoPrevia, Funcionario, Pessoa, VinculoUnidade } from './types';
-import { codigoEvento } from './hashChain';
+import { calcularHashExportado, codigoEvento, hashGenese, verificarCadeia, type EventoExportado } from './hashChain';
 
 describe('unidades', () => {
   it('estrutura padrão: 9 blocos (A a I) x 18 unidades = 162 (térreo só com 03 e 04, provisório)', () => {
@@ -267,5 +267,38 @@ describe('senha temporária (spec §5.1)', () => {
     expect(senhaTemporariaVencida({ deveTrocarSenha: false, senhaTemporariaExpiraEm: null }, t0)).toBe(false);
     expect(senhaTemporariaVencida({}, t0)).toBe(false);
     expect(senhaTemporariaVencida({ deveTrocarSenha: true, senhaTemporariaExpiraEm: null }, t0)).toBe(true);
+  });
+});
+
+describe('verificarCadeia (RF-37)', () => {
+  /** Cadeia de `n` eventos válida a partir da gênese (mesma serialização do trigger do banco). */
+  async function cadeia(n: number): Promise<EventoExportado[]> {
+    const evs: EventoExportado[] = [];
+    let anterior = await hashGenese();
+    for (let seq = 1; seq <= n; seq++) {
+      const e: EventoExportado = {
+        v: 1, seq, id: `00000000-0000-4000-8000-00000000000${seq}`, tipo: 'entrada', categoria_pessoa: 'visitante',
+        pessoa_id: 'p1', unidade_destino_id: 'u1', area_comum_id: null, ponto_acesso_id: 'pa', autorizado_por_tipo: 'interfone',
+        autorizado_por_pessoa_id: 'm1', autorizacao_previa_id: null, justificativa: null, restricao_id: null, operador_id: 'o1',
+        operador_papel: 'porteiro', ocorrido_em: new Date(brt(2026, 10, 17, 9, seq)).toISOString(),
+        registrado_em: new Date(brt(2026, 10, 17, 9, seq)).toISOString(), retroativo: false, formulario_contingencia: null,
+        refere_evento_id: null, corrige_evento_id: null, correcao_valores: null, empresa: null, servico: null, observacao: null,
+        hash_anterior: anterior, hash: '',
+      };
+      e.hash = await calcularHashExportado(e);
+      anterior = e.hash;
+      evs.push(e);
+    }
+    return evs;
+  }
+
+  it('hash_anterior adulterado (com o hash recalculado) é hash_anterior_incoerente no seq dele (migrado do teste do mock)', async () => {
+    const evs = await cadeia(3);
+    expect(await verificarCadeia(evs)).toMatchObject({ valido: true, verificados: 3 });
+    // O hash do próprio evento confere (recalculado), mas o encadeamento com o anterior está quebrado
+    const adulterado = { ...evs[1]!, hash_anterior: 'f'.repeat(64) };
+    adulterado.hash = await calcularHashExportado(adulterado);
+    const r = await verificarCadeia([evs[0]!, adulterado, evs[2]!]);
+    expect(r).toMatchObject({ valido: false, motivo: 'hash_anterior_incoerente', primeiroSeqInvalido: 2, verificados: 1, ultimoSeq: 1, ultimoHash: evs[0]!.hash });
   });
 });

@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": { "deploymentEnabled": { "main": true, "**": false } },
   "rewrites": [
     { "source": "/api/:caminho*", "destination": "https://179-197-78-78.sslip.io/api/:caminho*" },
     { "source": "/(.*)", "destination": "/index.html" }

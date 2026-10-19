@@ -1,5 +1,5 @@
-// EventoView da API: o evento gravado + valores efetivos + nomes resolvidos (o evento guarda só ids). Mesmo resultado da
-// função `view()` do mock, campo a campo (apps/web/src/api/mock/createMockApi.ts). Monta uma PÁGINA de cada vez:
+// EventoView da API: o evento gravado + valores efetivos + nomes resolvidos (o evento guarda só ids). Formato
+// `EventoView` de @portaria/domain/types, o que a tela consome. Monta uma PÁGINA de cada vez:
 // as referências (última correção, saída, entrada, autorização, nomes) vêm em consultas em lote, sem N+1.
 import { codigoEvento } from '@portaria/domain/hashChain';
 import type { EventoAcesso, EventoView, ValoresCorrecao } from '@portaria/domain/types';

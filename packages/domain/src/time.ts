@@ -60,27 +60,5 @@ export function fmtDuracao(ms: number): string {
   return h > 0 ? `${h}h ${p2(m)}min` : `${m}min`;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Relógio simulado: começa em sexta-feira 09/10/2026 14:32 e avança em tempo real.
-// ---------------------------------------------------------------------------------------------
-export const INICIO_SIMULADO = brt(2026, 10, 9, 14, 32, 0);
-
-class RelogioSimulado {
-  private base = INICIO_SIMULADO;
-  private realBase = Date.now();
-  private congelado: number | null = null;
-
-  agora(): number {
-    if (this.congelado !== null) return this.congelado;
-    return this.base + (Date.now() - this.realBase);
-  }
-  /** Reposiciona o relógio simulado em `ts` e volta a avançar em tempo real. */
-  definir(ts: number) { this.base = ts; this.realBase = Date.now(); this.congelado = null; }
-  /** Fixa o relógio (usado nos testes para resultados determinísticos). */
-  congelar(ts: number) { this.congelado = ts; }
-  avancar(ms: number) { if (this.congelado !== null) this.congelado += ms; else this.base += ms; }
-  reiniciar() { this.definir(INICIO_SIMULADO); }
-}
-
-export const relogio = new RelogioSimulado();
-export const agora = () => relogio.agora();
+/** Hora atual (epoch ms). As telas usam esta função; nos testes, `vi.setSystemTime` controla o valor. */
+export const agora = () => Date.now();

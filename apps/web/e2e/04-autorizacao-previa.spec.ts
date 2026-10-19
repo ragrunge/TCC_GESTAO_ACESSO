@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-import { botaoConfirmarEntrada, entrarComo, escolherPessoa, escolherUnidade, filtrarHistoricoPorPessoa, linhaEvento, toast, trocarPara } from './helpers';
+import { expect, test, diaSP, botaoConfirmarEntrada, entrarComo, escolherPessoa, escolherUnidade, filtrarHistoricoPorPessoa, linhaEvento, toast, trocarPara } from './helpers';
 
 test.describe('4. Autorização prévia (tela da unidade)', () => {
   test('sem "Morador que pediu" exige justificativa; vira exceção atribuída a quem cadastrou (relatório do síndico)', async ({ page }) => {
@@ -11,7 +10,7 @@ test.describe('4. Autorização prévia (tela da unidade)', () => {
 
     await modal.getByLabel('Pessoa autorizada').fill('Larissa Gomes');
     await modal.getByRole('button', { name: /Larissa Gomes/ }).click();
-    await modal.getByLabel(/Válida até/).fill('2026-10-30');
+    await modal.getByLabel(/Válida até/).fill(diaSP(10));
 
     // Sem solicitante: aparece o campo de justificativa e o envio sem ela é rejeitado
     const just = modal.getByLabel(/Justificativa \(obrigatória sem morador solicitante/);

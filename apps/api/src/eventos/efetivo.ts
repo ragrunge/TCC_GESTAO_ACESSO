@@ -1,6 +1,6 @@
 // Valores EFETIVOS do evento (spec §4.4): o registro gravado nunca muda; uma correção é um evento novo cujo
 // `correcao_valores` (acumulado das correções anteriores) substitui campos do original. Vale a ÚLTIMA correção (maior
-// seq). É a mesma regra de `indices().ef` do mock (apps/web/src/api/mock/createMockApi.ts).
+// seq).
 //
 // Em SQL: `efetivoSql(chave)` lê a última correção por subconsulta correlacionada (índice evento_correcao_ix). Para
 // filtrar por um valor efetivo sem varrer a tabela, `filtroEfetivo` combina o valor gravado (indexado) com os poucos

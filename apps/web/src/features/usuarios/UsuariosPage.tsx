@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Copy, MessageSquareText, TriangleAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { type NovoUsuarioInput, type UsuarioComSenhaTemporaria, useApi } from '../../api';
+import { type NovoUsuarioInput, type UsuarioComSenhaTemporaria } from '../../api';
 import { useAuth, useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
 import { Badge } from '../../components/Badge';
@@ -28,10 +28,8 @@ export function UsuariosPage() {
   const { avisar } = useToast();
   const podeGerenciar = useCan('usuario.gerenciar');
   const lista = useUsuarios(podeGerenciar);
-  // Prazo da senha temporária: o mock decide no relógio simulado; a API real, no relógio de verdade.
-  const api = useApi();
-  const agoraSimulado = useAgora(30_000);
-  const agora = api.modo === 'mock' ? agoraSimulado : Date.now();
+  // Prazo da senha temporária (aviso "vence em"/"vencida"): hora real, reavaliada a cada 30 s.
+  const agora = useAgora(30_000);
   const [senha, setSenha] = useState<SenhaExibida | null>(null);
   const acoes = useAcoesUsuario((r, motivo) => setSenha({ ...r, motivo }));
   const [novo, setNovo] = useState(false);
@@ -39,7 +37,7 @@ export function UsuariosPage() {
   const [redefinir, setRedefinir] = useState<UsuarioSistema | null>(null);
   // RNF-04: administração gerencia usuários, exceto síndico; ninguém altera o próprio papel
   const gerenciaSindico = useCan('usuario.gerenciar_sindico');
-  // Retenção (LGPD, RNF-09): só o síndico; existe no mock e na API real.
+  // Retenção (LGPD, RNF-09): só o síndico.
   const podeRetencao = useCan('lgpd.retencao');
   const papeisPermitidos = (Object.keys(ROTULO_PAPEL) as Papel[]).filter((p) => p !== 'sindico' || gerenciaSindico);
 

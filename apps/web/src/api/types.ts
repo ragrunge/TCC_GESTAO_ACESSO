@@ -1,5 +1,5 @@
 // Contrato da API. Os métodos espelham os endpoints da especificação técnica (seção 6).
-// A UI só conhece esta interface; mock (em memória) e http (fetch) são trocáveis em src/api/index.ts.
+// A UI só conhece esta interface; a implementação é o cliente HTTP (src/api/http), criado em src/api/index.tsx.
 import type {
   AreaComum, AutorizacaoPrevia, AutorizacaoRetirada, CategoriaPessoa, Encomenda, Escala, EventoView, MeioAutorizacao, Ocorrencia,
   Papel, Pessoa, RegistroAlteracao, Restricao, StatusOcorrencia, StatusVinculo, TipoEvento, TipoOcorrencia, TipoVinculo, Unidade,
@@ -7,7 +7,6 @@ import type {
 } from '@portaria/domain/types';
 import type { EstadoAutorizacao } from '@portaria/domain/rules';
 import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
-import type { Rota } from '@portaria/domain/rbac';
 import type { Agrupamento } from '@portaria/domain/units';
 
 /** Erro de API no formato da spec: status HTTP + código estável + mensagem para o operador. */
@@ -133,7 +132,7 @@ export interface NovaOcorrenciaInput {
 
 export interface NovoUsuarioInput { nome: string; login: string; papel: Papel }
 
-/** Bloco e número como digitados: a API (e o mock) normalizam ("a" -> "A", "3" -> "03") e validam. */
+/** Bloco e número como digitados: a API normaliza ("a" -> "A", "3" -> "03") e validam. */
 export interface NovaUnidadeInput { bloco: string; numero: string }
 
 /** RF-09: funcionário do condomínio = pessoa (mesmas regras de CPF e telefone) + função e escala. */
@@ -155,7 +154,7 @@ export interface UsuarioSessao extends UsuarioSistema { deveTrocarSenha: boolean
  */
 export interface UsuarioComSenhaTemporaria { usuario: UsuarioSistema; senhaTemporaria: string }
 
-/** Avisos de sessão que a camada HTTP emite para o AuthContext (o mock não emite). */
+/** Avisos de sessão que a camada HTTP emite para o AuthContext. */
 export type EventoSessao = 'expirada' | 'troca_obrigatoria';
 
 export interface PessoaBusca extends Pessoa {
@@ -203,7 +202,7 @@ export interface OcorrenciaView extends Ocorrencia {
   abertaPorNome: string;
   historicoStatus: (MudancaStatusOcorrencia & { porNome: string })[];
   /**
-   * Anexos com conteúdo guardado (API real: cifrado, spec §9.2). Ausente no mock, que guarda só o nome (`anexos`).
+   * Anexos com conteúdo guardado (API real: cifrado, spec §9.2). Opcional no tipo (`anexos` traz só os nomes).
    * O nome é gerado ("anexo-1a2b3c4d.pdf"): o original não é guardado.
    */
   documentos?: AnexoOcorrencia[];
@@ -236,14 +235,14 @@ export interface ResultadoBuscaGlobal {
 /** LGPD art. 18 (spec 9.3). */
 export interface ResultadoAnonimizacao {
   pessoaId: string; registrosRedigidos: number; retido: string[];
-  /** API real: eventos da pessoa que ficam retidos (só pelo id) e até quando (início do dia BRT, ms). Ausentes no mock. */
+  /** API real: eventos da pessoa que ficam retidos (só pelo id) e até quando (início do dia BRT, ms). */
   eventosRetidos?: number; retidoAte?: number | null;
   /** API real: arquivos da pessoa (foto) eliminados do storage. */
   documentosEliminados?: number;
 }
 export interface ResultadoRetencao {
   visitantesPrestadores: number; moradores: number; registrosRedigidos: number; pessoaIds: string[];
-  // Só na API real (o mock só anonimiza pessoas):
+  // Além das pessoas, a retenção conta eventos, trilha e arquivos descartados:
   /** Eventos do prefixo da cadeia descartados (com selo no seq de corte). */
   eventosDescartados?: number;
   /** Eventos com mais de 3 anos que ficaram por falta de selo no ponto de corte. */
@@ -341,15 +340,6 @@ export interface RelatorioImportacao {
 export interface ResultadoImportacao { importados: number; reaproveitados: number; prazoRegularizacao: number }
 
 export interface Api {
-  /** Implementação ativa. Atalhos de demonstração só existem em `mock`. */
-  modo: 'mock' | 'http';
-  /** Rotas com backend disponível. Ausente = todas (mock). As demais mostram "disponível em breve". */
-  rotasDisponiveis?: readonly Rota[];
-  /**
-   * Operação disponível nesta implementação ("veiculos.criar"). Ausente = todas (mock). A UI esconde a ação que a API
-   * real ainda não tem, em vez de deixá-la falhar com 501.
-   */
-  suporta?(operacao: string): boolean;
   /** Assina avisos de sessão (401 fora do login, 403 TROCA_DE_SENHA_OBRIGATORIA). Devolve o cancelamento. */
   aoEventoSessao?(cb: (e: EventoSessao) => void): () => void;
   auth: {
@@ -434,7 +424,7 @@ export interface Api {
     registrarRecusa(i: NovaRecusaInput): Promise<EventoView>;
     registrarSaida(entradaId: string, opcoes?: OpcoesSaida): Promise<EventoView>;
     corrigir(id: string, i: { justificativa: string; observacao?: string; valores?: Partial<ValoresCorrecao> }): Promise<EventoView>;
-    /** Lista inteira (mock; no http percorre as páginas com teto). As telas usam `listarPagina`. */
+    /** Lista inteira (percorre as páginas, com teto). As telas usam `listarPagina`. */
     listar(f?: FiltroEventos): Promise<EventoView[]>;
     /** Uma página (cursor), mais recentes primeiro (seq decrescente). Padrão de 50. */
     listarPagina(f?: FiltroEventosPagina): Promise<Pagina<EventoView>>;
@@ -444,7 +434,7 @@ export interface Api {
     presentes(): Promise<EventoView[]>;
   };
   encomendas: {
-    /** Lista inteira (mock; no http percorre as páginas). As telas usam `listarPagina`. */
+    /** Lista inteira (percorre as páginas). As telas usam `listarPagina`. */
     listar(f?: { status?: 'aguardando' | 'entregue' }): Promise<EncomendaView[]>;
     /** Uma página, mais recentes primeiro (recebimento). Padrão de 50. */
     listarPagina(f?: FiltroEncomendas): Promise<Pagina<EncomendaView>>;
@@ -514,6 +504,4 @@ export interface Api {
     analisar(i: { arquivo: string; linhas: LinhaPlanilha[] }): Promise<RelatorioImportacao>;
     confirmar(id: string): Promise<ResultadoImportacao>;
   };
-  /** Disponível apenas no mock. */
-  demo?: { restaurar(): Promise<void> };
 }

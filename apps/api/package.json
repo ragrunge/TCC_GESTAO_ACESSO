@@ -15,7 +15,8 @@
     "db:migrate": "drizzle-kit migrate",
     "test": "vitest run",
     "test:pg": "vitest run test/postgres-real",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev:pglite": "vite-node test/e2e/iniciar.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.7",

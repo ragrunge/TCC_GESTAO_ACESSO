@@ -1,4 +1,4 @@
-// Usuários de desenvolvimento: um por papel, com os mesmos nomes do seed do mock (apps/web), para a demo bater.
+// Usuários de desenvolvimento: um por papel (os mesmos nomes que os roteiros e os e2e do front usam).
 // A senha NÃO está aqui: vem de SEED_SENHA_DEV (já em hash argon2id). Idempotente: login existente não é tocado
 // (nem a senha), então rodar de novo não desfaz uma troca de senha. Com troca obrigatória, a senha do seed vale como
 // temporária: 72 h a partir de agora (@portaria/domain/rules), como a criada pela administração.

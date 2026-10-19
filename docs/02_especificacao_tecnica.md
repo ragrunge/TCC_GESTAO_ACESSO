@@ -200,7 +200,7 @@ citados existem no banco e aparecem na mensagem de erro.
 | area_comum | id, nome, ativo | UQ nome. Destino de prestador e de autorização prévia de área comum |
 | ponto_acesso | id, nome, ativo | UQ nome. Seed com a única "Portaria social"; tabela pronta para garagem e dispositivos (fase 3) |
 
-A estrutura inicial é declarativa (`ESTRUTURA_PADRAO` em `@portaria/domain/units`): agrupamento ("Bloco" ou "Torre", só muda o rótulo: "BLOCO A · AP 32"; o código é "A-32"), blocos, andares (0 = térreo), finais por andar e unidades ausentes ("01" em todos os blocos, "A-01" só num). Número = andar × 10 + final. Padrão: blocos A a I, andares 0 a 4, finais 1 a 4, sem 01 e 02 no térreo (162 unidades, provisório). O seed (`apps/api/src/db/seed.ts`) cria essas unidades, o ponto de acesso e as áreas comuns (o mesmo que o mock usa). Usuários e pessoas não entram no seed. Exceções à grade entram pelo CRUD (RF-01) ou pela importação. Banco sem nenhum uso de unidade e com outra estrutura: CLI `recriar-estrutura` (substitui as unidades e grava no audit_log; recusa se houver qualquer referência).
+A estrutura inicial é declarativa (`ESTRUTURA_PADRAO` em `@portaria/domain/units`): agrupamento ("Bloco" ou "Torre", só muda o rótulo: "BLOCO A · AP 32"; o código é "A-32"), blocos, andares (0 = térreo), finais por andar e unidades ausentes ("01" em todos os blocos, "A-01" só num). Número = andar × 10 + final. Padrão: blocos A a I, andares 0 a 4, finais 1 a 4, sem 01 e 02 no térreo (162 unidades, provisório). O seed (`apps/api/src/db/seed.ts`) cria essas unidades, o ponto de acesso e as áreas comuns. Usuários e pessoas não entram no seed. Exceções à grade entram pelo CRUD (RF-01) ou pela importação. Banco sem nenhum uso de unidade e com outra estrutura: CLI `recriar-estrutura` (substitui as unidades e grava no audit_log; recusa se houver qualquer referência).
 
 #### usuario_sistema (RN-05, RF-33)
 
@@ -348,7 +348,7 @@ Append-only, com hash encadeado (seção 4).
 Sem FK em `refere_evento_id` e `corrige_evento_id`: o trigger valida na inserção, e o descarte por
 retenção (prefixo da cadeia, seção 9.1) não pode ser bloqueado por uma saída ou correção mais nova.
 Correção é um evento novo (RN-04). Views e relatórios usam os valores efetivos: o original sobreposto pela
-última correção, que acumula os valores das anteriores, como no mock.
+última correção, que acumula os valores das anteriores.
 
 `evento_acesso_cadeia` é a linha única com `ultimo_seq`, `ultimo_hash` e `ultimo_registrado_em`. Ela
 serializa as inserções e guarda o ponto de continuação mesmo depois do descarte por retenção.
@@ -489,7 +489,7 @@ rollback. A trava vale até o COMMIT, então a API deve inserir o evento no fim 
 usa `clock_timestamp()` depois da trava e nunca anda para trás em relação a `seq`.
 
 **Serialização canônica v1** (`evento_acesso_canonico(e)` no banco; `jsonCanonicoV1` em
-`@portaria/domain/hashChain`, a mesma usada pelo mock do navegador e reexportada por `apps/api/src/db/cadeia.ts`):
+`@portaria/domain/hashChain`, a mesma usada pela tela (verificação e exportação) e reexportada por `apps/api/src/db/cadeia.ts`):
 
 ```
 hash = hex( SHA-256( UTF-8( hash_anterior || canonico ) ) )
@@ -678,7 +678,7 @@ Legenda: S = permitido, N = negado, L = somente leitura, P = próprio (só os re
 
 Pontos de projeto:
 
-- A matriz é aplicada na API por guards NestJS globais e declarativos: `@Acao('usuario.gerenciar')` decide com `pode()` e a `MATRIZ` de `@portaria/domain/rbac` (fonte única, a mesma do mock). Toda rota declara `@Publico()`, `@Autenticado()` ou `@Acao()`; rota sem política é negada. A SPA apenas oculta o que o papel não pode, sem ser fonte de autorização.
+- A matriz é aplicada na API por guards NestJS globais e declarativos: `@Acao('usuario.gerenciar')` decide com `pode()` e a `MATRIZ` de `@portaria/domain/rbac` (fonte única, a mesma que a tela usa para esconder ações). Toda rota declara `@Publico()`, `@Autenticado()` ou `@Acao()`; rota sem política é negada. A SPA apenas oculta o que o papel não pode, sem ser fonte de autorização.
 - Porteiro não edita nem exclui evento (RN-04) e não aprova vínculo (RN-03); a API rejeita com 403 e grava a tentativa.
 - Auditor: todas as rotas de escrita retornam 403; nenhum privilégio de escrita no role de banco dele é necessário porque a API é o único cliente, mas as rotas de leitura de auditoria usam conexão `SELECT only` quando possível.
 - Papéis são fixos no MVP (`enum`); permissões granulares configuráveis ficam fora do escopo.
@@ -749,8 +749,8 @@ Respostas da API saem com `Cache-Control: no-store`.
 ### 6.3 M2 — Controle de acesso
 
 Implementado em `apps/api/src/eventos` (2026-10-18). Instantes em epoch ms; datas de calendário em `'AAAA-MM-DD'` (dia BRT).
-Todas as listas dos eventos usam os **valores efetivos** (original + última correção, §4.4) e devolvem a mesma `EventoView`
-do mock (nomes por join; o evento guarda só ids).
+Todas as listas dos eventos usam os **valores efetivos** (original + última correção, §4.4) e devolvem a `EventoView` do domínio
+(`@portaria/domain/types`; nomes por join; o evento guarda só ids).
 
 | Método | Rota | Papéis | RF |
 |---|---|---|---|
@@ -779,7 +779,7 @@ segunda entrada simultânea da mesma pessoa ver "já está dentro"; usa advisory
 
 ### 6.4 M3 — Encomendas
 
-Implementado em `apps/api/src/encomendas` (2026-10-18). Mesmas regras do mock; toda escrita grava `audit_log`.
+Implementado em `apps/api/src/encomendas` (2026-10-18). Regras de `@portaria/domain/rules`; toda escrita grava `audit_log`.
 
 | Método | Rota | Papéis | RF |
 |---|---|---|---|
@@ -807,14 +807,14 @@ Ocorrências implementadas em `apps/api/src/ocorrencias` (2026-10-18). O status 
 | GET | /ocorrencias/:id/anexos/:documentoId | SI, AD (`documento.ver`) | RN-10: download (`attachment`, CSP sandbox), conteúdo decifrado e conferido (GCM + SHA-256); cada leitura grava `documento.ler`. Substitui `GET /documentos/:id/conteudo` |
 | GET | /turnos/resumo | SI, AD, PO | RF-29 (implementado) |
 | GET | /relatorios/resumo?de=&ate=&unidadeId=&categoria=&meio= | SI, AD, AU | RF-30, RF-31 (implementado): acessos por dia e por meio, exceções por responsável, encomendas pendentes por idade, cadastro completo e totais, pelos valores efetivos. Datas `'AAAA-MM-DD'`; padrão: últimos 30 dias; máximo 366 |
-| GET | /relatorios/resumo/csv | SI, AD, AU | O mesmo resumo em CSV (UTF-8 com BOM, `;`), gerado pelo construtor de `@portaria/domain/relatorio` (o mesmo do mock) |
+| GET | /relatorios/resumo/csv | SI, AD, AU | O mesmo resumo em CSV (UTF-8 com BOM, `;`), gerado pelo construtor de `@portaria/domain/relatorio` |
 
 ### 6.6 Auditoria
 
 | Método | Rota | Papéis | RF |
 |---|---|---|---|
 | GET | /auditoria/integridade | SI, AD, AU | RNF-01, RF-37 (implementado): recalcula a cadeia em lotes com a serialização do domain, a partir da gênese ou do selo do corte; confere a cabeça (`evento_acesso_cadeia`, pega remoção no fim) e cada selo diário (`selo_divergente`, pega a cadeia recalculada inteira) |
-| POST | /auditoria/exportacoes | SI, AD, AU | RF-32 (implementado, síncrono): filtros no corpo; devolve `{ nomeArquivo, conteudo, quantidade }` no formato JSONL v2 do mock (`@portaria/domain/exportacao`). Teto de 20.000 eventos (422 `EXPORTACAO_GRANDE`). A exportação vai para o `audit_log` (`auditoria.exportar`, sem o texto do filtro de nome) |
+| POST | /auditoria/exportacoes | SI, AD, AU | RF-32 (implementado, síncrono): filtros no corpo; devolve `{ nomeArquivo, conteudo, quantidade }` no formato JSONL v2 de `@portaria/domain/exportacao`. Teto de 20.000 eventos (422 `EXPORTACAO_GRANDE`). A exportação vai para o `audit_log` (`auditoria.exportar`, sem o texto do filtro de nome) |
 | GET | /auditoria/alteracoes?de=&ate=&usuarioId=&acao=&entidade=&limite=&cursor= | SI, AD, AU | audit_log paginado (mais recente primeiro), sem IP |
 | GET | /auditoria/selos | SI, AD, AU | Seção 4.6 (implementado): `{ ultimo, pendentesEnvio, destinos, agendador }`. Substitui `/auditoria/checkpoints` |
 | POST | /auditoria/selos | SI, AU | "Selar agora" (`auditoria.selar`): `{ selo, novo, ancora: 'enviada' \| 'pendente' \| 'sem_destino' }`; 409 `SELO_EM_ANDAMENTO` |
@@ -825,7 +825,7 @@ Ocorrências implementadas em `apps/api/src/ocorrencias` (2026-10-18). O status 
 
 | Método | Rota | Papéis | Descrição |
 |---|---|---|---|
-| GET | /lgpd/pessoas/:id/exportacao | SI, AD | Dados da pessoa em JSON (seção 9.3), implementado: `{ nomeArquivo, conteudo, quantidade }`, formato `portaria-parque/lgpd-exportacao` v1 do mock; vai para o `audit_log` (`lgpd.exportar`) |
+| GET | /lgpd/pessoas/:id/exportacao | SI, AD | Dados da pessoa em JSON (seção 9.3), implementado: `{ nomeArquivo, conteudo, quantidade }`, formato `portaria-parque/lgpd-exportacao` v1; vai para o `audit_log` (`lgpd.exportar`) |
 | POST | /lgpd/pessoas/:id/anonimizar | SI | Atendimento de pedido de eliminação, respeitada a retenção. 422 `PESSOA_COM_VINCULO_VALIDO`, 409 `PESSOA_JA_ANONIMIZADA`. Resposta: `{ pessoaId, registrosRedigidos, retido, eventosRetidos, retidoAte, documentosEliminados }` |
 | POST | /lgpd/retencao | SI | Roda a retenção agora (a mesma rotina do agendador, 9.1); 409 `RETENCAO_EM_ANDAMENTO` |
 | GET | /lgpd/retencao | SI | Última execução: `{ ultima: { em, porNome, resultado } \| null }` |
@@ -1124,7 +1124,7 @@ Implementação (2026-10-18, `apps/api/src/lgpd/retencao.service.ts`, migração
 
 | Passo | Como |
 |---|---|
-| Pessoas | Mesma regra de `elegivelRetencao` (domain/mock), em SQL; uma transação por pessoa, reconferida com a linha travada; `lgpd_anonimizar_pessoa(id, 'retencao')` anonimiza, marca a foto como eliminada, redige o `audit_log` e registra a execução |
+| Pessoas | Mesma regra de `elegivelRetencao` (`@portaria/domain/rules`), em SQL; uma transação por pessoa, reconferida com a linha travada; `lgpd_anonimizar_pessoa(id, 'retencao')` anonimiza, marca a foto como eliminada, redige o `audit_log` e registra a execução |
 | Foto | Morador com foto e sem vínculo vigente: `foto_documento_id` nulo e `retencao_eliminar_documentos(ids, 'foto_fim_vinculo')`. A API ainda não recebe foto; a regra fica pronta |
 | Eventos | Corte no maior seq **selado** cujo prefixo inteiro já venceu (pelo relógio do banco); `retencao_descartar_eventos`. Vencido depois do último selo elegível fica para o dia seguinte (`eventosVencidosSemSelo`) |
 | Trilha de alterações | `retencao_descartar_audit()`: DELETE do que tem mais de 3 anos pelo relógio do banco (o `app_rw` não escolhe a data). O trigger append-only ganhou essa exceção controlada |
@@ -1199,8 +1199,8 @@ encomendas retiradas, conferências de comprovante dos vínculos (tipo, data, co
 | Eliminação | `POST /lgpd/pessoas/:id/anonimizar`: anonimiza o que pode ser eliminado e informa o que é retido pela necessidade de exercício regular de direitos (eventos de acesso até o fim do prazo da seção 7) |
 
 Decisões da exportação (2026-10-18): CPF só mascarado (o número não é guardado, decisão 18); o HMAC do CPF fica
-fora (é código de busca derivado, e no arquivo só serviria para cruzar o titular com o banco); telefone mascarado,
-como no mock (o arquivo sai do sistema, a conferência de identidade no balcão é fraca, e o titular conhece e corrige
+fora (é código de busca derivado, e no arquivo só serviria para cruzar o titular com o banco); telefone mascarado
+(o arquivo sai do sistema, a conferência de identidade no balcão é fraca, e o titular conhece e corrige
 o número pela administração; o arquivo diz que o número completo é mantido); eventos só os da própria pessoa
 (aqueles em que ela autorizou a entrada de outra são dados de terceiros); documentos só com metadados (foto e anexos
 de ocorrências ligadas a eventos da pessoa, sem a descrição da ocorrência); a conferência do comprovante leva o nome
@@ -1332,7 +1332,7 @@ tcc-portaria/
 │           ├── portaria/       # telas de operação (teclado)
 │           └── admin/          # cadastros, aprovação, relatórios
 ├── packages/
-│   └── domain/                 # tipos, regras puras, RBAC e hash do mock (@portaria/domain)
+│   └── domain/                 # tipos, regras puras, RBAC e hash (@portaria/domain), usados pela tela e pela API
 ├── docs/
 │   └── contingencia/           # formulário em papel e procedimento
 ├── docker-compose.yml          # db, migrate, api (Alpine)

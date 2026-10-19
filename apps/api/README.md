@@ -20,7 +20,7 @@ src/unidades/            GET /catalogo, GET/POST/PATCH /unidades, /unidades/:id/
 src/pessoas/             POST /pessoas/busca e POST /busca (termo no corpo: pode ser CPF); nome sem acento, CPF por HMAC, unidade, placa
 src/vinculos/            vínculos (RF-03 a RF-07) e a regra "vínculo válido" em SQL (mesma do domain)
 src/eventos/             M2 (spec §6.3): entrada, recusa, saída, correção, listagem, presentes, turno, autorizações prévias e restrições.
-                         efetivo.ts: valores efetivos em SQL (original + última correção); evento-view.ts: a EventoView do mock em lote
+                         efetivo.ts: valores efetivos em SQL (original + última correção); evento-view.ts: a EventoView do domínio em lote
 src/auditoria/auditoria.controller.ts  integridade no banco (lotes, selo, cabeça), exportação JSONL v2 e trilha de alterações paginada
 src/relatorios/          resumo (RF-30, RF-31) agregado no banco e CSV (construtor do domain)
 src/encomendas/          M3 (spec §6.4): receber, filas paginadas, resumo, atrasadas, retirada (RN-08) e autorização de retirada
@@ -35,8 +35,8 @@ src/db/schema.ts         schema Drizzle (fonte das migrações geradas)
 src/db/cadeia.ts         serialização canônica v1 e verificador independente da cadeia (RF-32, RF-37)
 src/db/cpf.ts            máscara e HMAC do CPF
 src/db/seed.ts           unidades da estrutura configurada (162) + portaria social + áreas comuns (idempotente)
-src/db/seed-usuarios.ts  usuários de dev (mesmos nomes do mock), idempotente
-src/db/seed-pessoas-dev.ts pessoas, vínculos e veículos fictícios (mesmos nomes do mock), CPF válido só como máscara + HMAC, idempotente
+src/db/seed-usuarios.ts  usuários de dev (um por papel), idempotente
+src/db/seed-pessoas-dev.ts pessoas, vínculos e veículos fictícios, CPF válido só como máscara + HMAC, idempotente
 drizzle/                 0000_init.sql (gerada), 0001_regras_imutabilidade.sql (manual), 0002_conferencia_comprovante.sql (gerada + trigger manual),
                          0003_autenticacao_sessao.sql (gerada: sessao, login_limite, deve_trocar_senha + GRANT manual),
                          0005_unidade_bloco.sql (manual, snapshot do schema: torre -> bloco texto, número canônico, unidade_descartar_estrutura())
@@ -92,7 +92,30 @@ npm run typecheck -w apps/api
 npm run build -w apps/api            # tsc -> dist/ (CommonJS) e dist/package.json
 DATABASE_URL=postgres://app_rw:SENHA@127.0.0.1:5433/portaria npm run start:dev -w apps/api   # tsc-watch + node
 npm run db:generate -w apps/api      # após mudar schema.ts
+npm run dev:pglite -w apps/api       # API de teste sobre PGlite em memória (abaixo), sem Docker
 ```
+
+### Modo de teste sobre PGlite (`dev:pglite`, e2e)
+
+`test/e2e/servidor.ts` sobe o `AppModule` de verdade (guards, filtro, `configurarApp`) sobre um PGlite **em memória**,
+com as migrações reais (0000 em diante), o seed de estrutura, os 4 usuários de dev, as pessoas fictícias do seed de dev
+e os dados do e2e (`test/e2e/dados.ts`, gravados pelos próprios serviços da API, com trilha e hash). Senha de todos os
+usuários: `E2E_SENHA` (o Playwright manda a de `apps/web/e2e/ambiente.ts`). Porta: `PORTA_E2E` (padrão 3101), só em
+`127.0.0.1`. Cookie sem `Secure` e argon2 leve: é teste. Usado pelo `playwright.config.ts` do web e para desenvolver o
+front com escrita sem tocar na produção (`API_PROXY_ALVO=http://127.0.0.1:3101 npm run dev -w apps/web`).
+
+Rotas que só existem nesse modo (registradas direto no Express pelo `servidor.ts`, fora do `AppModule`):
+`POST /__e2e/reset` (o banco volta ao modelo semeado, por `PGlite.clone()`, em ~0,2 s; as sessões abertas caem junto),
+`POST /__e2e/adulterar-evento` e `POST /__e2e/vencer-senha-temporaria` (manipulam dado de teste para os e2e de
+integridade e de senha vencida).
+
+Trava contra produção (provada em `test/servidor-e2e.test.ts`):
+- recusa subir com `PORTARIA_AMBIENTE=producao`, `NODE_ENV=production`, `DATABASE_URL` ou `DATABASE_URL_MIGRATOR` no
+  ambiente: nunca fala com Postgres de verdade;
+- o código mora em `test/e2e/`, fora de `src/`: o `tsconfig.build.json` só compila `src/`, então nada dele entra no
+  `dist/` nem na imagem; o runtime do Dockerfile roda só `node dist/main.js`, e o PGlite é devDependency (nem está lá).
+  O teste também confere que nada em `src/` importa `test/`, PGlite ou `__e2e`;
+- a API montada como em produção (`AppModule`) responde 404 em todas as rotas `/__e2e/*`.
 
 ## Autenticação e autorização (spec §5.1, §5.2, §6.1)
 
@@ -194,8 +217,8 @@ O atraso crescente e os parâmetros do argon2 (`PADROES_ARGON2`) continuam const
 
 ### Dev do front contra a API
 
-Preferir o proxy do Vite (`server.proxy: { '/api': 'http://127.0.0.1:3000' }`): mesma origem, igual ao rewrite de
-produção, sem CORS. Alternativa: `CORS_ORIGENS=http://localhost:5173` (localhost:5173 e :3000 são o mesmo site, então o
+Preferir o proxy do Vite (`API_PROXY_ALVO=http://127.0.0.1:3000` para a API do Docker, ou `:3101` para o modo
+PGlite; sem a variável, o alvo é a API de PRODUÇÃO): mesma origem, igual ao rewrite de produção, sem CORS. Alternativa: `CORS_ORIGENS=http://localhost:5173` (localhost:5173 e :3000 são o mesmo site, então o
 cookie Strict viaja).
 
 ## Decisões de build

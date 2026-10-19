@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-import { entrarComo, escolherMeio, escolherMorador, escolherPessoa, escolherUnidade, filtrarHistoricoPorPessoa, linhaEvento, toast } from './helpers';
+import { expect, test, dataBR, diaSP, minutosHojeSP, entrarComo, escolherMeio, escolherMorador, escolherPessoa, escolherUnidade, filtrarHistoricoPorPessoa, linhaEvento, toast } from './helpers';
 
 test.describe('5. Lançamento retroativo (contingência em papel)', () => {
   test.beforeEach(async ({ page }) => {
@@ -16,8 +15,9 @@ test.describe('5. Lançamento retroativo (contingência em papel)', () => {
     await escolherMorador(page, 'Ana Ribeiro');
 
     const confirmar = page.getByRole('button', { name: 'Confirmar lançamento' });
-    // Falta hora real e formulário
+    // Falta hora real e formulário. Acesso de ontem: 10:15 está sempre no passado, qualquer que seja a hora do teste.
     await expect(confirmar).toBeDisabled();
+    await page.getByLabel('Data real do acesso').fill(diaSP(-1));
     await page.getByLabel('Hora real do acesso').fill('10:15');
     await expect(confirmar).toBeDisabled(); // ainda falta o formulário
     await expect(page.getByText(/Falta:.*formulário de papel/)).toBeVisible();
@@ -39,20 +39,23 @@ test.describe('5. Lançamento retroativo (contingência em papel)', () => {
   });
 
   test('hora real no futuro não é aceita', async ({ page }) => {
+    // Hoje às 23:59 é futuro, exceto no último minuto do dia (o campo de data não aceita amanhã).
+    test.skip(minutosHojeSP() >= 23 * 60 + 58, 'último minuto do dia: 23:59 de hoje não é futuro');
     await page.goto('/entrada?retroativo=1');
     await escolherPessoa(page, 'Márcia Pereira');
     await escolherUnidade(page, 'D-32');
     await escolherMeio(page, 'Interfone');
     await escolherMorador(page, 'Ana Ribeiro');
     await page.getByLabel(/Nº do formulário de papel/).fill('0124');
-    await page.getByLabel('Hora real do acesso').fill('23:59'); // o relógio simulado está em ~14:32
+    await page.getByLabel('Data real do acesso').fill(diaSP());
+    await page.getByLabel('Hora real do acesso').fill('23:59');
     await expect(page.getByText('Deve ser anterior ao momento atual.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Confirmar lançamento' })).toBeDisabled();
   });
 
   test('saída retroativa em "Pessoas no condomínio": exige hora real e nº do formulário', async ({ page }) => {
     await page.goto('/pessoas');
-    // Seed: Pedro Almeida entrou hoje às 12:10 e segue dentro
+    // Seed do e2e: Pedro Almeida entrou ONTEM às 12:10 (retroativo) e segue dentro
     const linha = page.getByRole('table', { name: 'Pessoas atualmente no condomínio' }).getByRole('row').filter({ hasText: 'Pedro Almeida' });
     await expect(linha).toHaveCount(1);
     await linha.getByRole('button', { name: 'Saída retroativa' }).click();
@@ -64,7 +67,8 @@ test.describe('5. Lançamento retroativo (contingência em papel)', () => {
     await modal.getByRole('button', { name: 'Registrar saída retroativa' }).click();
     await expect(modal.getByRole('alert')).toContainText('Informe a hora real da saída');
 
-    // Hora anterior à entrada (12:10): rejeitada
+    // Hora anterior à entrada (ontem 12:10): rejeitada
+    await modal.getByLabel('Data real da saída').fill(diaSP(-1));
     await modal.getByLabel('Hora real da saída').fill('11:00');
     await expect(modal.getByText('Depois da entrada e antes de agora.')).toBeVisible();
 
@@ -77,7 +81,7 @@ test.describe('5. Lançamento retroativo (contingência em papel)', () => {
     // Com formulário: registra
     await modal.getByLabel(/Nº do formulário de papel/).fill('0200');
     await modal.getByRole('button', { name: 'Registrar saída retroativa' }).click();
-    await expect(toast(page, /Saída retroativa de Pedro Almeida registrada: hora real 09\/10\/2026 13:00/)).toBeVisible();
+    await expect(toast(page, `Saída retroativa de Pedro Almeida registrada: hora real ${dataBR(Date.now() - 86_400_000)} 13:00`)).toBeVisible();
     await expect(linha).toHaveCount(0); // saiu da lista de presentes
 
     // Histórico: saída marcada como Retroativo, com a hora real

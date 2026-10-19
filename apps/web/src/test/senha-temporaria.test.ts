@@ -1,13 +1,12 @@
-// Senha temporária (spec §5.1: vale 72 h): textos da tela de Usuários (mensagem copiada e aviso da lista) e a
-// reprodução da validade no mock, pelo relógio simulado.
-import { SENHA_TEMPORARIA_VALIDADE_MS } from '@portaria/domain/rules';
-import { HORA, INICIO_SIMULADO, relogio } from '@portaria/domain/time';
+// Senha temporária (spec §5.1: vale 72 h): textos da tela de Usuários (mensagem copiada e aviso da lista). A validade
+// em si (login recusado depois de 72 h, redefinir renova, troca zera) é testada na API: senha-temporaria.test.ts.
+import { describe, expect, it } from 'vitest';
+import { brt, HORA } from '@portaria/domain/time';
 import type { UsuarioSistema } from '@portaria/domain/types';
 import { avisoSenhaTemporaria, mensagemAcesso } from '../features/usuarios/senhaTemporaria';
-import { entrarComo, esperaErro, novaApi } from './helpers';
 
-// Relógio simulado: 09/10/2026 14:32 (São Paulo); + 72 h = 12/10 14:32.
-const FIM = INICIO_SIMULADO + SENHA_TEMPORARIA_VALIDADE_MS;
+// Prazo fixo para os textos: 12/10/2026 14:32 (São Paulo).
+const FIM = brt(2026, 10, 12, 14, 32);
 const BASE: UsuarioSistema = { id: 'u-9', nome: 'Marina Couto', login: 'marina.couto', papel: 'porteiro', ativo: true, ultimoAcesso: null };
 
 describe('textos da senha temporária', () => {
@@ -28,45 +27,5 @@ describe('textos da senha temporária', () => {
     expect(avisoSenhaTemporaria({ ...pendente, senhaTemporariaExpiraEm: null }, FIM - HORA)?.vencida).toBe(true); // sem prazo: falha fechada
     expect(avisoSenhaTemporaria({ ...BASE, deveTrocarSenha: false, senhaTemporariaExpiraEm: null }, FIM)).toBeNull();
     expect(avisoSenhaTemporaria({ ...pendente, ativo: false }, FIM)).toBeNull();
-  });
-});
-
-describe('mock: validade da senha temporária no relógio simulado', () => {
-  it('criar grava o prazo; depois de 72 h o login é recusado com SENHA_TEMPORARIA_EXPIRADA; redefinir renova', async () => {
-    const api = novaApi();
-    await entrarComo(api, 'roberto.faria');
-    const { usuario } = await api.usuarios.criar({ nome: 'Helena Dias', login: 'helena.dias', papel: 'porteiro' });
-    expect(usuario).toMatchObject({ deveTrocarSenha: true, senhaTemporariaExpiraEm: FIM });
-    expect((await api.usuarios.listar()).find((u) => u.id === usuario.id)?.senhaTemporariaExpiraEm).toBe(FIM);
-    await api.auth.logout();
-
-    relogio.congelar(FIM - 1);
-    await api.auth.login({ login: 'helena.dias', senha: 'qualquer' });
-    await api.auth.logout();
-    relogio.congelar(FIM);
-    expect(await esperaErro(api.auth.login({ login: 'helena.dias', senha: 'qualquer' }))).toMatchObject({
-      status: 401, code: 'SENHA_TEMPORARIA_EXPIRADA', message: 'Senha temporária vencida. Peça a redefinição à administração.',
-    });
-
-    await entrarComo(api, 'roberto.faria');
-    const red = await api.usuarios.redefinirAcesso(usuario.id);
-    expect(red.usuario.senhaTemporariaExpiraEm).toBe(FIM + SENHA_TEMPORARIA_VALIDADE_MS);
-    await api.auth.logout();
-    await api.auth.login({ login: 'helena.dias', senha: 'qualquer' });
-  });
-
-  it('a troca de senha zera o prazo', async () => {
-    const api = novaApi();
-    await entrarComo(api, 'roberto.faria');
-    const { usuario } = await api.usuarios.criar({ nome: 'Helena Dias', login: 'helena.dias', papel: 'porteiro' });
-    await api.auth.logout();
-    await api.auth.login({ login: 'helena.dias', senha: 'qualquer' });
-    await api.auth.trocarSenha({ senhaAtual: 'qualquer', novaSenha: 'uma senha nova e longa' });
-    await api.auth.logout();
-    await entrarComo(api, 'roberto.faria');
-    expect((await api.usuarios.listar()).find((u) => u.id === usuario.id)).toMatchObject({ deveTrocarSenha: false, senhaTemporariaExpiraEm: null });
-    relogio.congelar(FIM + HORA);
-    await api.auth.logout();
-    await api.auth.login({ login: 'helena.dias', senha: 'qualquer' });
   });
 });

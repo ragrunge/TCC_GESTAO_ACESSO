@@ -3,11 +3,15 @@
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import { createHttpApi, diaParaMs, msParaDia, nomeDoAnexo } from '../api/http/createHttpApi';
 import { brt } from '@portaria/domain/time';
-import { codigoUnidade } from '@portaria/domain/units';
 import { segundosRetryAfter } from '../api/http/cliente';
 import { ApiError, type EventoSessao } from '../api/types';
 import { deveRepetir } from '../app/queryClient';
-import { entrarComo, esperaErro, id, novaApi as novaApiMock, un } from './helpers';
+
+/** Espera uma rejeição com ApiError e devolve o erro para asserções. */
+async function esperaErro(p: Promise<unknown>): Promise<ApiError> {
+  try { await p; } catch (e) { if (e instanceof ApiError) return e; throw e; }
+  throw new Error('esperava ApiError, mas a chamada teve sucesso');
+}
 
 interface Resposta { status: number; data?: unknown; headers?: Record<string, string> }
 type Rota = (c: InternalAxiosRequestConfig) => Resposta | Promise<Resposta>;
@@ -196,18 +200,6 @@ describe('adaptador HTTP (axios)', () => {
     expect(await esperaErro(lista.api.usuarios.listar())).toMatchObject({ code: 'RESPOSTA_INVALIDA' });
   });
 
-  it('rotas e operações disponíveis: todas as do backend, incluindo LGPD e selo; operação desconhecida não', async () => {
-    const { api, adapter } = montar(() => ({ status: 200 }));
-    expect(adapter).not.toHaveBeenCalled();
-    expect(api.modo).toBe('http');
-    expect(api.rotasDisponiveis).toEqual(['painel', 'entrada', 'pessoas', 'historico', 'relatorios', 'usuarios', 'unidades', 'cadastro', 'vinculos', 'funcionarios', 'importar', 'encomendas', 'ocorrencias']);
-    for (const op of ['unidades.criar', 'veiculos.criar', 'autorizacoes.criar', 'restricoes.aprovar', 'eventos.criar', 'auditoria.exportar', 'relatorios.exportarCsv',
-      'encomendas.listarPagina', 'encomendas.entregar', 'encomendas.autorizarRetirada', 'ocorrencias.criar', 'ocorrencias.anexar', 'ocorrencias.baixarAnexo',
-      'lgpd.exportarPessoa', 'lgpd.anonimizar', 'lgpd.aplicarRetencao', 'lgpd.ultimaRetencao', 'auditoria.selos', 'auditoria.selar', 'auditoria.conferirAncora']) {
-      expect(api.suporta!(op), op).toBe(true);
-    }
-    expect(api.suporta!('modulo.inexistente')).toBe(false);
-  });
 });
 
 describe('adaptador HTTP: catálogo, unidades, busca e contagem', () => {
@@ -293,52 +285,12 @@ describe('adaptador HTTP: catálogo, unidades, busca e contagem', () => {
   });
 });
 
-describe('mock: paginação de unidades e contagem (mesmo contrato da API)', () => {
-  it('listarPagina percorre as 162 sem repetir, na ordem bloco/número; bloco filtra; cursor inválido é 400', async () => {
-    const { novaApi, entrarComo } = await import('./helpers');
-    const api = novaApi();
-    await entrarComo(api, 'paula.nogueira');
-    const vistos: string[] = [];
-    let cursor: string | null = null;
-    do {
-      const p = await api.unidades.listarPagina({ limite: 40, cursor });
-      vistos.push(...p.itens.map((x) => codigoUnidade(x.unidade)));
-      cursor = p.cursor;
-      expect(p.temMais).toBe(cursor !== null);
-    } while (cursor);
-    expect(new Set(vistos).size).toBe(162);
-    expect(vistos.slice(0, 3)).toEqual(['A-03', 'A-04', 'A-11']);
-    expect(vistos.at(-1)).toBe('I-44');
-    const d = await api.unidades.listarPagina({ bloco: 'd' });
-    expect(d.itens).toHaveLength(18);
-    expect(d.temMais).toBe(false);
-    expect((await esperaErro(api.unidades.listarPagina({ cursor: '%%' }))).code).toBe('CURSOR_INVALIDO');
-    expect(await api.vinculos.contar('pendente')).toBe((await api.vinculos.listar({ status: 'pendente' })).length);
-  });
-});
-
 describe('React Query: retry', () => {
   it('não repete 401, 403, 429 nem 501; repete uma vez falha de rede e 5xx', () => {
     for (const s of [400, 401, 403, 404, 422, 429, 501]) expect(deveRepetir(0, new ApiError(s, 'X', 'x'))).toBe(false);
     expect(deveRepetir(0, new ApiError(0, 'FALHA_DE_REDE', 'x'))).toBe(true);
     expect(deveRepetir(0, new ApiError(503, 'X', 'x'))).toBe(true);
     expect(deveRepetir(1, new ApiError(503, 'X', 'x'))).toBe(false);
-  });
-});
-
-describe('mock cumpre a mesma interface', () => {
-  it('login/me trazem deveTrocarSenha=false; criar e redefinir devolvem senha temporária; trocarSenha aplica a política mínima', async () => {
-    const { novaApi, entrarComo } = await import('./helpers');
-    const api = novaApi();
-    expect(api.modo).toBe('mock');
-    await entrarComo(api, 'roberto.faria');
-    expect((await api.auth.me())?.deveTrocarSenha).toBe(false);
-    const r = await api.usuarios.criar({ nome: 'Teste Temp', login: 'teste.temp', papel: 'porteiro' });
-    expect(r.usuario.login).toBe('teste.temp');
-    expect(r.senhaTemporaria).toMatch(/^[a-km-np-z2-9]{4}(-[a-km-np-z2-9]{4}){3}$/);
-    expect((await api.usuarios.redefinirAcesso(r.usuario.id)).senhaTemporaria).toHaveLength(19);
-    expect((await esperaErro(api.auth.trocarSenha({ senhaAtual: 'x', novaSenha: 'curta' }))).code).toBe('SENHA_FRACA');
-    expect((await api.auth.trocarSenha({ senhaAtual: 'x', novaSenha: 'uma-senha-bem-longa' })).deveTrocarSenha).toBe(false);
   });
 });
 
@@ -496,66 +448,6 @@ describe('adaptador HTTP: pessoas, funcionários, veículos, vínculos e importa
     // Já confirmada (linhas descartadas) ou outra aba: não vai à rede
     expect(await esperaErro(api.importacao.confirmar('imp1'))).toMatchObject({ status: 404, code: 'IMPORTACAO_NAO_ENCONTRADA' });
     expect(adapter).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe('mock: operações novas do lote de pessoas e vínculos (mesmo contrato da API)', () => {
-  it('pessoas.listarPagina e vinculos.listarPagina percorrem tudo sem repetir; categoria e status filtram', async () => {
-    const { novaApi, entrarComo } = await import('./helpers');
-    const api = novaApi();
-    await entrarComo(api, 'paula.nogueira');
-    const vistos: string[] = [];
-    let cursor: string | null = null;
-    do {
-      const p = await api.pessoas.listarPagina({ limite: 5, cursor });
-      vistos.push(...p.itens.map((x) => x.id));
-      cursor = p.cursor;
-    } while (cursor);
-    expect(new Set(vistos).size).toBe((await api.pessoas.listar()).length);
-    const moradores = await api.pessoas.listarPagina({ categoria: 'morador', limite: 100 });
-    expect(moradores.itens.every((p) => p.categoria === 'morador')).toBe(true);
-    expect(moradores.itens.find((p) => p.nome === 'Ana Ribeiro')?.vinculoPrincipal).toMatchObject({ status: 'aprovado', unidadeCodigo: 'D-32' });
-    const legados = await api.vinculos.listarPagina({ status: ['legado'], ordem: 'prazo', limite: 100 });
-    const nLegados = await api.vinculos.contar('legado');
-    expect(legados.itens.length).toBe(Math.min(100, nLegados));
-    expect(legados.temMais).toBe(nLegados > 100);
-    // ordem 'prazo': não decrescente
-    const prazos = legados.itens.map((v) => v.prazoRegularizacao!);
-    expect([...prazos].sort((x, y) => x - y)).toEqual(prazos);
-    const decididos = await api.vinculos.listarPagina({ status: ['aprovado', 'rejeitado'], ordem: 'decisao', limite: 100 });
-    expect(decididos.itens.every((v) => v.status === 'aprovado' || v.status === 'rejeitado')).toBe(true);
-  });
-
-  it('encerrar (RF-07): só aprovado ou legado, motivo >= 15, data não futura; depois é final', async () => {
-    const { novaApi, entrarComo, esperaErro: erro } = await import('./helpers');
-    const api = novaApi();
-    await entrarComo(api, 'paula.nogueira');
-    const todos = await api.vinculos.listar();
-    const aprovado = todos.find((v) => v.status === 'aprovado')!;
-    const pendente = todos.find((v) => v.status === 'pendente')!;
-    expect((await erro(api.vinculos.encerrar(pendente.id, { motivo: 'Motivo suficientemente longo' }))).code).toBe('VINCULO_NAO_ENCERRAVEL');
-    expect((await erro(api.vinculos.encerrar(aprovado.id, { motivo: 'curto' }))).code).toBe('MOTIVO_OBRIGATORIO');
-    expect((await erro(api.vinculos.encerrar(aprovado.id, { motivo: 'Motivo suficientemente longo', data: Date.now() + 400 * 86_400_000 }))).code).toBe('DATA_FUTURA');
-    const v = await api.vinculos.encerrar(aprovado.id, { motivo: 'Mudou-se do condomínio em outubro' });
-    expect(v).toMatchObject({ status: 'encerrado', justificativa: 'Mudou-se do condomínio em outubro' });
-    expect(v.encerradoEm).not.toBeNull();
-    expect((await erro(api.vinculos.encerrar(aprovado.id, { motivo: 'Motivo suficientemente longo' }))).code).toBe('VINCULO_NAO_ENCERRAVEL');
-    expect((await erro(api.pessoas.listar().then(() => api.vinculos.encerrar('nao-existe', { motivo: 'Motivo suficientemente longo' })))).status).toBe(404);
-  });
-
-  it('veiculos.editar: formato e unicidade da placa ativa; desativado sai do detalhe e libera a placa', async () => {
-    const { novaApi, entrarComo, esperaErro: erro, un } = await import('./helpers');
-    const api = novaApi();
-    await entrarComo(api, 'paula.nogueira');
-    const [a, b] = (await api.unidades.detalhe(un('D-32'))).veiculos;
-    expect((await erro(api.veiculos.editar({ id: a!.id, placa: 'XX' }))).code).toBe('PLACA_INVALIDA');
-    expect((await erro(api.veiculos.editar({ id: a!.id, placa: b!.placa }))).code).toBe('PLACA_DUPLICADA');
-    expect((await api.veiculos.editar({ id: a!.id, cor: 'azul' })).cor).toBe('azul');
-    await api.veiculos.editar({ id: b!.id, ativo: false });
-    const ids = (await api.unidades.detalhe(un('D-32'))).veiculos.map((v) => v.id);
-    expect(ids).toContain(a!.id);
-    expect(ids).not.toContain(b!.id);
-    expect((await api.veiculos.editar({ id: a!.id, placa: b!.placa })).placa).toBe(b!.placa);
   });
 });
 
@@ -731,63 +623,6 @@ describe('adaptador HTTP: encomendas e ocorrências', () => {
     expect(a).toMatchObject({ nome: 'anexo-0a1b2c3d.pdf', mime: 'application/pdf' });
     expect(a.conteudo).toBe(pdf);
     expect(nomeDoAnexo('attachment; filename="../../etc/passwd"')).toBe('anexo'); // só o formato que a API gera
-  });
-});
-
-describe('mock: encomendas, ocorrências e restrição (mesmo contrato da API)', () => {
-  it('encomendas: listarPagina percorre sem repetir; resumo bate com as filas; obter', async () => {
-    const api = novaApiMock();
-    await entrarComo(api, 'joao.lima');
-    const todos: string[] = [];
-    let cursor: string | null = null;
-    for (let i = 0; i < 20; i++) {
-      const p = await api.encomendas.listarPagina({ status: 'aguardando', limite: 2, cursor });
-      todos.push(...p.itens.map((e) => e.id));
-      if (!p.temMais) break;
-      cursor = p.cursor;
-    }
-    expect(new Set(todos).size).toBe(todos.length);
-    const r = await api.encomendas.resumo();
-    expect(r.aguardando).toBe(todos.length);
-    expect(r.atrasadas).toBe((await api.encomendas.listarPagina({ atrasadasDias: 7, limite: 100 })).itens.length);
-    expect((await api.encomendas.obter(todos[0]!)).id).toBe(todos[0]);
-  });
-
-  it('ocorrências: anexar valida tipo, tamanho e dono; vincular eventos é aditivo; encerrada é final', async () => {
-    const api = novaApiMock();
-    await entrarComo(api, 'joao.lima');
-    const o = await api.ocorrencias.criar({ tipo: 'outro', descricao: 'Portão', unidadeId: null, envolvidos: '' });
-    const png = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'portao.png', { type: 'image/png' });
-    const v = await api.ocorrencias.anexar(o.id, png);
-    expect(v.anexos).toHaveLength(1);
-    expect(v.anexos[0]).toMatch(/^anexo-.+\.png$/);
-    expect((await esperaErro(api.ocorrencias.anexar(o.id, new File(['x'], 'a.txt', { type: 'text/plain' })))).code).toBe('TIPO_NAO_PERMITIDO');
-    expect((await esperaErro(api.ocorrencias.anexar(o.id, new File([], 'v.png', { type: 'image/png' })))).code).toBe('ARQUIVO_VAZIO');
-    expect((await esperaErro(api.ocorrencias.anexar('OC-2026-046', png))).code).toBe('SO_PROPRIA_OCORRENCIA'); // aberta por outro
-    const ev = (await api.eventos.listarPagina({ limite: 1 })).itens[0]!;
-    expect((await api.ocorrencias.vincularEventos(o.id, [ev.id, ev.id])).eventoIds).toEqual([ev.id]);
-    expect((await api.ocorrencias.vincularEventos(o.id, [ev.id])).eventoIds).toEqual([ev.id]);
-    await api.ocorrencias.alterarStatus(o.id, 'em_andamento');
-    await api.ocorrencias.alterarStatus(o.id, 'encerrada');
-    expect((await esperaErro(api.ocorrencias.anexar(o.id, png))).code).toBe('OCORRENCIA_ENCERRADA');
-    expect((await esperaErro(api.ocorrencias.vincularEventos(o.id, [ev.id]))).code).toBe('OCORRENCIA_ENCERRADA');
-    const p = await api.ocorrencias.listarPagina({ status: ['encerrada'], limite: 100 });
-    expect(p.itens.every((x) => x.status === 'encerrada')).toBe(true);
-    expect(p.itens.map((x) => x.id)).toContain(o.id);
-  });
-
-  it('restrição em unidade desativada é UNIDADE_INATIVA (igual à API)', async () => {
-    const api = novaApiMock();
-    await entrarComo(api, 'paula.nogueira');
-    await api.unidades.desativar(un('D-32'));
-    const e = await esperaErro(api.restricoes.criar({
-      pessoaId: id.marcos, unidadeId: un('D-32'), motivo: 'Morador não autoriza', validaAte: brt(2026, 12, 31), solicitadaPorPessoaId: id.ana,
-    }));
-    expect(e).toMatchObject({ status: 422, code: 'UNIDADE_INATIVA' });
-    await api.unidades.reativar(un('D-32'));
-    expect((await api.restricoes.criar({
-      pessoaId: id.marcos, unidadeId: un('D-32'), motivo: 'Morador não autoriza', validaAte: brt(2026, 12, 31), solicitadaPorPessoaId: id.ana,
-    })).unidadeId).toBe(un('D-32'));
   });
 });
 
