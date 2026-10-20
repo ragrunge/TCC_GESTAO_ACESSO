@@ -1,10 +1,10 @@
 // Direitos do titular (LGPD art. 18; spec §9.3): exportação dos dados da pessoa e anonimização a pedido.
 //
-// Exportação (SI/AD): o mesmo formato do mock (`portaria-parque/lgpd-exportacao`, versão 1). Decisões de minimização:
+// Exportação (SI/AD): formato `portaria-parque/lgpd-exportacao`, versão 1. Decisões de minimização:
 //  - CPF: só a máscara. O número não é guardado (spec §14 nº 18): não há o que devolver além dela.
 //  - HMAC do CPF (`documento_busca`): fora. É um código de busca derivado, não um dado que o titular forneceu; no arquivo
 //    só serviria para cruzar o titular com o banco por quem tivesse a chave.
-//  - Telefone: mascarado (últimos 4 dígitos), como no mock. O arquivo sai do sistema (é entregue impresso ou por e-mail)
+//  - Telefone: mascarado (últimos 4 dígitos). O arquivo sai do sistema (é entregue impresso ou por e-mail)
 //    e a conferência de identidade no balcão é fraca; o titular conhece o próprio número e o corrige pela administração.
 //    A §9.3 pede "dados cadastrais", sem exigir o número completo; o arquivo diz que ele é mantido e como conferi-lo.
 //  - Eventos: só os da própria pessoa (data, ponto, unidade ou área, meio). Eventos em que ela AUTORIZOU a entrada de
@@ -12,7 +12,7 @@
 //  - Documentos: metadados (tipo, tamanho, data, eliminação), nunca o conteúdo.
 // A exportação vai para o audit_log (`lgpd.exportar`) com o solicitante (o ator) e só contagens.
 //
-// Anonimização (SI): só sem vínculo válido (a mesma regra do mock), feita pela função `lgpd_anonimizar_pessoa` (dados
+// Anonimização (SI): só sem vínculo válido (mesma regra de `vinculoValido` do domain), feita pela função `lgpd_anonimizar_pessoa` (dados
 // pessoais, foto, redação do audit_log da pessoa e registro em retencao_execucao, numa transação só). A foto é apagada
 // do volume depois do COMMIT. Os eventos ficam: só ids, sem nome, até completar 3 anos (art. 16, I, e art. 7º, VI).
 import { Inject, Injectable } from '@nestjs/common';
@@ -45,7 +45,7 @@ const carimbo = (d: Date) => new Date(d.getTime() - BRT_MS).toISOString().slice(
 export const ANOS_RETENCAO = 3;
 export const somarAnos = (d: Date, anos: number) => { const x = new Date(d); x.setUTCFullYear(x.getUTCFullYear() + anos); return x; };
 
-/** O que fica depois da anonimização e por quê (mesmo texto do mock). */
+/** O que fica depois da anonimização e por quê. */
 export const RETIDO = [
   'Eventos de acesso em que a pessoa aparece (só pelo id, sem o nome), até completar 3 anos de cada evento: exercício regular de direitos (LGPD art. 16, I, e art. 7º, VI).',
   'Texto livre já gravado nesses eventos (justificativa, observação, formulário), que entra no hash e sai junto com o evento.',

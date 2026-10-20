@@ -31,7 +31,7 @@ export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 cp .env.example .env && docker compose up -d --build   # ver apps/api/README.md
 ```
 
-Detalhes da SPA, login de demonstração e tabela de rastreabilidade RF/UC: [apps/web/README.md](apps/web/README.md).
+Detalhes da SPA e login de demonstração: [apps/web/README.md](apps/web/README.md). Rastreabilidade RF → API → tela: [docs/rastreabilidade.md](docs/rastreabilidade.md).
 
 ## Deploy
 

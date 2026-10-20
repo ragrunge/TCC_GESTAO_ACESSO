@@ -1,5 +1,4 @@
-// Regras que só tinham teste pelo mock do front (apps/web/src/api/mock, que vai ser apagado) e não tinham na API real.
-// Cada `it` diz a regra (RF/RN) e que foi migrado do teste do mock. HTTP real + PGlite + migrações, como os outros.
+// Regras de negócio cobertas pela API real (RF/RN). Cada `it` diz a regra. HTTP real + PGlite + migrações, como os outros.
 // Relógio da API: sábado 17/10/2026 09:00 BRT (12:00Z). O banco carimba registrado_em com o relógio REAL (o trigger):
 // fora da contingência, ocorrido_em = registrado_em (posterior ao relógio da API); por isso os relatórios com evento
 // "de agora" vão até amanhã pelo relógio real.

@@ -1,4 +1,4 @@
-// Vínculos com a unidade (RF-03 a RF-07, RN-02, RN-03, RN-09). Mesmas regras de `vinculos` do mock. A máquina de estados
+// Vínculos com a unidade (RF-03 a RF-07, RN-02, RN-03, RN-09). A máquina de estados
 // está no banco (trigger vinculo_unidade_transicao: nasce pendente ou legado; pendente -> aprovado | rejeitado;
 // aprovado -> encerrado; legado -> aprovado | encerrado; conferência congelada depois da aprovação) e nos CHECKs
 // (aprovado exige conferência, inquilino exige fim de vigência...). A API checa ANTES, para responder 409/422 legíveis,

@@ -106,7 +106,7 @@ export function traduzirErroEvento(e: unknown): unknown {
   }
 }
 
-/** RNF-05: coerência entre ocorrido_em e registrado_em; retroativo exige formulário de papel. Igual a `resolverInstante` do mock. */
+/** RNF-05: coerência entre ocorrido_em e registrado_em; retroativo exige formulário de papel. */
 function resolverInstante(i: { retroativo?: boolean; ocorridoEm?: number | null; formularioContingencia?: string | null }, n: number, minimo?: number) {
   let quando = n;
   if (i.retroativo) {
@@ -344,7 +344,7 @@ export class EventosService {
 
   /**
    * RN-04: correção é um evento novo; não se corrige uma correção. `correcao_valores` carrega o ACUMULADO das correções
-   * anteriores (a última é a que vale), como o mock. Sem valores: só anotação (justificativa e observação).
+   * anteriores (a última é a que vale). Sem valores: só anotação (justificativa e observação).
    */
   async corrigir(ctx: Contexto, id: string, i: NovaCorrecao): Promise<EventoView> {
     const n = this.agora();
@@ -406,7 +406,7 @@ export class EventosService {
 
   // ----- Consultas ---------------------------------------------------------------------------------------------------
 
-  /** Filtros pelos VALORES EFETIVOS (como o mock), devolvendo o registro gravado. */
+  /** Filtros pelos VALORES EFETIVOS, devolvendo o registro gravado. */
   private filtros(f: FiltroEventos): SQL[] {
     const w: SQL[] = [];
     if (f.eventoId) w.push(eq(eventoAcesso.id, f.eventoId));
@@ -427,7 +427,7 @@ export class EventosService {
     return w;
   }
 
-  /** Página por seq decrescente (mais recentes primeiro, como o mock). */
+  /** Página por seq decrescente (mais recentes primeiro). */
   async listar(f: FiltroEventos & { limite: number; cursor?: string }): Promise<Pagina<EventoView>> {
     const w = this.filtros(f);
     if (f.cursor) w.push(lt(eventoAcesso.seq, decodificarCursor(f.cursor, CursorSeq).s));
@@ -456,7 +456,7 @@ export class EventosService {
     return montarViews(this.db, ls);
   }
 
-  /** RF-20: entradas sem saída, por seq decrescente (o adaptador ordena pela hora efetiva, como o mock). */
+  /** RF-20: entradas sem saída, por seq decrescente (o adaptador ordena pela hora efetiva). */
   async presentes(p: { limite: number; cursor?: string }): Promise<Pagina<EventoView>> {
     const w: SQL[] = [eq(eventoAcesso.tipo, 'entrada'), semSaidaSql()];
     if (p.cursor) w.push(lt(eventoAcesso.seq, decodificarCursor(p.cursor, CursorSeq).s));
@@ -466,7 +466,7 @@ export class EventosService {
     return new Pagina(await montarViews(this.db, pagina), linhas.length > p.limite && ultimo ? codificarCursor({ s: ultimo.seq }) : null);
   }
 
-  /** RF-29: resumo da passagem de turno (mesmas contagens do mock). */
+  /** RF-29: resumo da passagem de turno (contagens por tipo de evento). */
   async resumoTurno() {
     const n = this.agora();
     const ini = new Date(inicioDoDia(n)).toISOString();

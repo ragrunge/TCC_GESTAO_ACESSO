@@ -1,6 +1,6 @@
-// Relatórios (RF-30, RF-31; spec §6.5): o mesmo resumo de `calcularResumo` do mock, pelos VALORES EFETIVOS (com
+// Relatórios (RF-30, RF-31; spec §6.5): o resumo do período, pelos VALORES EFETIVOS (com
 // correção), agregado no banco (GROUP BY por dia, tipo, meio, responsável e retroativo: poucas linhas, mesmo num ano).
-// O CSV usa o construtor do domain (@portaria/domain/relatorio), o mesmo do mock. Permissão: relatorio.ver (SI, AD, AU).
+// O CSV usa o construtor do domain (@portaria/domain/relatorio). Permissão: relatorio.ver (SI, AD, AU).
 // Período em dias de calendário BRT ('AAAA-MM-DD'); sem período: os últimos 30 dias até hoje; no máximo 366 dias.
 import { Controller, Get, Inject, Injectable, Module, Query } from '@nestjs/common';
 import { csvRelatorio, FAIXAS_ENCOMENDA, PERIODO_MAX_RELATORIO_DIAS, type ResumoRelatorio } from '@portaria/domain/relatorio';
@@ -81,7 +81,7 @@ export class RelatoriosService {
       if (g.retroativo) tot.retroativos += g.n;
       if (g.resp) { tot.excecoes += g.n; somar(exc, g.resp, g); }
     }
-    // Empate no total: a ordem de primeira aparição na cadeia (como o Map do mock, que segue o seq).
+    // Empate no total: a ordem de primeira aparição na cadeia (segue o seq).
     const ordenar = <K>(m: Map<K, { total: number; s: number }>) => [...m].sort((a, b) => b[1].total - a[1].total || a[1].s - b[1].s);
     const respIds = [...exc.keys()];
     const nomes = new Map((respIds.length ? await this.db.select({ id: usuarioSistema.id, nome: usuarioSistema.nome }).from(usuarioSistema)
@@ -126,7 +126,7 @@ export class RelatoriosController {
   @Acao('relatorio.ver')
   resumo(@Query(new ZodPipe(FiltroDto)) q: Filtro) { return this.servico.resumo(q); }
 
-  /** `{ nomeArquivo, conteudo, quantidade }` (UTF-8 com BOM, separador ";"), como o mock. */
+  /** `{ nomeArquivo, conteudo, quantidade }` (UTF-8 com BOM, separador ";"). */
   @Get('resumo/csv')
   @Acao('relatorio.ver')
   csv(@Query(new ZodPipe(FiltroDto)) q: Filtro) { return this.servico.csv(q); }

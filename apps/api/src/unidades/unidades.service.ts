@@ -89,7 +89,7 @@ export class UnidadesService {
       pendentes: sql<number>`(SELECT count(*) FROM ${vinculoUnidade} WHERE ${vinculoUnidade.unidadeId} = ${uid} AND ${vinculoUnidade.status} = 'pendente')`.mapWith(Number),
       restricoes: sql<number>`(SELECT count(*) FROM ${restricao} WHERE ${restricao.unidadeId} = ${uid}
         AND ${restricao.revogadaEm} IS NULL AND ${restricao.validaAte} >= ${agora.toISOString()}::timestamptz)`.mapWith(Number),
-      // Mock: há ao menos um vínculo APROVADO e válido (legado não conta como cadastro completo).
+      // Há ao menos um vínculo APROVADO e válido (legado não conta como cadastro completo).
       cadastroCompleto: sql<boolean>`EXISTS (SELECT 1 FROM ${vinculoUnidade} WHERE ${vinculoUnidade.unidadeId} = ${uid}
         AND ${vinculoUnidade.status} = 'aprovado' AND ${valido})`.mapWith(Boolean),
     }).from(unidade)
@@ -105,7 +105,7 @@ export class UnidadesService {
     })), proximo);
   }
 
-  /** `ref`: uuid ou código legível ("A-32", "a 32", e o antigo "T4-32"), como no mock (links legíveis). */
+  /** `ref`: uuid ou código legível ("A-32", "a 32", e o antigo "T4-32"), para links legíveis. */
   async porReferencia(ref: string): Promise<UnidadeApi> {
     const uuid = z.uuid().safeParse(ref);
     if (uuid.success) {
@@ -122,7 +122,7 @@ export class UnidadesService {
   }
 
   /**
-   * Detalhe da unidade. Só o que já tem módulo na API: a unidade, os vínculos (todos os status, como o mock) e os
+   * Detalhe da unidade. Só o que já tem módulo na API: a unidade, os vínculos (todos os status) e os
    * veículos ativos. Autorizações, restrições e eventos chegam com os respectivos módulos (o front mostra "disponível em
    * breve" por seção).
    */
@@ -141,7 +141,7 @@ export class UnidadesService {
     return rotuloUnidade(u, this.estrutura.agrupamento, caixaAlta);
   }
 
-  /** Normaliza ("a" -> "A", "3" -> "03") e valida com a regra do domain (a mesma do mock e dos CHECKs). */
+  /** Normaliza ("a" -> "A", "3" -> "03") e valida com a regra do domain (a mesma dos CHECKs). */
   private normalizar(i: { bloco: string; numero: string }) {
     const n = { bloco: normalizarBloco(i.bloco), numero: normalizarNumero(i.numero) };
     const erro = validarEstruturaUnidade(n.bloco, n.numero, this.estrutura.agrupamento);
@@ -198,7 +198,7 @@ export class UnidadesService {
       return await this.db.transaction(async (tx) => {
         const antes = await this.travar(tx, id);
         if (antes.bloco === n.bloco && antes.numero === n.numero) return antes; // nada mudou: sem auditoria
-        // Duplicata antes da checagem de referência (mesma ordem do mock: a mensagem mais útil primeiro).
+        // Duplicata antes da checagem de referência (a mensagem mais útil primeiro).
         const [outra] = await tx.select({ id: unidade.id }).from(unidade)
           .where(and(eq(unidade.bloco, n.bloco), eq(unidade.numero, n.numero)));
         if (outra) throw this.duplicada(n);

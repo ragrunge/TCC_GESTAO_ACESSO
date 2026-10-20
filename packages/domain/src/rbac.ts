@@ -1,4 +1,4 @@
-// Matriz RBAC (spec seção 5.2). É aplicada no "servidor" (mock/HTTP); a UI apenas oculta o que o papel não pode.
+// Matriz RBAC (spec seção 5.2). É aplicada no servidor (API); a UI apenas oculta o que o papel não pode.
 import type { Papel } from './types';
 
 export type Acao =
@@ -52,7 +52,7 @@ export const MATRIZ: Record<Acao, Papel[]> = {
   'usuario.gerenciar_sindico': [SI], // criar, editar, desativar ou promover a síndico: só o síndico
   'veiculo.cadastrar': [SI, AD],
   'funcionario.gerenciar': [SI, AD], // RF-09
-  // Listagem e ficha de funcionário (decisão do usuário, 2026-10-18): síndico, administração e auditor; o porteiro NÃO.
+  // Listagem e ficha de funcionário (spec §14, decisão nº 29): síndico, administração e auditor; o porteiro NÃO.
   // A escala na entrada é consultada pela própria API (validação de `escala`) e, na tela, só a da pessoa sendo registrada.
   'funcionario.ver': [SI, AD, AU],
   'pessoa.editar': [SI, AD], // correção de cadastro (LGPD art. 18) e regularização (RN-09)

@@ -23,7 +23,7 @@ import { oAgrupamento } from '@portaria/domain/units';
 import { mensagemErro, useAgora, useAsync } from '../../app/useAsync';
 import { APOS_ENCOMENDA, CHAVES, useInvalidar } from '../../app/consultas';
 
-/** Encomendas por página: a fila cresce com "Carregar mais" (RF-26: um condomínio de 162 unidades acumula entregues). */
+/** Encomendas por página: a fila cresce com "Carregar mais" (RF-26: um condomínio de porte médio acumula entregues). */
 const POR_PAGINA = 50;
 
 const TRANSPORTADORAS = ['Correios', 'Mercado Livre', 'Amazon', 'Shopee', 'Loggi', 'Jadlog', 'Outra'];

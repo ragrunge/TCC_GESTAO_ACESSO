@@ -1,6 +1,6 @@
 // CPF sem armazenar o número (decisão 18 da spec): máscara para exibição e HMAC-SHA256 para busca/unicidade.
 // Mesmo algoritmo de apps/api/src/db/cpf.ts (lá com node:crypto e a chave PORTARIA_HMAC_CPF_KEY); aqui por
-// WebCrypto, para rodar no navegador (mock) e no Node.
+// WebCrypto, para rodar no navegador e no Node.
 export const soDigitos = (s: string) => s.replace(/\D/g, '');
 
 /** "***.456.789-**": expõe só os 6 dígitos do meio. */
@@ -11,7 +11,7 @@ export function mascararCpf(cpf: string): string {
 }
 
 /**
- * Chave HMAC FIXA de demonstração, usada só pelo mock do navegador. Não é segredo: qualquer um que leia o código
+ * Chave HMAC FIXA de demonstração, para desenvolvimento e testes. Não é segredo: qualquer um que leia o código
  * pode recalcular o HMAC. Em produção a chave vem de PORTARIA_HMAC_CPF_KEY (32+ bytes aleatórios, fora do repositório).
  */
 export const CHAVE_HMAC_DEMO: Uint8Array<ArrayBuffer> = new TextEncoder().encode('portaria-parque/demo/hmac-cpf/01'); // 32 bytes

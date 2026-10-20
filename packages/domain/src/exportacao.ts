@@ -1,5 +1,5 @@
 // Exportação verificável da trilha de acessos (RF-32, spec §4.7): JSONL com manifesto (versão 2), uma linha por evento no
-// formato canônico (o mesmo que entra no hash) e um resumo. FONTE ÚNICA do formato: usada pelo mock do navegador e pela
+// formato canônico (o mesmo que entra no hash) e um resumo. FONTE ÚNICA do formato: usada pelo front (verificador) e pela
 // API (apps/api/src/auditoria). Os nomes vão à parte, em "exibicao", e não entram no hash.
 import { CAMPOS_CANONICOS_V1, CHAVES_CORRECAO_V1, FORMATO_HASH, codigoEvento, hashGenese, type EventoExportado } from './hashChain';
 
@@ -21,7 +21,7 @@ export interface EntradaExportacao {
   /** Exportação de um único evento (RF-32: evento isolado). */
   isolado: boolean;
   geradoPor: string;
-  /** Instante de geração já formatado (o mock acrescenta "(horário simulado)"). */
+  /** Instante de geração já formatado. */
   geradoEm: string;
   /** Carimbo AAAAMMDD-HHMM (horário de São Paulo) para o nome do arquivo. */
   carimbo: string;

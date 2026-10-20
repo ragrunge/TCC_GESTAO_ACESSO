@@ -1,5 +1,4 @@
-// Autorização prévia (RF-14, RN-07, RF-36) e restrição (RF-15, RF-16, RN-06). Mesmas regras de `autorizacoes` e
-// `restricoes` do mock. Revogar duas vezes e mudar a aprovação são barrados também no banco (triggers
+// Autorização prévia (RF-14, RN-07, RF-36) e restrição (RF-15, RF-16, RN-06). Revogar duas vezes e mudar a aprovação são barrados também no banco (triggers
 // revogacao_congela e restricao_aprovacao_unica): a API checa antes, com a linha travada, para responder 409 legível.
 // Toda criação, revogação e aprovação grava audit_log na mesma transação (RN-11).
 import { Inject, Injectable } from '@nestjs/common';
@@ -21,7 +20,7 @@ import {
 } from './conversoes';
 
 const DIA_MS = 86_400_000;
-/** 'AAAA-MM-DD' -> fim do dia BRT (23:59:59.999), como `fimDoDia` do mock. */
+/** 'AAAA-MM-DD' -> fim do dia BRT (23:59:59.999), com `fimDoDia` de @portaria/domain/time. */
 const fimDoDiaBrt = (dia: string) => new Date(inicioDoDiaBrt(dia).getTime() + DIA_MS - 1);
 
 export interface NovaAutorizacao {
@@ -167,7 +166,7 @@ export class AutorizacoesService {
     return (await this.viewsAutorizacao(ls)).sort((a, b) => (a.horaInicio ?? '').localeCompare(b.horaInicio ?? ''));
   }
 
-  /** Detalhe da unidade: não revogadas e ainda não vencidas (como o mock). */
+  /** Detalhe da unidade: não revogadas e ainda não vencidas. */
   async autorizacoesDaUnidade(unidadeId: string): Promise<AutorizacaoViewApi[]> {
     const ls = await this.db.select().from(autorizacaoPrevia).where(and(
       eq(autorizacaoPrevia.unidadeId, unidadeId), isNull(autorizacaoPrevia.revogadaEm), gte(autorizacaoPrevia.validaAte, new Date(this.agora())),
@@ -201,7 +200,7 @@ export class AutorizacoesService {
         const [p] = await tx.select({ id: pessoa.id }).from(pessoa).where(eq(pessoa.id, i.pessoaId));
         if (!p) throw erroApi(404, 'PESSOA_NAO_ENCONTRADA', 'Pessoa não encontrada.');
         if (!paraTodos && !i.unidadeId) throw erroApi(422, 'UNIDADE_OBRIGATORIA', 'Restrição de unidade exige a unidade.');
-        // Unidade desativada não recebe restrição nova (decisão de 2026-10-18, revendo a do lote de acesso): ninguém entra
+        // Unidade desativada não recebe restrição nova: ninguém entra
         // nela (a entrada já barra UNIDADE_INATIVA) e o solicitante não teria vínculo válido para pedir. FOR SHARE contra a
         // desativação concorrente, como os outros usos novos. Vale também para a origem de uma restrição de condomínio.
         if (i.unidadeId) await this.unidades.paraNovoUso(tx, i.unidadeId);
@@ -265,7 +264,7 @@ export class AutorizacoesService {
     return this.viewsRestricao(ls);
   }
 
-  /** Detalhe da unidade: restrições com origem na unidade, não revogadas e não vencidas (como o mock). */
+  /** Detalhe da unidade: restrições com origem na unidade, não revogadas e não vencidas. */
   async restricoesDaUnidade(unidadeId: string): Promise<RestricaoViewApi[]> {
     const ls = await this.db.select().from(restricao).where(and(
       eq(restricao.unidadeId, unidadeId), isNull(restricao.revogadaEm), gte(restricao.validaAte, new Date(this.agora())),

@@ -11,7 +11,7 @@ import { UnidadesService } from './unidades.service';
 const ListarUnidadesDto = PaginacaoDto.extend({ bloco: z.string().trim().regex(/^[A-Za-z0-9]{1,3}$/).optional() });
 
 /** Corpo de criar/editar. A estrutura (bloco de 1 a 3 letras/dígitos, número de até 4 dígitos) é normalizada e
- *  validada no serviço com a regra do domain e responde 422 UNIDADE_INVALIDA, como o mock; aqui só o tipo. */
+ *  validada no serviço com a regra do domain e responde 422 UNIDADE_INVALIDA; aqui só o tipo. */
 const UnidadeDto = z.strictObject({ bloco: z.string().max(10), numero: z.string().max(10) });
 
 /** uuid ou código legível ("A-32"). */

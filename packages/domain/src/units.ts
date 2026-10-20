@@ -16,7 +16,7 @@ export const nesteAgrupamento = (a: Agrupamento) => `${FEMININO[a] ? 'nesta' : '
 export const oAgrupamento = (a: Agrupamento) => `${FEMININO[a] ? 'A' : 'O'} ${a.toLowerCase()}`;
 
 /**
- * Estrutura inicial, declarativa (lida pelo seed da API e pelo mock). Número = andar * 10 + final, com 2 dígitos
+ * Estrutura inicial, declarativa (lida pelo seed da API). Número = andar * 10 + final, com 2 dígitos
  * ("03", "32"). `ausentes` tira da grade: "01" vale para todos os blocos; "A-01", só para aquele bloco.
  * Exceções que fogem da grade (cobertura, unidade desmembrada) entram pelo CRUD de unidades ou pela planilha.
  */
@@ -162,7 +162,7 @@ export function gerarUnidades(c: ConfigEstrutura = ESTRUTURA_PADRAO): EstruturaU
   return out.sort(compararUnidades);
 }
 
-/** Áreas comuns iniciais (RF-36), semeadas no mock e no banco. */
+/** Áreas comuns iniciais (RF-36), semeadas no banco. */
 export const AREAS_COMUNS_INICIAIS = [
   'Salão de festas', 'Piscina', 'Quadra', 'Academia', 'Administração', 'Casa de máquinas', 'Jardins',
 ] as const;

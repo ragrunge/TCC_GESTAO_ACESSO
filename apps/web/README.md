@@ -85,24 +85,26 @@ API as chama para decidir de verdade (e responder 403/422 com os códigos da spe
 
 ## Rastreabilidade (RF/UC → arquivo/tela)
 
+Tabela completa por RF, com os arquivos da API e da tela: [`docs/rastreabilidade.md`](../../docs/rastreabilidade.md). Resumo por caso de uso (caminhos relativos a `apps/web/src/`, salvo indicação):
+
 | Requisito / caso de uso | Onde |
 |---|---|
-| UC01, RN-05 (login; 2FA fica para o pós-MVP) | `features/auth/LoginPage.tsx`, `auth/AuthContext.tsx`, `api/http` (`auth`) |
-| RNF-04 RBAC | `packages/domain/src/rbac.ts` (matriz), `RequireRole` (tela), `PapelGuard` da API |
-| UC02–UC06, RF-12/13/16/17/34, RN-01, RN-07 (registrar entrada, T03–T05) | `features/portaria/EntradaPage.tsx`, `packages/domain/src/rules.ts`, `EventosService.criarEntrada` na API |
+| UC01, RN-05 (login; 2FA fica para o pós-MVP) | `features/auth/LoginPage.tsx`, `auth/AuthContext.tsx`, `api/http` (`auth`); API em `apps/api/src/auth/` |
+| RNF-04 RBAC | `packages/domain/src/rbac.ts` (matriz), `RequireRole` em `auth/AuthContext.tsx` (tela), `PapelGuard` em `apps/api/src/auth/guards.ts` |
+| UC02–UC06, RF-12/13/16/17/34, RN-01, RN-07 (registrar entrada, T03–T05) | `features/portaria/EntradaPage.tsx`, `packages/domain/src/rules.ts`, `EventosService.criarEntrada` em `apps/api/src/eventos/eventos.service.ts` |
 | RF-16 restrição bloqueante (T04) | modal em `EntradaPage.tsx`; evento `negado` gravado no servidor |
-| UC07, UC09, RF-20 (pessoas no condomínio, saída — T06) | `features/portaria/PessoasDentroPage.tsx`, `eventos.registrarSaida` |
+| UC07, UC09, RF-20 (pessoas no condomínio, saída — T06) | `features/portaria/PessoasDentroPage.tsx`, `EventosService.registrarSaida` na API |
 | UC08, RF-35 (retroativo) | `EntradaPage.tsx?retroativo=1`, botão no `PainelPage.tsx` |
-| UC10–UC12, RF-14/15, RN-06 (autorização prévia, restrição, síndico aprova) | `features/unidades/UnidadeDetalhePage.tsx`, painel do síndico em `PainelPage.tsx` |
+| UC10–UC12, RF-14/15, RN-06 (autorização prévia, restrição, síndico aprova) | `features/unidades/UnidadeDetalhePage.tsx`, painel do síndico em `features/portaria/PainelPage.tsx`; API em `apps/api/src/eventos/autorizacoes.service.ts` |
 | UC13, RF-01/08 (unidades, veículos — T09) | `features/unidades/*` |
 | UC14, RF-02, RN-10 (pessoas) | `features/cadastro/*` |
-| UC15–UC17, RF-03–06, RN-02/03 (vínculos — T10) | `features/vinculos/VinculosPage.tsx`, `VinculosService` na API |
+| UC15–UC17, RF-03–06, RN-02/03 (vínculos — T10) | `features/vinculos/VinculosPage.tsx`; API em `apps/api/src/vinculos/vinculos.service.ts` |
 | UC18, RF-11, RN-09 (importação — T11) | `features/importacao/*` |
 | UC19, RF-33 (usuários — T14) | `features/usuarios/UsuariosPage.tsx` |
 | UC21–UC24, RF-22–26, RN-08 (encomendas — T07) | `features/encomendas/EncomendasPage.tsx` |
 | UC25–UC26, RF-27/28 (ocorrências — T08) | `features/ocorrencias/OcorrenciasPage.tsx` |
 | UC27, RF-29, RF-38 (painel e passagem de turno — T02) | `features/portaria/PainelPage.tsx` |
-| UC28–UC31, RF-19/32/37, RN-04, RNF-01 (histórico, integridade, exportação — T12) | `features/historico/*`, `packages/domain/src/hashChain.ts`, `auditoria.*` |
+| UC28–UC31, RF-19/32/37, RN-04, RNF-01 (histórico, integridade, exportação — T12) | `features/historico/*`, `packages/domain/src/hashChain.ts`; API em `apps/api/src/auditoria/auditoria.controller.ts` e `apps/api/src/db/cadeia.ts` |
 | UC29, RF-30/31 (relatórios — T13) | `features/relatorios/RelatoriosPage.tsx` |
 | RNF-07 teclado | `app/Layout.tsx` (F2/F3/F4), `EntradaPage.tsx` (foco, tecla do bloco A–I, Enter/Esc), `components/TowerUnitPicker.tsx` |
 
@@ -121,7 +123,7 @@ Com a API de teste (`npm run dev:pglite -w apps/api`, dados de `apps/api/test/e2
 
 Outras demonstrações: Válter Souza (zelador) entra por Escala nos dias e horas da escala dele.
 
-## Remapeamento de unidades (162 unidades: blocos A a I, térreo 03–04 e andares 1 a 4 com finais 1 a 4)
+## Remapeamento de unidades (blocos A a I, térreo 03–04 e andares 1 a 4 com finais 1 a 4)
 
 A estrutura vem de `ESTRUTURA_PADRAO` (`packages/domain/src/units.ts`), a mesma do seed da API. O protótipo usava torres
 numéricas: a torre N virou a N-ésima letra (T4-32 -> D-32), e os números que não existem na estrutura foram remapeados.

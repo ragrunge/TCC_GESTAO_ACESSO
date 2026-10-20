@@ -61,7 +61,7 @@ test.describe.serial('API real: catálogo, badge, busca e unidades', () => {
     await opcao.click();
     await expect(page).toHaveURL(/\/unidades\/[0-9a-f-]{36}$/);
     await expect(page.getByRole('heading', { name: 'Bloco D · Apartamento 32' })).toBeVisible();
-    await expect(page.getByText('FKR-2C41')).toBeVisible(); // veículos vêm da API (exibidos com hífen, como no mock)
+    await expect(page.getByText('FKR-2C41')).toBeVisible(); // veículos vêm da API (exibidos com hífen)
     await expect(page.getByText('Ana Ribeiro', { exact: true }).first()).toBeVisible(); // moradores (vínculos) vêm da API
     // Autorizações, restrições e acessos já têm API (lote de registro de acesso): nenhuma seção "em breve"
     await expect(page.getByRole('note', { name: /disponível em breve/ })).toHaveCount(0);

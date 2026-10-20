@@ -1,4 +1,4 @@
-// Importação da planilha de moradores (RF-11, RN-09). Mesmas regras de `importacao` do mock:
+// Importação da planilha de moradores (RF-11, RN-09). Regras:
 // - unidade inexistente ou desativada e nome ausente: erro, linha não importada;
 // - duplicidade NA PLANILHA (mesmo CPF válido na mesma unidade; sem CPF, mesmo nome na mesma unidade): aviso, consolidado;
 // - sem CPF ou CPF inválido: aviso; importa como legado "sem CPF" (o número inválido não é gravado);

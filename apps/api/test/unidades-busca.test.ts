@@ -1,5 +1,5 @@
 // Unidades (RF-01), catálogo, contagem de vínculos e busca (RF-18, RF-34) pela API real (HTTP + PGlite + migrações).
-// Dados: seed de estrutura (162 unidades) + usuários + pessoas fictícias do seed de dev (as mesmas do Docker).
+// Dados: seed de estrutura + usuários + pessoas fictícias do seed de dev (as mesmas do Docker).
 import { MATRIZ, pode, type Acao } from '@portaria/domain/rbac';
 import { compararBlocos } from '@portaria/domain/units';
 import type { Papel } from '@portaria/domain/types';
@@ -239,7 +239,7 @@ describe('unidades: criar, editar, desativar e reativar (regras do mock)', () =>
 
     const servico = api.app.get(UnidadesService);
     await expect(servico.paraNovoUso(api.db, novaId)).rejects.toMatchObject({ status: 422, response: { codigo: 'UNIDADE_INATIVA' } });
-    // a unidade inativa pode ser corrigida (o mock também deixa), mas não usada
+    // a unidade inativa pode ser corrigida (é permitido), mas não usada
     expect((await get('porteiro', `/unidades/${novaId}`)).body.data.unidade.ativo).toBe(false);
 
     const r = await post('sindico', `/unidades/${novaId}/reativar`);

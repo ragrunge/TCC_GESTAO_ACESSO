@@ -1,5 +1,4 @@
-// M3 — Encomendas (RF-22 a RF-26, RN-08; spec §6.4). Mesmas regras de `encomendas` do mock (referência de
-// comportamento): receber só com a unidade conferida (RF-23) e ativa; entregar só a quem tem vínculo válido na unidade
+// M3 — Encomendas (RF-22 a RF-26, RN-08; spec §6.4). Regras: receber só com a unidade conferida (RF-23) e ativa; entregar só a quem tem vínculo válido na unidade
 // ou autorização de retirada desta encomenda (RN-08); autorização a pedido de morador com vínculo válido, para pessoa
 // cadastrada com CPF. Toda escrita grava audit_log na mesma transação (RN-11).
 //
@@ -47,7 +46,7 @@ const ListarDto = PaginacaoDto.extend({
 const ResumoDto = z.strictObject({ dias: z.coerce.number().int().min(0).max(365).default(DIAS_ENCOMENDA_ATRASADA) });
 const CursorEncomendas = z.object({ t: z.string().datetime(), id: z.uuid() });
 
-/** Mesmo formato de `EncomendaView` do mock (instantes em epoch ms; transportadora e rastreio vazios como ''). */
+/** Formato da view de encomenda (instantes em epoch ms; transportadora e rastreio vazios como ''). */
 export interface EncomendaViewApi {
   id: string; codigo: string; unidadeId: string; destinatario: string; transportadora: string; codigoRastreio: string;
   recebidaPorId: string; recebidaEm: number; unidadeConfirmada: boolean;
@@ -63,7 +62,7 @@ type LinhaEncomenda = typeof encomenda.$inferSelect;
 type LinhaAutorizacao = typeof autorizacaoRetirada.$inferSelect;
 
 const ms = (d: Date | null) => (d ? d.getTime() : null);
-/** "K108": o mesmo prefixo do mock, a partir do `numero` (identity) do banco. */
+/** "K108": prefixo fixo, a partir do `numero` (identity) do banco. */
 export const codigoEncomenda = (numero: number) => `K${numero}`;
 
 const autorizacaoDominio = (a: LinhaAutorizacao) => ({
@@ -119,7 +118,7 @@ export class EncomendasService {
       pessoaIds.size ? exec.select({ id: pessoa.id, nome: pessoa.nome }).from(pessoa).where(inArray(pessoa.id, [...pessoaIds])) : [],
       exec.select({ id: usuarioSistema.id, nome: usuarioSistema.nome }).from(usuarioSistema).where(inArray(usuarioSistema.id, [...usuarioIds])),
       exec.select({ id: unidade.id, bloco: unidade.bloco, numero: unidade.numero }).from(unidade).where(inArray(unidade.id, unidadeIds)),
-      // Tipo do vínculo de quem retirou por vínculo (para "Lúcia Ribeiro (dependente)"), como o mock
+      // Tipo do vínculo de quem retirou por vínculo (para "Lúcia Ribeiro (dependente)")
       retirantes.length ? exec.select({ pessoaId: vinculoUnidade.pessoaId, unidadeId: vinculoUnidade.unidadeId, tipo: vinculoUnidade.tipo })
         .from(vinculoUnidade).where(inArray(vinculoUnidade.pessoaId, [...new Set(retirantes.map((e) => e.retiradaPorPessoaId!))]))
         .orderBy(asc(vinculoUnidade.registradoEm)) : [],

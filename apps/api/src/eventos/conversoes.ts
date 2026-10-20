@@ -1,5 +1,5 @@
-// Autorização prévia e restrição: linha do Drizzle -> domínio (epoch ms, 'HH:MM') e as views com nomes (mesmos campos
-// de `autorizacaoView` e `restricaoView` do mock). Instantes em epoch ms; nomes por consulta em lote.
+// Autorização prévia e restrição: linha do Drizzle -> domínio (epoch ms, 'HH:MM') e as views com nomes (campos de
+// `AutorizacaoViewApi` e `RestricaoViewApi`). Instantes em epoch ms; nomes por consulta em lote.
 import { estadoAutorizacaoPrevia } from '@portaria/domain/rules';
 import { fimDoDia, inicioDoDia } from '@portaria/domain/time';
 import type { AutorizacaoPrevia, Restricao } from '@portaria/domain/types';
@@ -64,7 +64,7 @@ export async function montarAutorizacoesView(exec: Executor, as: AutorizacaoPrev
     usuarios: unicos([...as.map((a) => a.cadastradaPorId), ...as.map((a) => a.revogadaPorId)]),
     unidades: unicos(as.map((a) => a.unidadeId)), areas: unicos(as.map((a) => a.areaComumId)),
   });
-  // Uso no dia de `quando` (mock: entrada com esta autorização entre o início e o fim do dia), valor gravado
+  // Uso no dia de `quando` (entrada com esta autorização entre o início e o fim do dia), valor gravado
   const usos = await exec.select({ a: eventoAcesso.autorizacaoPreviaId, em: eventoAcesso.ocorridoEm }).from(eventoAcesso).where(and(
     eq(eventoAcesso.tipo, 'entrada'), inArray(eventoAcesso.autorizacaoPreviaId, as.map((a) => a.id)),
     gte(eventoAcesso.ocorridoEm, new Date(inicioDoDia(quando))), lte(eventoAcesso.ocorridoEm, new Date(fimDoDia(quando))),

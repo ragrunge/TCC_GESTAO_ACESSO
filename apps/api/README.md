@@ -36,7 +36,7 @@ src/saude/               GET /api/v1/saude: select 1 + leitura da cabeça da cad
 src/db/schema.ts         schema Drizzle (fonte das migrações geradas)
 src/db/cadeia.ts         serialização canônica v1 e verificador independente da cadeia (RF-32, RF-37)
 src/db/cpf.ts            máscara e HMAC do CPF
-src/db/seed.ts           unidades da estrutura configurada (162) + portaria social + áreas comuns (idempotente)
+src/db/seed.ts           unidades da estrutura configurada + portaria social + áreas comuns (idempotente)
 src/db/seed-usuarios.ts  usuários de dev (um por papel), idempotente
 src/db/seed-pessoas-dev.ts pessoas, vínculos e veículos fictícios, CPF válido só como máscara + HMAC, idempotente
 drizzle/                 0000_init.sql (gerada), 0001_regras_imutabilidade.sql (manual), 0002_conferencia_comprovante.sql (gerada + trigger manual),

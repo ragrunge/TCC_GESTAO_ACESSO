@@ -1,4 +1,4 @@
-// M4 — Ocorrências (RF-27, RF-28; spec §6.5). Mesmas regras de `ocorrencias` do mock: nasce aberta; o status só anda
+// M4 — Ocorrências (RF-27, RF-28; spec §6.5). Regras: nasce aberta; o status só anda
 // para a frente (aberta -> em andamento -> encerrada) e encerrada é final; o porteiro só altera a ocorrência que ele
 // mesmo abriu (403 SO_PROPRIA_OCORRENCIA, gravado em acesso.negado pelo filtro global). O trigger `ocorrencia_transicao`
 // repete a máquina de estados no banco (a API checa antes, com a linha travada, para responder 409/422 legível).
@@ -61,7 +61,7 @@ const ListarDto = PaginacaoDto.extend({
 const CursorOcorrencias = z.object({ t: z.string().datetime(), id: z.uuid() });
 
 export interface AnexoViewApi { id: string; nome: string; mime: string; tamanhoBytes: number; enviadoEm: number; enviadoPorNome: string }
-/** Mesmo formato de `OcorrenciaView` do mock, mais `documentos` (anexos com id para download). */
+/** Formato da view de ocorrência, mais `documentos` (anexos com id para download). */
 export interface OcorrenciaViewApi {
   id: string; codigo: string; tipo: string; descricao: string; unidadeId: string | null; envolvidos: string;
   abertaPorId: string; abertaEm: number; status: Status; abertaPorNome: string; unidadeCodigo: string | null;
@@ -69,7 +69,7 @@ export interface OcorrenciaViewApi {
   anexos: string[]; eventoIds: string[]; documentos: AnexoViewApi[];
 }
 
-/** "OC-2026-047": ano (BRT) da abertura + `numero` (identity), como o código do mock. */
+/** "OC-2026-047": ano (BRT) da abertura + `numero` (identity). */
 export const codigoOcorrencia = (numero: number, abertaEm: Date) =>
   `OC-${new Date(abertaEm.getTime() - BRT_MS).getUTCFullYear()}-${String(numero).padStart(3, '0')}`;
 
@@ -203,7 +203,7 @@ export class OcorrenciasService {
     const eventoIds = [...new Set(i.eventoIds)];
     try {
       const id = await transacaoComRetry(this.db, async (tx) => {
-        // Ocorrência registra um fato: vale também em unidade desativada (como o mock); só precisa existir.
+        // Ocorrência registra um fato: vale também em unidade desativada; só precisa existir.
         if (i.unidadeId) {
           const [u] = await tx.select({ id: unidade.id }).from(unidade).where(eq(unidade.id, i.unidadeId));
           if (!u) throw erroApi(404, 'UNIDADE_NAO_ENCONTRADA', 'Unidade não encontrada.');

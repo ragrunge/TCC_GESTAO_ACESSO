@@ -1,8 +1,7 @@
-// Funcionários do condomínio (RF-09): pessoa (mesmas regras de CPF e telefone) + função, escala e ativo. Mesmas regras de
-// `funcionarios` do mock. Escala que atravessa a meia-noite (22:00–06:00) vale no dia do início do turno
+// Funcionários do condomínio (RF-09): pessoa (mesmas regras de CPF e telefone) + função, escala e ativo. Escala que atravessa a meia-noite (22:00–06:00) vale no dia do início do turno
 // (`escalaVigente` do domain; o CHECK funcionario_escala_ck só barra início = fim).
-// Leitura (lista e ficha): funcionario.ver — síndico, administração e auditor; o porteiro NÃO vê a lista (decisão do
-// usuário, 2026-10-18). A entrada por escala é validada pela própria API (eventos.service). Para a tela de entrada, a
+// Leitura (lista e ficha): funcionario.ver — síndico, administração e auditor; o porteiro NÃO vê a lista (ver spec §14,
+// decisão nº 29). A entrada por escala é validada pela própria API (eventos.service). Para a tela de entrada, a
 // portaria lê só a escala da pessoa sendo registrada (GET /funcionarios/:id/escala, sem dados da pessoa).
 // Escrita: funcionario.gerenciar (SI, AD).
 import { Body, Controller, Get, Inject, Injectable, Module, Param, Patch, Post, Query } from '@nestjs/common';

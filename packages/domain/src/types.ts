@@ -118,7 +118,7 @@ export interface VinculoUnidade {
   encerradoEm: number | null;
 }
 
-export interface Veiculo { id: string; unidadeId: string; placa: string; modelo: string; cor: string; /** Ausente = ativo (mock). */ ativo?: boolean }
+export interface Veiculo { id: string; unidadeId: string; placa: string; modelo: string; cor: string; /** Ausente = ativo. */ ativo?: boolean }
 
 export interface AutorizacaoPrevia {
   id: string;

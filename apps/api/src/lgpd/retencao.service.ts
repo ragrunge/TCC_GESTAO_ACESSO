@@ -3,7 +3,7 @@
 //
 // O que a seção 7 define e o job aplica:
 //  1. Pessoas: visitante/prestador com mais de 3 anos sem acesso (ou do cadastro, se nunca entrou) e morador cujo último
-//     vínculo terminou há mais de 3 anos são ANONIMIZADOS (mesma regra de `elegivelRetencao` do domain, usada pelo mock).
+//     vínculo terminou há mais de 3 anos são ANONIMIZADOS (mesma regra de `elegivelRetencao` do domain).
 //  2. Foto: eliminada ao fim do vínculo (morador sem vínculo vigente). Hoje a API não recebe foto; a regra fica pronta.
 //  3. Eventos de acesso: 3 anos a partir do registro. Descarta o PREFIXO da cadeia, e só até um seq que tenha selo
 //     (`retencao_descartar_eventos` confere o selo, o prazo pelo relógio do banco e trava a cabeça). Evento vencido depois

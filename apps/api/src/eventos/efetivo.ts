@@ -6,7 +6,7 @@
 // filtrar por um valor efetivo sem varrer a tabela, `filtroEfetivo` combina o valor gravado (indexado) com os poucos
 // eventos que têm correção daquela chave (subconsulta NÃO correlacionada, avaliada uma vez) e só então confere o
 // efetivo. Referência à linha externa sempre explícita (`"evento_acesso"."id"`): numa consulta de uma tabela só o
-// Drizzle escreve as colunas sem o nome da tabela (armadilha registrada no _Feedback).
+// Drizzle escreve as colunas sem o nome da tabela (numa subconsulta correlacionada sobre a mesma tabela, a referência sem nome ficaria ambígua).
 import type { EventoAcesso, ValoresCorrecao } from '@portaria/domain/types';
 import { CAMPOS_CORRIGIVEIS } from '@portaria/domain/types';
 import { and, or, sql, type SQL } from 'drizzle-orm';
@@ -54,7 +54,7 @@ export const semSaidaSql = (tabela = 'evento_acesso') =>
 
 /**
  * Exceção (RF-31): liberação do porteiro OU entrada por autorização prévia de unidade cadastrada sem solicitante.
- * Mesma regra de `responsavelExcecao` do mock. Área comum (RF-36) é da administração e não conta.
+ * Regra do responsável pela exceção. Área comum (RF-36) é da administração e não conta.
  */
 export const ehExcecaoSql = (tabela = 'evento_acesso') => sql`(${col('tipo', tabela)} = 'entrada' AND (
   ${col('autorizado_por_tipo', tabela)} = 'excecao_porteiro'
@@ -96,7 +96,7 @@ export function correcaoParaBanco(v: Partial<ValoresCorrecao>): Record<string, s
   return o;
 }
 
-/** Linha do Drizzle -> EventoAcesso do domínio (epoch ms, camelCase): o formato que o mock guarda e a view devolve. */
+/** Linha do Drizzle -> EventoAcesso do domínio (epoch ms, camelCase): o formato que a view devolve. */
 export function paraDominio(r: LinhaEvento): EventoAcesso {
   return {
     id: r.id, seq: r.seq, formatoHash: r.formatoHash, tipo: r.tipo, categoriaPessoa: r.categoriaPessoa, pessoaId: r.pessoaId,

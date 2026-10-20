@@ -1,8 +1,8 @@
-// O mock do navegador e o banco produzem o MESMO hash para o mesmo evento (spec §4.3, decisão 21).
-// Cada evento é montado primeiro no formato em que o mock o guarda (EventoAcesso do domain: camelCase, epoch ms,
+// O domínio (@portaria/domain/hashChain) e o banco produzem o MESMO hash para o mesmo evento (spec §4.3, decisão 21).
+// Cada evento é montado primeiro no formato do domínio (EventoAcesso do domain: camelCase, epoch ms,
 // correcaoValores como objeto camelCase) e só então inserido no banco. O trigger define seq, registrado_em,
-// hash_anterior e (fora da contingência) ocorrido_em; esses valores voltam para o objeto do mock, e o hash calculado
-// pela função do domain (a mesma que o mock usa em gravarEvento) precisa ser igual ao que o banco gravou.
+// hash_anterior e (fora da contingência) ocorrido_em; esses valores voltam para o objeto do domínio, e o hash calculado
+// pela função do domain (a mesma do domínio) precisa ser igual ao que o banco gravou.
 import { asc } from 'drizzle-orm';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { PGlite } from '@electric-sql/pglite';
@@ -19,7 +19,7 @@ let fx: Fixtures;
 
 type Rascunho = Omit<EventoAcesso, 'id' | 'seq' | 'hash' | 'hashAnterior' | 'registradoEm'>;
 
-/** Evento como o mock o monta (antes de o "servidor" numerar e carimbar). */
+/** Evento como o domínio o monta (antes de o "servidor" numerar e carimbar). */
 function rascunho(extra: Partial<Rascunho> = {}): Rascunho {
   return {
     formatoHash: FORMATO_HASH, tipo: 'entrada', categoriaPessoa: 'visitante', pessoaId: fx.visitante.id,
@@ -41,7 +41,7 @@ const correcaoParaBanco = (v: Partial<ValoresCorrecao> | null) => {
   return o;
 };
 
-/** Insere o rascunho no banco e devolve o evento do mock completado com o que o servidor definiu. */
+/** Insere o rascunho no banco e devolve o evento do domínio completado com o que o servidor definiu. */
 async function inserirComoMock(r: Rascunho): Promise<{ mock: EventoAcesso; hashBanco: string }> {
   const [row] = await db.insert(s.eventoAcesso).values({
     tipo: r.tipo, categoriaPessoa: r.categoriaPessoa, pessoaId: r.pessoaId, unidadeDestinoId: r.unidadeDestinoId,
@@ -54,7 +54,7 @@ async function inserirComoMock(r: Rascunho): Promise<{ mock: EventoAcesso; hashB
   }).returning();
   const semHash: Omit<EventoAcesso, 'hash'> = {
     ...r, id: row.id, seq: row.seq, registradoEm: row.registradoEm.getTime(), hashAnterior: row.hashAnterior,
-    // fora da contingência o relógio é do servidor (o mock faz o mesmo: ocorridoEm = registradoEm)
+    // fora da contingência o relógio é do servidor (ocorridoEm = registradoEm)
     ocorridoEm: r.retroativo ? r.ocorridoEm : row.registradoEm.getTime(),
   };
   return { mock: { ...semHash, hash: await calcularHash(semHash) }, hashBanco: row.hash };

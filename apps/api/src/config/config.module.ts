@@ -8,7 +8,7 @@ import { carregarConfig, CONFIG, ESTRUTURA } from './config';
   providers: [
     { provide: CONFIG, useFactory: () => carregarConfig(process.env) },
     { provide: RELOGIO, useValue: relogioDoSistema },
-    // Estrutura do condomínio (agrupamento "Bloco"/"Torre" e grade inicial): a mesma do mock e do seed.
+    // Estrutura do condomínio (agrupamento "Bloco"/"Torre" e grade inicial): a mesma do seed.
     { provide: ESTRUTURA, useValue: ESTRUTURA_PADRAO },
   ],
   exports: [CONFIG, RELOGIO, ESTRUTURA],

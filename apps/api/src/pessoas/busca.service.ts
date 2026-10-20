@@ -1,4 +1,4 @@
-// Busca de pessoas (RF-18, RF-34) e busca global do topo. Mesmo comportamento de `buscarPessoas` do mock:
+// Busca de pessoas (RF-18, RF-34) e busca global do topo. Regras:
 //   nome     sem acento e sem caixa, por substring (ILIKE; a spec §3.5 deixa pg_trgm para quando a medição pedir);
 //   CPF      11 dígitos: igualdade pelo HMAC (documento_busca, chave PORTARIA_HMAC_CPF_KEY); 3 a 10 dígitos: parcial nos
 //            6 dígitos visíveis do mascarado (o mesmo que a tela já mostra);
@@ -40,11 +40,11 @@ export interface PessoaBusca {
 export interface ResultadoBusca { pessoas: PessoaBusca[]; temMais: boolean }
 
 // Acentos do português (e vizinhos) nas duas caixas. `lower` sozinho não basta: com collation C (PGlite) ele só
-// converte ASCII. O alvo é derivado por NFD, o mesmo que o `norm` do mock faz no navegador.
+// converte ASCII. O alvo é derivado por NFD, o mesmo que o `norm` do front faz no navegador.
 const COM_ACENTO = 'áàâãäåéèêëíìîïóòôõöúùûüçñýÿÁÀÂÃÄÅÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑÝ';
 const SEM_ACENTO = [...COM_ACENTO].map((c) => c.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()).join('');
 
-/** Normalização do lado do JavaScript (igual à do mock): sem acento, minúscula, sem espaço nas pontas. */
+/** Normalização do lado do JavaScript (igual à do SQL acima): sem acento, minúscula, sem espaço nas pontas. */
 export const normalizar = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
 /** Escapa os curingas do LIKE (o escape padrão do Postgres é a barra invertida). */
@@ -86,7 +86,7 @@ export class BuscaService {
     } else if (digitos.length >= 3) {
       criterios.push(sql`regexp_replace(coalesce(${pessoa.documentoMascarado}, ''), '[^0-9]', '', 'g') LIKE ${`%${digitos}%`}`);
     }
-    // "A-32"; o antigo "T4-32" também casa com o bloco "4" (todas as leituras do código, como no mock).
+    // "A-32"; o antigo "T4-32" também casa com o bloco "4" (todas as leituras do código).
     const cods = leiturasDoCodigo(consulta);
     if (cods.length) {
       const pares = or(...cods.map((c) => and(eq(unidade.bloco, c.bloco), eq(unidade.numero, c.numero))));
@@ -167,7 +167,7 @@ export class BuscaService {
   }
 
   /**
-   * Último acesso (entrada, negado ou recusado) de cada pessoa, pela ordem da cadeia (seq), como o mock.
+   * Último acesso (entrada, negado ou recusado) de cada pessoa, pela ordem da cadeia (seq).
    * Limitação conhecida: usa os valores gravados no evento, não os efetivos depois de uma correção (o módulo de
    * registro de acesso traz a view de valores efetivos).
    */
@@ -187,7 +187,7 @@ export class BuscaService {
     return mapa;
   }
 
-  /** "Hoje 14:32 · D-32", "08/10 · Salão de festas (negado)" ou "Sem acessos" (mesmo texto do mock). */
+  /** "Hoje 14:32 · D-32", "08/10 · Salão de festas (negado)" ou "Sem acessos". */
   textoUltimoAcesso(u: { tipo: string; ocorridoEm: Date; bloco: string | null; numero: string | null; area: string | null } | undefined, agora: Date) {
     if (!u) return 'Sem acessos';
     const t = u.ocorridoEm.getTime();

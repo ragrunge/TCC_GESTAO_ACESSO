@@ -14,13 +14,13 @@ import { PessoasService } from './pessoas.service';
 const Termo = z.string().max(100);
 const BuscaPessoasDto = z.strictObject({
   q: Termo,
-  /** Padrão 8, como o mock. A portaria pede 8 e usa `temMais` para avisar que há mais resultados. */
+  /** Padrão 8. A portaria pede 8 e usa `temMais` para avisar que há mais resultados. */
   limite: z.number().int().min(1).max(50).default(8),
   semMoradores: z.boolean().default(false),
 });
 const BuscaGlobalDto = z.strictObject({ q: Termo });
 
-/** Só o tipo e o tamanho; as regras (CPF, telefone, empresa) ficam no serviço e respondem 422 como o mock. */
+/** Só o tipo e o tamanho; as regras (CPF, telefone, empresa) ficam no serviço e respondem 422. */
 const Texto = (max: number) => z.string().max(max);
 const NovaPessoaDto = z.strictObject({
   nome: Texto(150),

@@ -219,7 +219,7 @@ describe('funcionários (RF-09)', () => {
     expect(r.body.data).toMatchObject({ funcao: 'Vigia', escala: escalaNoite, ativo: true, pessoa: { nome: 'Vigia Noturno', categoria: 'funcionario' } });
     const id = r.body.data.pessoaId;
     // Relógio: sábado 17/10/2026 09:00 BRT -> fora; sábado 02:00 BRT -> dentro (turno de sexta).
-    // O porteiro lê só a escala da pessoa (tela de entrada), nunca a ficha nem a lista (decisão do usuário).
+    // O porteiro lê só a escala da pessoa (tela de entrada), nunca a ficha nem a lista (spec §14, decisão nº 29).
     const esc = await get('porteiro', `/funcionarios/${id}/escala`);
     expect(esc.body.data).toEqual({ pessoaId: id, funcao: 'Vigia', escala: escalaNoite, ativo: true, emEscalaAgora: false });
     const antes = api.relogio.atual;

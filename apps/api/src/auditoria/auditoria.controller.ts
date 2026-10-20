@@ -1,5 +1,5 @@
 // Auditoria (spec §4.5, §4.7, §6.6; RF-32, RF-37, RNF-01): verificação de integridade da trilha de acessos no banco real,
-// exportação verificável (JSONL, manifesto v2, o MESMO formato do mock: @portaria/domain/exportacao) e a trilha de
+// exportação verificável (JSONL, manifesto v2, formato definido em @portaria/domain/exportacao) e a trilha de
 // alterações (audit_log) paginada. Permissões: auditoria.verificar e auditoria.exportar (SI, AD, AU).
 import { Body, Controller, Get, HttpCode, Inject, Injectable, Module, Post, Query } from '@nestjs/common';
 import { montarExportacaoJsonl } from '@portaria/domain/exportacao';
@@ -106,7 +106,7 @@ export class AuditoriaRotasService {
     return { valido: true, ...base, selosConferidos: conferidos };
   }
 
-  /** RF-32: JSONL do período (ou de um evento isolado), no formato do mock. Grava a exportação no audit_log. */
+  /** RF-32: JSONL do período (ou de um evento isolado), no formato de @portaria/domain/exportacao. Grava a exportação no audit_log. */
   async exportar(ctx: Contexto, f: z.infer<typeof FiltrosCorpo>) {
     const linhas = await this.eventos.linhas(f, TETO_EXPORTACAO);
     const isolado = !!f.eventoId;

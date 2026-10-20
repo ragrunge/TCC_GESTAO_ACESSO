@@ -130,5 +130,5 @@ export async function montarViews(exec: Executor, linhas: LinhaEvento[]): Promis
   });
 }
 
-/** "Nome (Papel)", como `comPapel` do mock (autorizações e restrições). */
+/** "Nome (Papel)" (autorizações e restrições). */
 export const comPapel = (u: { nome: string; papel: keyof typeof ROTULO_PAPEL } | undefined) => (u ? `${u.nome} (${ROTULO_PAPEL[u.papel]})` : '(usuário)');

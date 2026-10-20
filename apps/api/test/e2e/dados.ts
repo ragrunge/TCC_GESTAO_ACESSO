@@ -1,5 +1,5 @@
 // Dados FICTÍCIOS do e2e, por cima do seed de desenvolvimento (seed-pessoas-dev.ts): o que as specs do Playwright
-// precisam encontrar pronto (o antigo seed do mock do navegador). Tudo entra pelos SERVIÇOS da API, com as mesmas
+// precisam encontrar pronto. Tudo entra pelos SERVIÇOS da API, com as mesmas
 // regras, trilha e hash de uma requisição de verdade, mas sem login (nenhum auth.login sobra na trilha do e2e).
 // Datas relativas à hora real do boot: o servidor de e2e não tem relógio simulado.
 import type { INestApplication } from '@nestjs/common';

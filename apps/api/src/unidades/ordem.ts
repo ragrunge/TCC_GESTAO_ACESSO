@@ -1,10 +1,10 @@
-// Ordem das unidades no SQL, igual à do domain (`compararUnidades`, usada pelo mock). Módulo à parte para quem lista
+// Ordem das unidades no SQL, igual à do domain (`compararUnidades`). Módulo à parte para quem lista
 // unidades (vínculos, busca) não importar o serviço e criar ciclo.
 import { asc, sql, type SQL } from 'drizzle-orm';
 import { unidade } from '../db/schema';
 
 /**
- * Chave de ordenação natural do bloco, igual a `chaveBloco` do domain (mock): cada sequência de dígitos com 3 casas
+ * Chave de ordenação natural do bloco, igual a `chaveBloco` do domain: cada sequência de dígitos com 3 casas
  * ("2" -> "002", "B10" -> "B010"), comparada byte a byte (COLLATE "C", sem depender da collation do banco).
  */
 export const chaveBlocoSql = (bloco: SQL | typeof unidade.bloco) =>

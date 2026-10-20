@@ -1,6 +1,6 @@
 // Helpers compartilhados dos testes E2E do Portaria Parque, contra a API de teste sobre PGlite (playwright.config.ts).
 // Isolamento: `test` daqui volta o banco ao estado semeado ANTES de cada teste (POST /__e2e/reset, rota que só existe
-// no servidor de e2e), como o antigo mock fazia com o localStorage. Specs com estado entre testes (describe.serial)
+// no servidor de e2e). Specs com estado entre testes (describe.serial)
 // usam `resetarBanco` uma vez no beforeAll. Datas relativas à hora real (não há relógio simulado).
 import { test as base, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { API_E2E, SENHA_E2E } from './ambiente';

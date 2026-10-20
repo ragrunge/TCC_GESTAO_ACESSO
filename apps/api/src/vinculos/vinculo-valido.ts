@@ -1,4 +1,4 @@
-// Vínculo válido em SQL: a mesma regra de `vinculoValido` (@portaria/domain/rules), usada pela UI e pelo mock.
+// Vínculo válido em SQL: a mesma regra de `vinculoValido` (@portaria/domain/rules), usada pela UI e pela API.
 //   aprovado: dentro da vigência (início e fim inclusivos, em dias BRT; nulo = sem limite)
 //   legado:   até o prazo de regularização (inclusivo)
 // `hoje` é o dia BRT do relógio da API (diaBrt), passado como parâmetro: nada de now() no SQL (os testes movem o relógio).

@@ -1,4 +1,4 @@
-// Cadastro de pessoas (RF-02, RN-10, LGPD art. 18). Mesmas regras de `validarNovaPessoa` e de `pessoas.editar` do mock:
+// Cadastro de pessoas (RF-02, RN-10, LGPD art. 18). Regras do cadastro e da edição:
 // - nome, telefone (10 ou 11 dígitos, com DDD) e CPF obrigatórios; CPF validado pelo dígito verificador;
 // - o CPF não é guardado: só a máscara e o HMAC (documento_busca), único -> 409 PESSOA_DUPLICADA (tradução do 23505);
 // - exceção "sem CPF": nome e telefone continuam obrigatórios, e a deduplicação é por nome + telefone;
@@ -40,7 +40,7 @@ const vazioParaNulo = (s: string | null | undefined) => (s ?? '').trim() || null
 
 const duplicada = () => erroApi(409, 'PESSOA_DUPLICADA', 'Já existe cadastro com este CPF.');
 
-/** Ordem de prioridade do "vínculo principal" na lista do Cadastro (igual ao mock). */
+/** Ordem de prioridade do "vínculo principal" na lista do Cadastro */
 const PRIORIDADE = ['aprovado', 'legado', 'pendente', 'rejeitado', 'encerrado'] as const;
 
 const CursorPessoas = z.strictObject({ n: z.string().max(400), id: z.uuid() });
@@ -68,7 +68,7 @@ export class PessoasService {
     let mascarado: string | null = null;
     let busca: string | null = null;
     if (i.semCpf) {
-      // Sem CPF não há chave única: evita o cadastro em dobro por nome + telefone (mesma regra do mock).
+      // Sem CPF não há chave única: evita o cadastro em dobro por nome + telefone.
       const [igual] = await exec.select({ id: pessoa.id }).from(pessoa)
         .where(and(eq(pessoa.semCpf, true), eq(pessoa.telefone, telefone), sql`${nomeSemAcentoSql()} = ${normalizar(nome)}`)).limit(1);
       if (igual) throw erroApi(409, 'PESSOA_DUPLICADA', 'Já existe cadastro sem CPF com este nome e telefone.');

@@ -36,7 +36,7 @@ services:
       - pgdata:/var/lib/postgresql/data
     networks: [banco]
     healthcheck:
-      # -h 127.0.0.1: no init o servidor temporário só escuta no socket e enganaria o pg_isready (ver _Feedback).
+      # -h 127.0.0.1: no init o servidor temporário só escuta no socket e o pg_isready sem -h 127.0.0.1 daria saudável cedo demais.
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d portaria"]
       interval: 10s
       timeout: 5s

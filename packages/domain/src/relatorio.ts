@@ -1,4 +1,4 @@
-// Relatórios (RF-30, RF-31): o CSV do resumo. FONTE ÚNICA do formato, usada pelo mock e pela API.
+// Relatórios (RF-30, RF-31): o CSV do resumo. FONTE ÚNICA do formato, usada pelo front e pela API.
 // UTF-8 com BOM, separador ";", CRLF, e proteção contra injeção de fórmula (célula que começa com = + - @).
 import { fmtData } from './time';
 import { ROTULO_CATEGORIA, ROTULO_MEIO, type CategoriaPessoa, type MeioAutorizacao } from './types';

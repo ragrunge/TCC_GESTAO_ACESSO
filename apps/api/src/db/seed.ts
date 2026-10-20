@@ -1,6 +1,4 @@
-// Seed mínimo de estrutura (idempotente): as unidades da estrutura configurada (ESTRUTURA_PADRAO: 9 blocos, 162
-// unidades), o ponto de acesso único e as áreas comuns (RF-36), todos a partir de @portaria/domain/units (o mesmo que
-// o mock do navegador usa). Só ACRESCENTA o que falta: banco com outra estrutura usa a CLI recriar-estrutura.
+// Seed mínimo de estrutura (idempotente): as unidades da estrutura configurada (ESTRUTURA_PADRAO), o ponto de acesso único e as áreas comuns (RF-36), todos a partir de @portaria/domain/units. Só ACRESCENTA o que falta: banco com outra estrutura usa a CLI recriar-estrutura.
 // Usuários e pessoas NÃO são semeados aqui: senha e dados pessoais não vão para o código (RN-05).
 import { AREAS_COMUNS_INICIAIS, ESTRUTURA_PADRAO, PORTARIA_SOCIAL, gerarUnidades, type ConfigEstrutura } from '@portaria/domain/units';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';

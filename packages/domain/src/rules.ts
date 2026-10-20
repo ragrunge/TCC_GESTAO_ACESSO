@@ -1,5 +1,5 @@
 // Regras de negócio puras (sem React, sem I/O). Usadas pela UI (para habilitar botões)
-// e, principalmente, pelo mock do "servidor" (que é quem realmente decide).
+// e, principalmente, pela API (que é quem realmente decide).
 import type {
   AutorizacaoPrevia, CategoriaPessoa, ConferenciaComprovante, Escala, Funcionario, MeioAutorizacao, Pessoa,
   Restricao, VinculoUnidade,
@@ -12,7 +12,7 @@ export const HORAS_PERMANENCIA_ALERTA = 8;
 
 // ----- Senha temporária (spec §5.1) ---------------------------------------------------------------------------------
 // Criada pela administração (cadastro ou redefinição) e enviada por mensagem: vale 72 h. Constante de regra, não
-// configuração de ambiente. A API grava o fim em usuario_sistema.senha_temporaria_expira_em; o mock usa o relógio simulado.
+// configuração de ambiente. A API grava o fim em usuario_sistema.senha_temporaria_expira_em.
 export const SENHA_TEMPORARIA_VALIDADE_MS = 72 * HORA;
 
 /**

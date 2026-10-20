@@ -1,6 +1,6 @@
 // Verificador INDEPENDENTE da cadeia de hash da trilha de acessos (RF-32, RF-37; spec §4.3 e §4.7).
 // A serialização canônica v1 e o verificador vivem em @portaria/domain/hashChain (fonte única, WebCrypto), e são os
-// mesmos usados pelo mock do navegador e pela exportação verificável. Aqui fica só o mapeamento da linha do Drizzle.
+// mesmos usados pela exportação verificável. Aqui fica só o mapeamento da linha do Drizzle.
 // O trigger `evento_acesso_antes_inserir` reproduz a mesma serialização em SQL (`evento_acesso_canonico`).
 import type { EventoExportado } from '@portaria/domain/hashChain';
 

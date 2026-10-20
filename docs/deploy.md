@@ -150,8 +150,9 @@ bloqueiam o login de todos por 15 min. Erro para **mais**: o IP vira o valor que
 
 **Custo aceito (spec §14 nº 26):** quem chama `https://179-197-78-78.sslip.io` direto, sem passar pela Vercel, escolhe
 o próprio IP pelo XFF, porque a Vercel não publica faixa fixa de IP e o proxy não tem como distinguir. Por isso o limite
-por IP é auxiliar, e o controle que vale é o limite por login. Não "consertar" pondo IP de bridge em allowlist (ver
-`skills/docker.md`, userland-proxy): o número de saltos não depende do IP de origem do socket.
+por IP é auxiliar, e o controle que vale é o limite por login. Não "consertar" pondo IP de bridge em allowlist (com
+o `userland-proxy` do Docker, todo cliente aparece com o IP do gateway da bridge, e a allowlist liberaria qualquer um):
+o número de saltos não depende do IP de origem do socket.
 
 ---
 
@@ -274,7 +275,7 @@ afeta o Tobe, como a opção A do Caddy. A fase 2 decide com quem mantém o Tobe
 
 Dentro de um container, `127.0.0.1` é o próprio container: `127.0.0.1:3100` do host **não é alcançável**. Em vez de
 publicar a API em `0.0.0.0` (nunca), ligue a API à rede externa do proxy com um override, declarado no `COMPOSE_FILE`
-do `.env` (override fora da linha do `up` é override desfeito, `skills/docker.md`):
+do `.env` (um override que não entra em toda linha do `up` é desfeito no próximo `up` sem ele):
 
 ```yaml
 # docker-compose.prod.proxy.yml (criar na fase 2 com o nome real da rede)
@@ -310,7 +311,7 @@ Variáveis de **build** (Project → Settings → Environment Variables), escopo
 | `VITE_API_URL` | `/api/v1` | é o padrão; explícita para não depender dele |
 | ~~`VITE_API_MODE`~~ | — | **remover** do painel: o código não a lê mais (sobra inofensiva, mas engana quem lê) |
 
-**Sem deploy de Preview.** Sem o mock, um preview usaria o mesmo rewrite `/api` e leria e **escreveria no banco de
+**Sem deploy de Preview.** Como o front só fala HTTP, um preview usaria o mesmo rewrite `/api` e leria e **escreveria no banco de
 produção** (trilhas append-only: nada se desfaz). Por isso o `vercel.json` traz
 `"git": { "deploymentEnabled": { "main": true, "**": false } }`: as chaves são globs (minimatch) de branch; `**` casa
 qualquer branch (inclusive com `/`, como `feature/x`), e quando um branch casa mais de uma regra basta UMA ser `true`

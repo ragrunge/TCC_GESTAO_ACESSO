@@ -1,5 +1,5 @@
 // Cadeia de hash da trilha de acessos (RF-32, RF-37, RNF-01; spec §4.3 e §4.7). FONTE ÚNICA da serialização:
-// usada pelo mock do navegador, pela API (apps/api/src/db/cadeia.ts) e pelo verificador da exportação.
+// usada pelo front, pela API (apps/api/src/db/cadeia.ts) e pelo verificador da exportação.
 // Reproduz byte a byte `evento_acesso_canonico(e)` do banco (migração 0001):
 //   hash = hex( SHA-256( UTF-8( hash_anterior || canonico ) ) )
 //   canonico = JSON compacto, chaves na ordem de CAMPOS_CANONICOS_V1 (precedidas de "v"), null explícito,
@@ -95,7 +95,7 @@ export function paraExportado(e: Omit<EventoAcesso, 'hash'> & { hash?: string })
   };
 }
 
-/** Hash de um evento do domínio (o mock grava com isto; o banco calcula o mesmo valor no trigger). */
+/** Hash de um evento do domínio (a API usa isto; o banco calcula o mesmo valor no trigger). */
 export const calcularHash = (ev: Omit<EventoAcesso, 'hash'>) => calcularHashExportado(paraExportado(ev));
 
 /** Ponto de partida da verificação: gênese (seq 0) ou o selo/âncora do evento anterior ao primeiro verificado. */
@@ -144,7 +144,7 @@ export async function verificarCadeia(eventos: readonly EventoExportado[], ancor
   return { valido: true, verificados, ultimoSeq: seqAnterior, ultimoHash: hashAnterior };
 }
 
-/** Verifica a cadeia de eventos do domínio (mock): converte para o formato canônico e aplica `verificarCadeia`. */
+/** Verifica a cadeia de eventos do domínio: converte para o formato canônico e aplica `verificarCadeia`. */
 export const verificarCadeiaEventos = (eventos: readonly EventoAcesso[], ancora?: Ancora) =>
   verificarCadeia(eventos.map(paraExportado), ancora);
 

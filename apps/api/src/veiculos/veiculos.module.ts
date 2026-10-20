@@ -1,4 +1,4 @@
-// Veículos da unidade (RF-08). Mesmas regras de `veiculos.criar` do mock: placa no formato antigo (ABC1234) ou Mercosul
+// Veículos da unidade (RF-08). Regras: placa no formato antigo (ABC1234) ou Mercosul
 // (ABC1D23), guardada em maiúsculas e sem hífen; placa ATIVA única (índice veiculo_placa_ativa_uq -> 409 PLACA_DUPLICADA);
 // unidade inativa não recebe veículo novo (paraNovoUso -> 422 UNIDADE_INATIVA). Nunca é apagado: `ativo` (o detalhe da
 // unidade mostra só os ativos). Escrita: veiculo.cadastrar (SI, AD), com audit_log na mesma transação.
