@@ -110,7 +110,7 @@ Tabela completa por RF, com os arquivos da API e da tela: [`docs/rastreabilidade
 
 ## Roteiros de demonstração
 
-Com a API de teste (`npm run dev:pglite -w apps/api`, dados de `apps/api/test/e2e/dados.ts` e do seed de dev).
+Com `npm run local` na raiz (ou a API de teste sozinha, `npm run dev:pglite -w apps/api`), dados de `apps/api/test/e2e/dados.ts` e do seed de dev).
 
 1. **Visitante com interfone** — Porteiro, `F2`, "Marcos", `Enter`; tecla `D`, digite `32`; Interfone → Ana Ribeiro → `Enter`. Toast e nova linha no painel.
 2. **Pessoa em restrição** — `F2`, "Bruno Teixeira", bloco D, unidade 32: modal vermelho; "Registrar ocorrência" abre a ocorrência já preenchida e vinculada ao evento "negado".

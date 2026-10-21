@@ -7,29 +7,58 @@ Sistema de controle de acesso e gestão de portaria do Condomínio Residencial d
 | Pasta | Conteúdo | Status |
 |---|---|---|
 | `apps/web` | SPA React 18 + Vite 5 + TS + Tailwind (`@portaria/web`), cliente HTTP da API (sem mock) | funcional |
-| `apps/api` | Backend NestJS + Drizzle + PostgreSQL | esqueleto NestJS (`/api/v1/saude`) + camada de banco (schema, migrações, testes); regras e auth pendentes |
+| `apps/api` | Backend NestJS + Drizzle + PostgreSQL | funcional, em produção (VPS) |
 | `packages/domain` | Regras puras, RBAC, hash chain, tempo, unidades (`@portaria/domain`, sem build, exporta `.ts`) | funcional, com testes |
 | `db` | Bootstrap de roles, guia de migração e testes (o `docker-compose.yml` fica na raiz) | funcional |
 | `docs` | Requisitos, especificação técnica, prompts do protótipo | v0.3 / v0.1 |
 | `diagramas` | PlantUML (uc1–uc3) e diagrama de arquitetura/deploy | — |
 | `prototipo` | Protótipo HTML de referência | — |
 
+## Rodar na sua máquina (dados fictícios)
+
+Precisa só de Node 22 ou mais novo (`.nvmrc`) e npm. Não precisa de Docker, Postgres nem `.env`.
+
+```bash
+git clone https://github.com/ragrunge/TCC_GESTAO_ACESSO.git && cd TCC_GESTAO_ACESSO
+npm install
+npm run local
+```
+
+Abra http://localhost:5173 e entre com um dos usuários abaixo, todos com a senha `senha-e2e-portaria-parque`:
+
+| Usuário | Papel |
+|---|---|
+| `roberto.faria` | síndico (acesso total) |
+| `paula.nogueira` | administração |
+| `joao.lima` | porteiro |
+| `luiza.campos` | auditor (só leitura) |
+
+O `npm run local` sobe a API de verdade (mesmas regras, permissões, trilha com hash chain) sobre um PostgreSQL em
+memória (PGlite), aplica as migrações reais e carrega dados fictícios: unidades dos blocos A a I, moradores, visitantes,
+veículos, alguns acessos, encomendas e ocorrências. Nada é real: os nomes e CPFs são inventados. O banco nasce limpo a cada execução e some no
+Ctrl+C. A documentação interativa da API (Swagger) fica em http://127.0.0.1:3101/api/v1/docs enquanto ele roda.
+
+Roteiros do que testar em cada tela: [apps/web/README.md](apps/web/README.md#roteiros-de-demonstração).
+
 ## Comandos (da raiz)
 
 ```bash
-npm install
-npm run dev                          # SPA em http://localhost:5173
+npm run local                        # sistema completo com dados fictícios (acima)
+npm run dev                          # só o front; o proxy /api aponta para a API de PRODUÇÃO (só leitura, ver apps/web/README.md)
 npm test                             # testes de todos os workspaces
-npm run build                        # tsc + vite build do web
+npm run build                        # build de todos os workspaces
 npm run typecheck                    # todos os workspaces
 ```
 
-## Ambiente Docker (db + migrate + api)
+## Ambiente Docker (PostgreSQL de verdade: db + migrate + api)
+
+Opcional, para rodar a API contra PostgreSQL 17 como em produção (dados persistem no volume).
 
 ```bash
-export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
-cp .env.example .env && docker compose up -d --build   # ver apps/api/README.md
+cp .env.example .env && docker compose up -d --build   # detalhes e seed em apps/api/README.md
 ```
+
+No macOS, se o `docker` não estiver no PATH: `export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"`.
 
 Detalhes da SPA e login de demonstração: [apps/web/README.md](apps/web/README.md). Rastreabilidade RF → API → tela: [docs/rastreabilidade.md](docs/rastreabilidade.md).
 
