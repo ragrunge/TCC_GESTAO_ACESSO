@@ -3,7 +3,7 @@
 // Toda criação, revogação e aprovação grava audit_log na mesma transação (RN-11).
 import { Inject, Injectable } from '@nestjs/common';
 import { pode } from '@portaria/domain/rbac';
-import { MIN_JUSTIFICATIVA, justificativaValida, restricoesVigentes } from '@portaria/domain/rules';
+import { ERRO_PESSOA_DESATIVADA, MIN_JUSTIFICATIVA, justificativaValida, restricoesVigentes } from '@portaria/domain/rules';
 import { fimDoDia, inicioDoDia, partes } from '@portaria/domain/time';
 import { and, asc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -87,8 +87,11 @@ export class AutorizacoesService {
     if (i.validaDe !== undefined && i.validaDe > i.validaAte) throw erroApi(422, 'PERIODO_INVALIDO', 'O início da validade não pode ser posterior ao fim.');
     try {
       const linha = await this.db.transaction(async (tx) => {
-        const [p] = await tx.select({ id: pessoa.id, categoria: pessoa.categoria }).from(pessoa).where(eq(pessoa.id, i.pessoaId));
+        // FOR SHARE: a desativação concorrente (FOR UPDATE) espera esta autorização nascer, e a revoga junto.
+        const [p] = await tx.select({ id: pessoa.id, categoria: pessoa.categoria, desativadaEm: pessoa.desativadaEm }).from(pessoa)
+          .where(eq(pessoa.id, i.pessoaId)).for('share');
         if (!p) throw erroApi(404, 'PESSOA_NAO_ENCONTRADA', 'Pessoa não encontrada.');
+        if (p.desativadaEm) throw erroApi(ERRO_PESSOA_DESATIVADA.status, ERRO_PESSOA_DESATIVADA.code, ERRO_PESSOA_DESATIVADA.message);
         if (i.unidadeId && i.areaComumId) throw erroApi(422, 'DESTINO_DUPLO', 'Informe a unidade OU a área comum, não as duas.');
         if (!i.unidadeId && !i.areaComumId) throw erroApi(422, 'UNIDADE_OBRIGATORIA', 'Informe a unidade de destino.');
         if (!!i.horaInicio !== !!i.horaFim) throw erroApi(422, 'JANELA_INCOMPLETA', 'Informe hora de início e de fim, ou nenhuma.');

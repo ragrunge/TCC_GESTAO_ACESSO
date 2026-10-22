@@ -5,7 +5,7 @@
 //   unidade  "A-32", "a 32" (e o antigo "T4-32"): pessoas com vínculo pendente, aprovado ou legado nela;
 //   placa    4+ caracteres: pessoas com vínculo VÁLIDO na unidade do veículo ativo;
 //   ordem    nome exato, começa com, contém, outros critérios; depois alfabética.
-// Anonimizada nunca aparece. O CPF digitado só existe nesta requisição: vem no CORPO de um POST (não na URL, que
+// Anonimizada nunca aparece; desativada (RF-02) só com `incluirDesativadas` (tela Cadastro), nunca na busca do topo. O CPF digitado só existe nesta requisição: vem no CORPO de um POST (não na URL, que
 // proxies e a borda da Vercel registram), não é logado (log em allowlist) e leitura não grava trilha.
 import { Inject, Injectable } from '@nestjs/common';
 import { fmtData, fmtHora } from '@portaria/domain/time';
@@ -32,6 +32,8 @@ export interface PessoaBusca {
   empresa?: string;
   servico?: string;
   importacaoId?: string;
+  /** Cadastro desativado (só aparece com `incluirDesativadas`). */
+  desativadaEm: number | null;
   ultimoAcesso: string;
   unidadesVinculadas: string[];
   unidadesVinculadasCodigos: string[];
@@ -68,7 +70,7 @@ export class BuscaService {
     return nomeSemAcentoSql();
   }
 
-  async pessoas(q: string, o: { limite: number; semMoradores?: boolean }): Promise<ResultadoBusca> {
+  async pessoas(q: string, o: { limite: number; semMoradores?: boolean; incluirDesativadas?: boolean }): Promise<ResultadoBusca> {
     const consulta = q.trim();
     const nq = normalizar(consulta);
     if (!nq) return { pessoas: [], temMais: false };
@@ -100,6 +102,7 @@ export class BuscaService {
         WHERE ${veiculo.ativo} AND ${veiculo.placa} LIKE ${`%${escaparLike(placa)}%`} AND ${valido})`);
     }
     const filtros: SQL[] = [isNull(pessoa.anonimizadaEm), or(...criterios)!];
+    if (!o.incluirDesativadas) filtros.push(isNull(pessoa.desativadaEm));
     // Portaria: quem tem vínculo válido em alguma unidade é morador, qualquer que seja a categoria gravada.
     if (o.semMoradores) {
       // Referência explícita à linha externa (o Drizzle pode escrever a coluna sem o nome da tabela numa consulta simples).
@@ -110,6 +113,7 @@ export class BuscaService {
     const linhas = await this.db.select({
       id: pessoa.id, nome: pessoa.nome, categoria: pessoa.categoria, semCpf: pessoa.semCpf,
       documentoMascarado: pessoa.documentoMascarado, empresa: pessoa.empresa, servico: pessoa.servico, importacaoId: pessoa.importacaoId,
+      desativadaEm: pessoa.desativadaEm,
     }).from(pessoa)
       .where(and(...filtros))
       .orderBy(asc(rank), asc(nome), asc(pessoa.nome), asc(pessoa.id))
@@ -127,6 +131,7 @@ export class BuscaService {
           documentoMascarado: p.semCpf ? SEM_CPF : (p.documentoMascarado ?? SEM_CPF),
           ...(p.empresa ? { empresa: p.empresa } : {}), ...(p.servico ? { servico: p.servico } : {}),
           ...(p.importacaoId ? { importacaoId: p.importacaoId } : {}),
+          desativadaEm: p.desativadaEm ? p.desativadaEm.getTime() : null,
           ultimoAcesso: this.textoUltimoAcesso(ultimos.get(p.id), agora),
           unidadesVinculadas: us.map((u) => u.id), unidadesVinculadasCodigos: us.map((u) => codigoUnidade(u)),
         };

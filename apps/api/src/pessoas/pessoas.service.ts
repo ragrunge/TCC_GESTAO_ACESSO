@@ -7,13 +7,20 @@
 // - o CPF não é guardado: só a máscara e o HMAC (documento_busca), único -> 409 PESSOA_DUPLICADA (tradução do 23505);
 // - exceção "sem CPF": nome e telefone continuam obrigatórios, e a deduplicação é por nome + telefone;
 // - prestador exige empresa (RF-36); porteiro só cadastra visitante e prestador (pessoa.cadastrar_morador);
-// - correção (pessoa.editar, SI/AD) grava antes e depois no audit_log (snapshot sem HMAC e com telefone mascarado).
+// - correção (pessoa.editar, SI/AD) grava antes e depois no audit_log (snapshot sem HMAC e com telefone mascarado);
+// - desativar/reativar (pessoa.desativar, SI/AD; spec §14 2026-10-22): não exclui. Bloqueia com a pessoa dentro, com
+//   vínculo válido (ou aprovado com vigência futura) ou funcionário ativo; revoga na mesma transação as autorizações
+//   prévias vigentes ou futuras dela;
+// - duplicata (409 PESSOA_DUPLICADA) devolve `detalhes: { desativada, pessoaId? }` para a tela oferecer "Usar o cadastro
+//   existente" ou "Reativar" em vez de beco sem saída. O id só vai a quem já acharia a pessoa pela busca normal
+//   (pessoa.ver; desativada não aparece na busca, então aí só para quem pode reativar, pessoa.desativar).
 // O CPF digitado só existe nesta requisição: nunca vai para log, trilha ou resposta.
 import { Inject, Injectable } from '@nestjs/common';
 import { pode } from '@portaria/domain/rbac';
-import { cpfValido } from '@portaria/domain/rules';
+import { cpfValido, validarDesativacaoPessoa } from '@portaria/domain/rules';
+import type { Papel } from '@portaria/domain/types';
 import { codigoUnidade } from '@portaria/domain/units';
-import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import type { Contexto } from '../auth/tipos';
@@ -24,10 +31,12 @@ import { codificarCursor, decodificarCursor, Pagina } from '../comum/pagina';
 import { RELOGIO, type Relogio } from '../comum/relogio';
 import { DB, type Db, type Executor } from '../database/database.module';
 import { documentoBusca, mascararCpf } from '../db/cpf';
-import { funcionario, pessoa, unidade, vinculoUnidade } from '../db/schema';
+import { autorizacaoPrevia, eventoAcesso, funcionario, pessoa, unidade, vinculoUnidade } from '../db/schema';
+import { filtroEfetivo, semSaidaSql } from '../eventos/efetivo';
+import { vinculoValidoSql } from '../vinculos/vinculo-valido';
 import { carregarVinculos } from '../vinculos/vinculo-view';
 import { BuscaService, nomeSemAcentoSql, normalizar } from './busca.service';
-import { colunasPessoa, paraPessoaApi, veTelefoneCompleto, type LinhaPessoa, type PessoaApi } from './pessoa-view';
+import { colunasPessoa, paraPessoaApi, veMotivoDesativacao, veTelefoneCompleto, type LinhaPessoa, type PessoaApi } from './pessoa-view';
 
 type Categoria = (typeof pessoa.categoria.enumValues)[number];
 
@@ -44,6 +53,18 @@ const telefoneValido = (t: string) => /^\d{10,11}$/.test(soDigitos(t));
 const vazioParaNulo = (s: string | null | undefined) => (s ?? '').trim() || null;
 
 const duplicada = () => erroApi(409, 'PESSOA_DUPLICADA', 'Já existe cadastro com este CPF.');
+
+/**
+ * Duplicata com detalhes (mesmo código: clientes antigos tratam igual). Ativa: o id vai a quem tem pessoa.ver (a busca
+ * pelo CPF, ou pelo nome no caso sem CPF/menor, já mostraria a pessoa a esse perfil). Desativada: some da busca, então o
+ * id só vai a quem pode reativar (pessoa.desativar); o porteiro recebe só a orientação.
+ */
+function duplicadaCom(mensagem: string, igual: { id: string; desativadaEm: Date | null }, papel: Papel | undefined) {
+  if (!igual.desativadaEm) return erroApi(409, 'PESSOA_DUPLICADA', mensagem, { desativada: false, ...(pode(papel, 'pessoa.ver') ? { pessoaId: igual.id } : {}) });
+  return pode(papel, 'pessoa.desativar')
+    ? erroApi(409, 'PESSOA_DUPLICADA', `${mensagem} O cadastro está desativado: reative-o em vez de cadastrar de novo.`, { desativada: true, pessoaId: igual.id })
+    : erroApi(409, 'PESSOA_DUPLICADA', `${mensagem} O cadastro está desativado: peça à administração ou ao síndico para reativá-lo.`, { desativada: true });
+}
 
 /** Ordem de prioridade do "vínculo principal" na lista do Cadastro */
 const PRIORIDADE = ['aprovado', 'legado', 'pendente', 'rejeitado', 'encerrado'] as const;
@@ -64,7 +85,8 @@ export class PessoasService {
    * Valida e monta os valores de uma pessoa nova (também usado por funcionários). Lança 422/409 legíveis antes de
    * qualquer INSERT; a unicidade do CPF é garantida de novo pelo índice único (corrida -> 23505 -> 409).
    */
-  async valoresNovaPessoa(exec: Executor, i: NovaPessoa, agora: Date) {
+  async valoresNovaPessoa(exec: Executor, i: NovaPessoa, agora: Date, ator?: Contexto['ator']) {
+    const recusar = (igual: { id: string; desativadaEm: Date | null }, mensagem: string) => { throw duplicadaCom(mensagem, igual, ator?.papel); };
     const nome = i.nome.trim();
     if (!nome) throw erroApi(422, 'NOME_OBRIGATORIO', 'Informe o nome.');
     const menor = !!i.menorIdade;
@@ -78,22 +100,22 @@ export class PessoasService {
     let busca: string | null = null;
     if (menor && !soDigitos(i.documento ?? '')) {
       // Menor sem CPF: sem chave única; evita o cadastro em dobro pelo nome entre os menores sem CPF.
-      const [igual] = await exec.select({ id: pessoa.id }).from(pessoa)
+      const [igual] = await exec.select({ id: pessoa.id, desativadaEm: pessoa.desativadaEm }).from(pessoa)
         .where(and(eq(pessoa.menorIdade, true), sql`${pessoa.documentoBusca} IS NULL`, sql`${pessoa.anonimizadaEm} IS NULL`, sql`${nomeSemAcentoSql()} = ${normalizar(nome)}`)).limit(1);
-      if (igual) throw erroApi(409, 'PESSOA_DUPLICADA', 'Já existe cadastro de menor sem CPF com este nome.');
+      if (igual) recusar(igual, 'Já existe cadastro de menor sem CPF com este nome.');
     } else if (i.semCpf) {
       // Sem CPF não há chave única: evita o cadastro em dobro por nome + telefone.
-      const [igual] = await exec.select({ id: pessoa.id }).from(pessoa)
+      const [igual] = await exec.select({ id: pessoa.id, desativadaEm: pessoa.desativadaEm }).from(pessoa)
         .where(and(eq(pessoa.semCpf, true), eq(pessoa.telefone, telefone!), sql`${nomeSemAcentoSql()} = ${normalizar(nome)}`)).limit(1);
-      if (igual) throw erroApi(409, 'PESSOA_DUPLICADA', 'Já existe cadastro sem CPF com este nome e telefone.');
+      if (igual) recusar(igual, 'Já existe cadastro sem CPF com este nome e telefone.');
     } else {
       const cpf = soDigitos(i.documento ?? '');
       if (!cpf) throw erroApi(422, 'DOCUMENTO_OBRIGATORIO', 'Informe o CPF.');
       if (!cpfValido(cpf)) throw erroApi(422, 'CPF_INVALIDO', 'CPF inválido (confira os dígitos).');
       mascarado = mascararCpf(cpf);
       busca = documentoBusca(cpf, chavesDe(this.condominio).hmacCpf);
-      const [existe] = await exec.select({ id: pessoa.id }).from(pessoa).where(eq(pessoa.documentoBusca, busca)).limit(1);
-      if (existe) throw duplicada();
+      const [existe] = await exec.select({ id: pessoa.id, desativadaEm: pessoa.desativadaEm }).from(pessoa).where(eq(pessoa.documentoBusca, busca)).limit(1);
+      if (existe) recusar(existe, 'Já existe cadastro com este CPF.');
     }
     return {
       nome, categoria: i.categoria, semCpf: !!i.semCpf, menorIdade: menor, documentoMascarado: mascarado, documentoBusca: busca, telefone,
@@ -109,7 +131,7 @@ export class PessoasService {
     const agora = this.relogio.agora();
     try {
       return await this.db.transaction(async (tx) => {
-        const valores = await this.valoresNovaPessoa(tx, i, agora);
+        const valores = await this.valoresNovaPessoa(tx, i, agora, ctx.ator);
         const [nova] = await tx.insert(pessoa).values(valores).returning(colunasPessoa);
         await this.auditoria.registrar(tx, { ator: ctx.ator, ip: ctx.ip, acao: 'pessoa.criar', entidade: 'pessoa', registroId: nova!.id, depois: nova });
         return paraPessoaApi(nova!, { telefoneCompleto: veTelefoneCompleto(ctx.ator.papel) });
@@ -128,6 +150,7 @@ export class PessoasService {
         const [antes] = await tx.select(colunasPessoa).from(pessoa).where(eq(pessoa.id, id)).for('update');
         if (!antes) throw erroApi(404, 'PESSOA_NAO_ENCONTRADA', 'Pessoa não encontrada.');
         if (antes.anonimizadaEm) throw erroApi(409, 'PESSOA_ANONIMIZADA', 'Cadastro anonimizado não pode ser editado.');
+        const motivo = veMotivoDesativacao(ctx.ator.papel);
         const mudancas: Partial<typeof pessoa.$inferInsert> = {};
         if (i.nome !== undefined) {
           const nome = i.nome.trim();
@@ -167,10 +190,10 @@ export class PessoasService {
         if (i.servico !== undefined && vazioParaNulo(i.servico) !== antes.servico) mudancas.servico = vazioParaNulo(i.servico);
         const empresaFinal = 'empresa' in mudancas ? mudancas.empresa : antes.empresa;
         if (antes.categoria === 'prestador' && !(empresaFinal ?? '').trim()) throw erroApi(422, 'EMPRESA_OBRIGATORIA', 'Prestador exige empresa (RF-36).');
-        if (Object.keys(mudancas).length === 0) return paraPessoaApi(antes, { telefoneCompleto: true }); // nada mudou: sem trilha
+        if (Object.keys(mudancas).length === 0) return paraPessoaApi(antes, { telefoneCompleto: true, motivoDesativacao: motivo }); // nada mudou: sem trilha
         const [depois] = await tx.update(pessoa).set({ ...mudancas, atualizadoEm: agora }).where(eq(pessoa.id, id)).returning(colunasPessoa);
         await this.auditoria.registrar(tx, { ator: ctx.ator, ip: ctx.ip, acao: 'pessoa.editar', entidade: 'pessoa', registroId: id, antes, depois });
-        return paraPessoaApi(depois!, { telefoneCompleto: true });
+        return paraPessoaApi(depois!, { telefoneCompleto: true, motivoDesativacao: motivo });
       });
     } catch (e) {
       if (codigoPg(e) === '23505') throw duplicada();
@@ -178,13 +201,17 @@ export class PessoasService {
     }
   }
 
-  /** Lista do Cadastro: ordem nome + id (keyset). Filtro por texto NÃO entra aqui (pode ser CPF): é a busca por POST. */
-  async listar(f: { limite: number; cursor?: string; categoria?: Categoria }) {
+  /**
+   * Lista do Cadastro: ordem nome + id (keyset). Filtro por texto NÃO entra aqui (pode ser CPF): é a busca por POST.
+   * Desativados ficam de fora, salvo `incluirDesativadas` ("mostrar desativados" da tela).
+   */
+  async listar(f: { limite: number; cursor?: string; categoria?: Categoria; incluirDesativadas?: boolean }) {
     const agora = this.relogio.agora();
     const hoje = diaBrt(agora);
     const depois = f.cursor ? decodificarCursor(f.cursor, CursorPessoas) : null;
     const filtros: SQL[] = [];
     if (f.categoria) filtros.push(eq(pessoa.categoria, f.categoria));
+    if (!f.incluirDesativadas) filtros.push(isNull(pessoa.desativadaEm));
     if (depois) filtros.push(sql`(${pessoa.nome}, ${pessoa.id}) > (${depois.n}, ${depois.id}::uuid)`);
     const linhas = await this.db.select(colunasPessoa).from(pessoa)
       .where(filtros.length ? and(...filtros) : undefined)
@@ -240,7 +267,7 @@ export class PessoasService {
     const [f] = await this.db.select().from(funcionario).where(eq(funcionario.pessoaId, id));
     const vinculos = await carregarVinculos(this.db, eq(vinculoUnidade.pessoaId, id), hoje);
     return {
-      pessoa: paraPessoaApi(p as LinhaPessoa, { telefoneCompleto: veTelefoneCompleto(ctx.ator.papel) }),
+      pessoa: paraPessoaApi(p as LinhaPessoa, { telefoneCompleto: veTelefoneCompleto(ctx.ator.papel), motivoDesativacao: veMotivoDesativacao(ctx.ator.papel) }),
       funcionario: f ? {
         pessoaId: f.pessoaId, funcao: f.funcao, ativo: f.ativo,
         escala: { diasSemana: f.diasSemana, horaInicio: f.horaInicio.slice(0, 5), horaFim: f.horaFim.slice(0, 5) },
@@ -248,5 +275,66 @@ export class PessoasService {
       vinculos,
       eventos: null,
     };
+  }
+
+  // ----- Desativação (RF-02) ---------------------------------------------------------------------------------------
+
+  /**
+   * Desativa o cadastro (não exclui). A pessoa é travada com FOR UPDATE, que conflita com o FOR NO KEY UPDATE da entrada
+   * e com o FOR SHARE de quem cria vínculo ou autorização para ela: ou a outra escrita termina antes (e é vista aqui:
+   * "dentro", vínculo), ou espera e vê a pessoa desativada. Autorizações prévias vigentes ou futuras são revogadas
+   * na mesma transação; a trilha de cada revogação diz a origem (`motivo: 'desativacao_da_pessoa'`), e o texto do
+   * motivo fica só na linha `pessoa.desativar` (redigível na anonimização).
+   */
+  async desativar(ctx: Contexto, id: string, motivo: string): Promise<PessoaApi & { autorizacoesRevogadas: number }> {
+    const agora = this.relogio.agora();
+    const hoje = diaBrt(agora);
+    return this.db.transaction(async (tx) => {
+      const [antes] = await tx.select(colunasPessoa).from(pessoa).where(eq(pessoa.id, id)).for('update');
+      if (!antes) throw erroApi(404, 'PESSOA_NAO_ENCONTRADA', 'Pessoa não encontrada.');
+      const [dentro] = await tx.select({ id: eventoAcesso.id }).from(eventoAcesso)
+        .where(and(eq(eventoAcesso.tipo, 'entrada'), filtroEfetivo('pessoa_id', (x) => sql`${x} = ${id}::uuid`), semSaidaSql())).limit(1);
+      // Válido hoje, ou aprovado com vigência que ainda vai começar (viraria morador válido desativado).
+      const [vinculo] = await tx.select({ id: vinculoUnidade.id }).from(vinculoUnidade).where(and(eq(vinculoUnidade.pessoaId, id),
+        sql`(${vinculoValidoSql(hoje)} OR (${vinculoUnidade.status} = 'aprovado' AND ${vinculoUnidade.vigenciaInicio} > ${hoje}::date))`)).limit(1);
+      const [func] = await tx.select({ ativo: funcionario.ativo }).from(funcionario).where(eq(funcionario.pessoaId, id));
+      const erro = validarDesativacaoPessoa(
+        { anonimizada: !!antes.anonimizadaEm, desativada: !!antes.desativadaEm }, motivo,
+        { dentro: !!dentro, vinculoValido: !!vinculo, funcionarioAtivo: !!func?.ativo },
+      );
+      if (erro) throw erroApi(erro.status, erro.code, erro.message);
+      const [depois] = await tx.update(pessoa).set({
+        desativadaEm: agora, desativadaPorId: ctx.ator.id, desativacaoMotivo: motivo.trim(), atualizadoEm: agora,
+      }).where(eq(pessoa.id, id)).returning(colunasPessoa);
+      const revogadas = await tx.update(autorizacaoPrevia).set({ revogadaEm: agora, revogadaPorId: ctx.ator.id })
+        .where(and(eq(autorizacaoPrevia.pessoaId, id), isNull(autorizacaoPrevia.revogadaEm), gte(autorizacaoPrevia.validaAte, agora)))
+        .returning();
+      await this.auditoria.registrar(tx, {
+        ator: ctx.ator, ip: ctx.ip, acao: 'pessoa.desativar', entidade: 'pessoa', registroId: id, antes,
+        depois: { ...depois, autorizacoesRevogadas: revogadas.map((a) => a.id) },
+      });
+      if (revogadas.length) {
+        await this.auditoria.registrarVarios(tx, revogadas.map((a) => ({
+          ator: ctx.ator, ip: ctx.ip, acao: 'autorizacao.revogar', entidade: 'autorizacao_previa', registroId: a.id,
+          antes: { ...a, revogadaEm: null, revogadaPorId: null }, depois: { ...a, motivo: 'desativacao_da_pessoa', pessoaDesativadaId: id },
+        })));
+      }
+      return { ...paraPessoaApi(depois!, { telefoneCompleto: veTelefoneCompleto(ctx.ator.papel), motivoDesativacao: true }), autorizacoesRevogadas: revogadas.length };
+    });
+  }
+
+  /** Reativa: limpa os três campos. As autorizações revogadas na desativação NÃO voltam (revogação é final). */
+  async reativar(ctx: Contexto, id: string): Promise<PessoaApi> {
+    const agora = this.relogio.agora();
+    return this.db.transaction(async (tx) => {
+      const [antes] = await tx.select(colunasPessoa).from(pessoa).where(eq(pessoa.id, id)).for('update');
+      if (!antes) throw erroApi(404, 'PESSOA_NAO_ENCONTRADA', 'Pessoa não encontrada.');
+      if (antes.anonimizadaEm) throw erroApi(409, 'PESSOA_ANONIMIZADA', 'Cadastro anonimizado não pode ser reativado: faça um novo cadastro.');
+      if (!antes.desativadaEm) throw erroApi(409, 'PESSOA_JA_ATIVA', 'Este cadastro já está ativo.');
+      const [depois] = await tx.update(pessoa).set({ desativadaEm: null, desativadaPorId: null, desativacaoMotivo: null, atualizadoEm: agora })
+        .where(and(eq(pessoa.id, id), isNotNull(pessoa.desativadaEm))).returning(colunasPessoa);
+      await this.auditoria.registrar(tx, { ator: ctx.ator, ip: ctx.ip, acao: 'pessoa.reativar', entidade: 'pessoa', registroId: id, antes, depois });
+      return paraPessoaApi(depois!, { telefoneCompleto: veTelefoneCompleto(ctx.ator.papel), motivoDesativacao: true });
+    });
   }
 }

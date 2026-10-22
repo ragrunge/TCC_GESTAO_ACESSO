@@ -5,7 +5,7 @@
 // e ainda traduz o erro do banco (corrida, regra esquecida) sem deixar a mensagem do driver sair (`traduzirErroVinculo`).
 // Toda escrita trava a linha do vínculo (FOR UPDATE) e grava o audit_log na mesma transação.
 import { Inject, Injectable } from '@nestjs/common';
-import { MIN_JUSTIFICATIVA, validarConferencia, validarDecisaoVinculo } from '@portaria/domain/rules';
+import { ERRO_PESSOA_DESATIVADA, MIN_JUSTIFICATIVA, validarConferencia, validarDecisaoVinculo } from '@portaria/domain/rules';
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -120,7 +120,7 @@ export class VinculosService {
     const hoje = this.hoje();
     const vinculos = await carregarVinculos(this.db, and(eq(v.unidadeId, unidadeId), vinculoValidoSql(hoje))!, hoje);
     const ids = [...new Set(vinculos.map((x) => x.pessoaId))];
-    const pessoas = ids.length ? await this.db.select(colunasPessoa).from(pessoa).where(and(inArray(pessoa.id, ids), isNull(pessoa.anonimizadaEm))) : [];
+    const pessoas = ids.length ? await this.db.select(colunasPessoa).from(pessoa).where(and(inArray(pessoa.id, ids), isNull(pessoa.anonimizadaEm), isNull(pessoa.desativadaEm))) : [];
     const porId = new Map(pessoas.map((p) => [p.id, paraPessoaApi(p)]));
     return vinculos.filter((x) => porId.has(x.pessoaId)).map((vinculo) => ({ pessoa: porId.get(vinculo.pessoaId)!, vinculo }));
   }
@@ -147,7 +147,10 @@ export class VinculosService {
     const [p] = await tx.select({
       id: pessoa.id, categoria: pessoa.categoria, semCpf: pessoa.semCpf, telefone: pessoa.telefone, anonimizadaEm: pessoa.anonimizadaEm,
       menorIdade: pessoa.menorIdade, temCpf: sql<boolean>`(${pessoa.documentoBusca} IS NOT NULL)`.mapWith(Boolean),
+      desativadaEm: pessoa.desativadaEm,
     }).from(pessoa).where(eq(pessoa.id, pessoaId)).for('update');
+    // RF-02: aprovar/regularizar faria de um cadastro desativado um morador válido.
+    if (p!.desativadaEm) throw erroApi(ERRO_PESSOA_DESATIVADA.status, ERRO_PESSOA_DESATIVADA.code, ERRO_PESSOA_DESATIVADA.message);
     return p!;
   }
 
@@ -168,9 +171,11 @@ export class VinculosService {
     try {
       return await this.db.transaction(async (tx) => {
         // FOR SHARE: a anonimização concorrente (que altera a pessoa) espera este vínculo nascer, e vê o vínculo.
-        const [p] = await tx.select({ id: pessoa.id, anonimizadaEm: pessoa.anonimizadaEm }).from(pessoa).where(eq(pessoa.id, i.pessoaId)).for('share');
+        const [p] = await tx.select({ id: pessoa.id, anonimizadaEm: pessoa.anonimizadaEm, desativadaEm: pessoa.desativadaEm }).from(pessoa)
+          .where(eq(pessoa.id, i.pessoaId)).for('share');
         if (!p) throw erroApi(404, 'PESSOA_NAO_ENCONTRADA', 'Pessoa não encontrada.');
         if (p.anonimizadaEm) throw erroApi(422, 'PESSOA_ANONIMIZADA', 'Cadastro anonimizado não recebe vínculo.');
+        if (p.desativadaEm) throw erroApi(ERRO_PESSOA_DESATIVADA.status, ERRO_PESSOA_DESATIVADA.code, ERRO_PESSOA_DESATIVADA.message);
         await this.unidades.paraNovoUso(tx, i.unidadeId);
         // Pedir vínculo NÃO muda a categoria: ela só vira 'morador' na aprovação (RF-04).
         const [novo] = await tx.insert(v).values({

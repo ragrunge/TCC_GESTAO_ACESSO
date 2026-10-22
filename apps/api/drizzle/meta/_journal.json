@@ -64,6 +64,13 @@
       "when": 1792704701322,
       "tag": "0008_login_limite_par",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792709398389,
+      "tag": "0009_pessoa_desativacao",
+      "breakpoints": true
     }
   ]
 }

@@ -116,17 +116,23 @@ export class ImportacaoService {
 
     // Quem já existe: pelo HMAC; sem CPF, pelo nome normalizado com algum vínculo NA MESMA unidade (nunca só pelo nome).
     const porHmac = new Map<string, string>();
+    // RF-02: cadastro desativado não recebe vínculo (nem legado): a linha é recusada, com a orientação de reativar.
+    const desativadas = new Set<string>();
     for (const lote of em([...new Set(candidatas.flatMap((c) => (c.hmac ? [c.hmac] : [])))])) {
-      for (const p of await exec.select({ id: pessoa.id, h: pessoa.documentoBusca }).from(pessoa).where(inArray(pessoa.documentoBusca, lote))) porHmac.set(p.h!, p.id);
+      for (const p of await exec.select({ id: pessoa.id, h: pessoa.documentoBusca, d: pessoa.desativadaEm }).from(pessoa).where(inArray(pessoa.documentoBusca, lote))) {
+        porHmac.set(p.h!, p.id);
+        if (p.d) desativadas.add(p.id);
+      }
     }
     const unidadesSemCpf = [...new Set(candidatas.filter((c) => !c.hmac).map((c) => c.unidadeId))];
     const porNomeNaUnidade = new Map<string, string>();
     for (const lote of em(unidadesSemCpf)) {
-      const ls = await exec.select({ pessoaId: vinculoUnidade.pessoaId, unidadeId: vinculoUnidade.unidadeId, nome: pessoa.nome })
+      const ls = await exec.select({ pessoaId: vinculoUnidade.pessoaId, unidadeId: vinculoUnidade.unidadeId, nome: pessoa.nome, d: pessoa.desativadaEm })
         .from(vinculoUnidade).innerJoin(pessoa, eq(pessoa.id, vinculoUnidade.pessoaId)).where(inArray(vinculoUnidade.unidadeId, lote));
       for (const x of ls) {
         const k = `${x.unidadeId}|${normalizar(x.nome)}`;
         if (!porNomeNaUnidade.has(k)) porNomeNaUnidade.set(k, x.pessoaId);
+        if (x.d) desativadas.add(x.pessoaId);
       }
     }
     const existentes = candidatas.map((c) => (c.hmac ? porHmac.get(c.hmac) : porNomeNaUnidade.get(`${c.unidadeId}|${normalizar(c.nome)}`)) ?? null);
@@ -136,11 +142,15 @@ export class ImportacaoService {
         .where(and(inArray(vinculoUnidade.pessoaId, lote), inArray(vinculoUnidade.status, [...ATIVOS])));
       for (const x of ls) ativos.add(`${x.pessoaId}|${x.unidadeId}`);
     }
-    const validas: LinhaValida[] = candidatas.map((c, i) => {
+    const validas: LinhaValida[] = candidatas.flatMap((c, i) => {
       const existenteId = existentes[i] ?? null;
+      if (existenteId && desativadas.has(existenteId)) {
+        inc.push({ linha: c.l.linha, codigo: 'PESSOA_DESATIVADA', mensagem: `${c.nome}: cadastro desativado. Reative a pessoa (ficha, em Pessoas) e importe de novo. Linha não importada.`, tipo: 'erro' });
+        return [];
+      }
       const reaproveitar = !!existenteId && ativos.has(`${existenteId}|${c.unidadeId}`);
       if (reaproveitar) inc.push({ linha: c.l.linha, codigo: 'DUPLICIDADE_BANCO', mensagem: `${c.nome} já possui vínculo com ${c.codigo}. Reaproveitado, sem duplicar.`, tipo: 'aviso' });
-      return { ...c, existenteId, reaproveitar };
+      return [{ ...c, existenteId, reaproveitar }];
     });
     inc.sort((a, b) => a.linha - b.linha);
     return { inconsistencias: inc, validas, rejeitadas: linhas.length - validas.length - duplicadas };

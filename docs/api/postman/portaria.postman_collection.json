@@ -1735,7 +1735,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/pessoas?categoria=visitante&cursor=exemplo&limite=50",
+              "raw": "{{baseUrl}}/pessoas?categoria=visitante&cursor=exemplo&incluirDesativadas=true&limite=50",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1751,6 +1751,11 @@
                 {
                   "key": "cursor",
                   "value": "exemplo",
+                  "disabled": true
+                },
+                {
+                  "key": "incluirDesativadas",
+                  "value": "true",
                   "disabled": true
                 },
                 {
@@ -1817,7 +1822,7 @@
             "description": "Permissão: `pessoa.ver`",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"q\": \"exemplo\",\n  \"limite\": 8,\n  \"semMoradores\": false\n}",
+              "raw": "{\n  \"q\": \"exemplo\",\n  \"limite\": 8,\n  \"semMoradores\": false,\n  \"incluirDesativadas\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1886,6 +1891,70 @@
                 }
               }
             }
+          }
+        },
+        {
+          "name": "pessoas / desativar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pessoas/:id/desativar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pessoas",
+                ":id",
+                "desativar"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{pessoaId}}"
+                }
+              ]
+            },
+            "description": "Permissão: `pessoa.desativar`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"motivo\": \"exemplo\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "pessoas / reativar",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pessoas/:id/reativar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pessoas",
+                ":id",
+                "reativar"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{pessoaId}}"
+                }
+              ]
+            },
+            "description": "Permissão: `pessoa.desativar`"
           }
         }
       ]

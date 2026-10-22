@@ -309,7 +309,7 @@ describe('busca de pessoas (mesmo comportamento do mock)', () => {
     const ana = (await buscar('Ana Ribeiro')).body.data.pessoas[0];
     expect(ana).toEqual({
       id: expect.any(String), nome: 'Ana Ribeiro', documentoTipo: 'cpf', documentoMascarado: '***.982.247-**', semCpf: false,
-      categoria: 'morador', ultimoAcesso: 'Sem acessos', unidadesVinculadas: [await idDe('D-32')], unidadesVinculadasCodigos: ['D-32'],
+      categoria: 'morador', desativadaEm: null, ultimoAcesso: 'Sem acessos', unidadesVinculadas: [await idDe('D-32')], unidadesVinculadasCodigos: ['D-32'],
     });
     const claudia = (await buscar('Cláudia')).body.data.pessoas[0];
     expect(claudia).toMatchObject({ semCpf: true, documentoMascarado: '(sem CPF)', empresa: 'Autônoma' });

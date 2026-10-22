@@ -1,6 +1,6 @@
 // Registro de acesso (RF-12, RF-13, RF-16, RF-17, RF-35, RN-01, RN-04, RN-07, RN-11, UC02 A4). Ordem das
 // validações:
-//   pessoa (404, anonimizada) -> unidade/área para novo uso (UNIDADE_INATIVA) -> instante (retroativo) -> categoria
+//   pessoa (404, anonimizada, desativada) -> unidade/área para novo uso (UNIDADE_INATIVA) -> instante (retroativo) -> categoria
 //   efetiva ("morador" sem vínculo válido vira visitante) -> RESTRIÇÃO VIGENTE (grava "negado" e responde 422 com o id)
 //   -> autorização (RN-01, RF-17, RN-07, escala, RF-36) -> "já está dentro" -> grava.
 // O evento é append-only e calculado no banco: o trigger evento_acesso_antes_inserir trava a cabeça da cadeia, numera,
@@ -16,7 +16,7 @@
 //   antes do 422: nunca é repetido nem duplicado.
 import { Inject, Injectable } from '@nestjs/common';
 import { pode } from '@portaria/domain/rbac';
-import { MIN_JUSTIFICATIVA, justificativaValida, restricoesVigentes, validarAutorizacaoEntrada } from '@portaria/domain/rules';
+import { ERRO_PESSOA_DESATIVADA, MIN_JUSTIFICATIVA, justificativaValida, restricoesVigentes, validarAutorizacaoEntrada } from '@portaria/domain/rules';
 import { inicioDoDia, fimDoDia, partes } from '@portaria/domain/time';
 import type { CategoriaPessoa, EventoView, Funcionario, MeioAutorizacao, Restricao, ValoresCorrecao } from '@portaria/domain/types';
 import { CAMPOS_CORRIGIVEIS } from '@portaria/domain/types';
@@ -214,9 +214,11 @@ export class EventosService {
     const r = await this.escrever(async (tx): Promise<Resultado> => {
       // FOR NO KEY UPDATE: serializa entradas da mesma pessoa sem bloquear as FKs (FOR KEY SHARE) de outros eventos.
       const [p] = await tx.select({ id: pessoa.id, nome: pessoa.nome, categoria: pessoa.categoria, semCpf: pessoa.semCpf, anonimizadaEm: pessoa.anonimizadaEm,
-        empresa: pessoa.empresa, servico: pessoa.servico }).from(pessoa).where(eq(pessoa.id, i.pessoaId)).for('no key update');
+        desativadaEm: pessoa.desativadaEm, empresa: pessoa.empresa, servico: pessoa.servico }).from(pessoa).where(eq(pessoa.id, i.pessoaId)).for('no key update');
       if (!p) throw erroApi(404, 'PESSOA_NAO_ENCONTRADA', 'Pessoa não encontrada.');
       if (p.anonimizadaEm) throw erroApi(422, 'PESSOA_ANONIMIZADA', 'Cadastro anonimizado: faça um novo cadastro.');
+      // RF-02: desativado não entra (nem retroativo). O FOR NO KEY UPDATE acima espera a desativação concorrente (FOR UPDATE).
+      if (p.desativadaEm) throw erroApi(ERRO_PESSOA_DESATIVADA.status, ERRO_PESSOA_DESATIVADA.code, ERRO_PESSOA_DESATIVADA.message);
       const un = i.unidadeDestinoId ? await this.unidades.paraNovoUso(tx, i.unidadeDestinoId) : null;
       const area = i.areaComumId ? await this.areaParaNovoUso(tx, i.areaComumId) : null;
       const { quando, formulario } = resolverInstante(i, n);

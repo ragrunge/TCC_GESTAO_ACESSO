@@ -94,7 +94,7 @@ export class FuncionariosService {
     const agora = this.relogio.agora();
     try {
       return await this.db.transaction(async (tx) => {
-        const valores = await this.pessoas.valoresNovaPessoa(tx, { nome: i.nome, documento: i.documento, telefone: i.telefone, categoria: 'funcionario' }, agora);
+        const valores = await this.pessoas.valoresNovaPessoa(tx, { nome: i.nome, documento: i.documento, telefone: i.telefone, categoria: 'funcionario' }, agora, ctx.ator);
         const [p] = await tx.insert(pessoa).values(valores).returning(colunasPessoa);
         const [f] = await tx.insert(funcionario).values({
           pessoaId: p!.id, funcao, diasSemana: escala.diasSemana, horaInicio: escala.horaInicio, horaFim: escala.horaFim,

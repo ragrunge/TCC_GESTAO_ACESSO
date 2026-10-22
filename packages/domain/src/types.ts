@@ -54,6 +54,10 @@ export interface Pessoa {
   importacaoId?: string;
   /** Preenchido pela anonimização (LGPD): nome genérico, sem documento, telefone, empresa e serviço. */
   anonimizadaEm?: number | null;
+  /** Cadastro desativado (RF-02): some das buscas e não entra; o histórico fica. Nulo/ausente = ativo. */
+  desativadaEm?: number | null;
+  /** Só na ficha, para quem pode desativar (SI, AD). */
+  desativacaoMotivo?: string | null;
   criadoEm: number;
 }
 

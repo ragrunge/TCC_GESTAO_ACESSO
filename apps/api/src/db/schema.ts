@@ -234,6 +234,14 @@ export const pessoa = pgTable('pessoa', {
   fotoDocumentoId: uuid('foto_documento_id').references(() => documento.id),
   importacaoId: uuid('importacao_id').references(() => importacao.id),
   anonimizadaEm: instante('anonimizada_em'),
+  /**
+   * Cadastro desativado (RF-02, 0009): não é exclusão. Some das buscas, não entra, não recebe vínculo nem autorização;
+   * o histórico continua. Os três campos andam juntos (pessoa_desativacao_ck). O motivo é texto livre do operador:
+   * a anonimização o substitui (trigger pessoa_anonimizada_limpa_motivo) e a redação da trilha o remove.
+   */
+  desativadaEm: instante('desativada_em'),
+  desativadaPorId: uuid('desativada_por_id').references((): AnyPgColumn => usuarioSistema.id),
+  desativacaoMotivo: text('desativacao_motivo'),
   criadoEm: criadoEm(),
   atualizadoEm: atualizadoEm(),
 }, () => [
@@ -251,6 +259,8 @@ export const pessoa = pgTable('pessoa', {
     OR length(btrim(coalesce(empresa, ''))) > 0`),
   check('pessoa_anonimizada_sem_pii_ck', sql`anonimizada_em IS NULL
     OR (documento_busca IS NULL AND documento_mascarado IS NULL AND telefone IS NULL AND foto_documento_id IS NULL)`),
+  check('pessoa_desativacao_ck', sql`num_nonnulls(desativada_em, desativada_por_id, desativacao_motivo) IN (0, 3)
+    AND (desativacao_motivo IS NULL OR ${JUST('desativacao_motivo')})`),
 ]);
 
 /** Funcionário do condomínio (RF-09). Escala que atravessa a meia-noite (22:00–06:00) vale no dia do início do turno. */

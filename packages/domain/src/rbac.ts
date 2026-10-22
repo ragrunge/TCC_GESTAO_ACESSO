@@ -14,7 +14,7 @@ export type Acao =
   | 'auditoria.verificar' | 'auditoria.exportar' | 'auditoria.selar'
   | 'usuario.gerenciar' | 'usuario.gerenciar_sindico'
   | 'veiculo.cadastrar'
-  | 'funcionario.gerenciar' | 'funcionario.ver' | 'pessoa.editar'
+  | 'funcionario.gerenciar' | 'funcionario.ver' | 'pessoa.editar' | 'pessoa.desativar'
   | 'autorizacao.area_comum' | 'encomenda.autorizar_retirada'
   | 'documento.ver'
   | 'lgpd.exportar' | 'lgpd.anonimizar' | 'lgpd.retencao';
@@ -56,6 +56,8 @@ export const MATRIZ: Record<Acao, Papel[]> = {
   // A escala na entrada é consultada pela própria API (validação de `escala`) e, na tela, só a da pessoa sendo registrada.
   'funcionario.ver': [SI, AD, AU],
   'pessoa.editar': [SI, AD], // correção de cadastro (LGPD art. 18) e regularização (RN-09)
+  // Desativar/reativar o cadastro (RF-02, spec §14 2026-10-22): não exclui; o porteiro NÃO (só pede à administração).
+  'pessoa.desativar': [SI, AD],
   'autorizacao.area_comum': [SI, AD], // RF-36: área comum é autorizada pela administração
   'encomenda.autorizar_retirada': [SI, AD, PO], // RN-08, a pedido de morador com vínculo válido
   // Conteúdo de anexo de ocorrência (RF-27, RN-10, spec §6.2 /documentos/:id/conteudo): síndico e administração. O porteiro

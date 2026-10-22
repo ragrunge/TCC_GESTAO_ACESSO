@@ -108,7 +108,7 @@ Requisitos que melhoram a produtividade, mas cuja falta não impede nenhum dos i
 | ID | Requisito | Prioridade | Origem |
 | --- | --- | --- | --- |
 | RF-01 | Cadastrar unidades por torre e número. | M | Contexto |
-| RF-02 | Cadastrar pessoas com nome, CPF e telefone (obrigatórios) e foto opcional (foto: fase futura; o sistema atual não coleta foto, ver RN-10). Pessoa sem CPF é cadastrada como exceção e só entra por liberação do porteiro com justificativa (RF-17). O CPF é guardado apenas mascarado, mais um código de busca (HMAC com chave secreta); o número completo não é armazenado. | M | P5 |
+| RF-02 | Cadastrar pessoas com nome, CPF e telefone (obrigatórios) e foto opcional (foto: fase futura; o sistema atual não coleta foto, ver RN-10). Pessoa sem CPF é cadastrada como exceção e só entra por liberação do porteiro com justificativa (RF-17). O CPF é guardado apenas mascarado, mais um código de busca (HMAC com chave secreta); o número completo não é armazenado. O cadastro nunca é excluído: síndico e administração podem **desativá-lo**, com motivo; a pessoa some das buscas e não pode entrar até ser reativada, e o histórico continua. | M | P5 |
 | RF-03 | Vincular pessoa a unidade com tipo de vínculo (proprietário, inquilino, dependente) e período de vigência. | M | P2 |
 | RF-04 | Manter o vínculo em estado **pendente** até a aprovação da administração; vínculo pendente não autoriza acesso. | M | P2 |
 | RF-05 | Registrar a conferência do comprovante de vínculo apresentado à administração (tipo de documento, data, quem conferiu), sem armazenar o arquivo. | M | P2, Q5 |
@@ -510,6 +510,10 @@ Inventário que orienta o protótipo navegável (`../prototipo/Portaria.dc.html`
 **Ajustes de 2026-10-22 (versão 0.3, sem nova versão), auditoria LGPD.** Seção 7: prazo de IP e navegador das sessões
 (90 dias), fato gerador do veículo (desativação), alcance e limites da anonimização no texto livre, registro dos pedidos
 fora do banco do condomínio e dependente menor sem CPF e telefone (art. 14).
+
+**Ajustes de 2026-10-22 (versão 0.3, sem nova versão), desativar cadastro.** Pedido do cliente ("remover visitante"):
+RF-02 passa a prever a desativação do cadastro de pessoa (não exclusão), com motivo, pelo síndico ou pela administração.
+Decisão e regras na especificação técnica, seção 14, nº 34.
 
 **Ajustes de 2026-10-17 (versão 0.3, sem nova versão).** Decisões de produto incorporadas ao texto:
 

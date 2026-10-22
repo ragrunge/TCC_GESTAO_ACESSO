@@ -15,13 +15,14 @@ export const MENOR_SEM_CPF = '(menor, sem CPF)';
 export const colunasPessoa = {
   id: pessoa.id, nome: pessoa.nome, categoria: pessoa.categoria, semCpf: pessoa.semCpf, menorIdade: pessoa.menorIdade,
   documentoMascarado: pessoa.documentoMascarado, telefone: pessoa.telefone, empresa: pessoa.empresa, servico: pessoa.servico,
-  importacaoId: pessoa.importacaoId, anonimizadaEm: pessoa.anonimizadaEm, criadoEm: pessoa.criadoEm,
+  importacaoId: pessoa.importacaoId, anonimizadaEm: pessoa.anonimizadaEm, desativadaEm: pessoa.desativadaEm,
+  desativacaoMotivo: pessoa.desativacaoMotivo, criadoEm: pessoa.criadoEm,
 };
 
 export type LinhaPessoa = {
   id: string; nome: string; categoria: (typeof pessoa.categoria.enumValues)[number]; semCpf: boolean; menorIdade: boolean;
   documentoMascarado: string | null; telefone: string | null; empresa: string | null; servico: string | null;
-  importacaoId: string | null; anonimizadaEm: Date | null; criadoEm: Date;
+  importacaoId: string | null; anonimizadaEm: Date | null; desativadaEm: Date | null; desativacaoMotivo: string | null; criadoEm: Date;
 };
 
 export interface PessoaApi {
@@ -39,13 +40,20 @@ export interface PessoaApi {
   servico?: string;
   importacaoId?: string;
   anonimizadaEm: number | null;
+  /** Cadastro desativado (RF-02). */
+  desativadaEm: number | null;
+  /** Só na ficha e nas respostas de escrita, para quem pode desativar (SI, AD): texto livre do operador. */
+  desativacaoMotivo?: string;
   criadoEm: number;
 }
 
 /** Telefone completo só para quem tem pessoa.editar (correção do cadastro, art. 18). */
 export const veTelefoneCompleto = (papel: Papel) => pode(papel, 'pessoa.editar');
 
-export function paraPessoaApi(p: LinhaPessoa, o: { telefoneCompleto?: boolean } = {}): PessoaApi {
+/** Motivo da desativação só para quem pode desativar/reativar (SI, AD). */
+export const veMotivoDesativacao = (papel: Papel) => pode(papel, 'pessoa.desativar');
+
+export function paraPessoaApi(p: LinhaPessoa, o: { telefoneCompleto?: boolean; motivoDesativacao?: boolean } = {}): PessoaApi {
   const documento = p.anonimizadaEm ? ANONIMIZADO : p.semCpf ? SEM_CPF : (p.documentoMascarado ?? (p.menorIdade ? MENOR_SEM_CPF : SEM_CPF));
   return {
     id: p.id, nome: p.nome, documentoTipo: 'cpf', categoria: p.categoria, semCpf: p.semCpf, menorIdade: p.menorIdade, documentoMascarado: documento,
@@ -55,6 +63,8 @@ export function paraPessoaApi(p: LinhaPessoa, o: { telefoneCompleto?: boolean } 
     ...(p.servico ? { servico: p.servico } : {}),
     ...(p.importacaoId ? { importacaoId: p.importacaoId } : {}),
     anonimizadaEm: p.anonimizadaEm ? p.anonimizadaEm.getTime() : null,
+    desativadaEm: p.desativadaEm ? p.desativadaEm.getTime() : null,
+    ...(o.motivoDesativacao && p.desativacaoMotivo ? { desativacaoMotivo: p.desativacaoMotivo } : {}),
     criadoEm: p.criadoEm.getTime(),
   };
 }

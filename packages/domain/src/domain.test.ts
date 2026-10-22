@@ -5,9 +5,10 @@ import {
 } from './units';
 import {
   cadastroCompleto, descreverJanela, elegivelRetencao, escalaVigente, estadoAutorizacaoPrevia, legadoVencido, meiosAceitos,
-  podeEntregarEncomenda, restricoesVigentes, SENHA_TEMPORARIA_VALIDADE_MS, senhaTemporariaVencida, validarAutorizacaoEntrada, validarConferencia, validarDecisaoVinculo, validarEscala, vinculoValido,
+  pessoaDesativada, podeEntregarEncomenda, restricoesVigentes, validarDesativacaoPessoa, SENHA_TEMPORARIA_VALIDADE_MS, senhaTemporariaVencida, validarAutorizacaoEntrada, validarConferencia, validarDecisaoVinculo, validarEscala, vinculoValido,
 } from './rules';
 import { brt, HORA, menosAnos } from './time';
+import { MATRIZ } from './rbac';
 import type { AutorizacaoPrevia, Funcionario, Pessoa, VinculoUnidade } from './types';
 import { calcularHashExportado, codigoEvento, hashGenese, verificarCadeia, type EventoExportado } from './hashChain';
 
@@ -300,5 +301,28 @@ describe('verificarCadeia (RF-37)', () => {
     adulterado.hash = await calcularHashExportado(adulterado);
     const r = await verificarCadeia([evs[0]!, adulterado, evs[2]!]);
     expect(r).toMatchObject({ valido: false, motivo: 'hash_anterior_incoerente', primeiroSeqInvalido: 2, verificados: 1, ultimoSeq: 1, ultimoHash: evs[0]!.hash });
+  });
+});
+
+describe('desativação do cadastro (RF-02)', () => {
+  const livre = { vinculoValido: false, dentro: false, funcionarioAtivo: false };
+  const ativa = { anonimizada: false, desativada: false };
+  it('só síndico e administração desativam', () => {
+    expect(MATRIZ['pessoa.desativar']).toEqual(['sindico', 'administracao']);
+  });
+  it('ordem: estado (409) -> motivo (422) -> dentro -> vínculo -> funcionário', () => {
+    expect(validarDesativacaoPessoa({ anonimizada: true, desativada: true }, '', livre)?.code).toBe('PESSOA_ANONIMIZADA');
+    expect(validarDesativacaoPessoa({ anonimizada: false, desativada: true }, '', livre)?.code).toBe('PESSOA_JA_DESATIVADA');
+    expect(validarDesativacaoPessoa(ativa, '  14 caracteres  '.slice(0, 16), { ...livre, dentro: true })?.code).toBe('MOTIVO_OBRIGATORIO');
+    const m = 'Não frequenta mais';
+    expect(validarDesativacaoPessoa(ativa, m, { vinculoValido: true, dentro: true, funcionarioAtivo: true })?.code).toBe('PESSOA_DENTRO');
+    expect(validarDesativacaoPessoa(ativa, m, { ...livre, vinculoValido: true, funcionarioAtivo: true })?.code).toBe('PESSOA_COM_VINCULO_VALIDO');
+    expect(validarDesativacaoPessoa(ativa, m, { ...livre, funcionarioAtivo: true })?.code).toBe('FUNCIONARIO_ATIVO');
+    expect(validarDesativacaoPessoa(ativa, m, livre)).toBeNull();
+  });
+  it('pessoaDesativada: nulo ou ausente é ativo', () => {
+    expect(pessoaDesativada({})).toBe(false);
+    expect(pessoaDesativada({ desativadaEm: null })).toBe(false);
+    expect(pessoaDesativada({ desativadaEm: 1 })).toBe(true);
   });
 });
