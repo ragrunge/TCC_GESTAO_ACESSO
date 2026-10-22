@@ -108,7 +108,7 @@ Requisitos que melhoram a produtividade, mas cuja falta não impede nenhum dos i
 | ID | Requisito | Prioridade | Origem |
 | --- | --- | --- | --- |
 | RF-01 | Cadastrar unidades por torre e número. | M | Contexto |
-| RF-02 | Cadastrar pessoas com nome, CPF e telefone (obrigatórios) e foto opcional. Pessoa sem CPF é cadastrada como exceção e só entra por liberação do porteiro com justificativa (RF-17). O CPF é guardado apenas mascarado, mais um código de busca (HMAC com chave secreta); o número completo não é armazenado. | M | P5 |
+| RF-02 | Cadastrar pessoas com nome, CPF e telefone (obrigatórios) e foto opcional (foto: fase futura; o sistema atual não coleta foto, ver RN-10). Pessoa sem CPF é cadastrada como exceção e só entra por liberação do porteiro com justificativa (RF-17). O CPF é guardado apenas mascarado, mais um código de busca (HMAC com chave secreta); o número completo não é armazenado. | M | P5 |
 | RF-03 | Vincular pessoa a unidade com tipo de vínculo (proprietário, inquilino, dependente) e período de vigência. | M | P2 |
 | RF-04 | Manter o vínculo em estado **pendente** até a aprovação da administração; vínculo pendente não autoriza acesso. | M | P2 |
 | RF-05 | Registrar a conferência do comprovante de vínculo apresentado à administração (tipo de documento, data, quem conferiu), sem armazenar o arquivo. | M | P2, Q5 |
@@ -192,7 +192,7 @@ O artigo apresenta este resumo; esta especificação é a referência completa.
 | RN-07 | Autorização prévia tem validade obrigatória. Não existe autorização por prazo indeterminado. |
 | RN-08 | Encomenda só é entregue a pessoa com vínculo aprovado à unidade de destino ou a pessoa autorizada por ela. |
 | RN-09 | Moradores importados da planilha entram com status "legado" e prazo, definido em assembleia, para ter o comprovante de vínculo conferido (RF-05). Ao fim do prazo, a administração revisa os pendentes. |
-| RN-10 | Foto da pessoa é opcional. A recusa não impede o cadastro. |
+| RN-10 | Foto da pessoa é opcional. A recusa não impede o cadastro. **Fase futura:** a coleta de foto ainda não está implementada (sem upload na API nem campo na tela); o campo que existia no protótipo da portaria guardava só o nome do arquivo e foi retirado em 2026-10-22 para não dar ao porteiro a impressão de ter coletado a foto. |
 | RN-11 | Toda decisão de acesso tomada por um usuário do sistema (entrada, recusa do morador ou negativa por restrição) gera registro imutável com o usuário e o papel no momento, o meio de autorização, quem autorizou ou recusou, a autorização prévia ou a justificativa quando houver, a data e a hora do fato e do registro, e o ponto de acesso. Toda criação, alteração ou revogação de cadastro, vínculo, autorização prévia, restrição, encomenda, ocorrência e usuário, assim como login, logout e tentativa sem permissão, entra na trilha de alterações com os valores antes e depois, sem dado pessoal em claro. |
 
 ---
@@ -392,7 +392,7 @@ Morador, visitante e prestador não são atores do MVP: não operam o sistema. I
 Fluxo principal:
 
 1. O porteiro busca a pessoa por nome, CPF ou placa (RF-34).
-2. O sistema exibe o cadastro encontrado, com foto se houver.
+2. O sistema exibe o cadastro encontrado (a foto, quando implementada, entra aqui; fase futura, RN-10).
 3. O porteiro informa a unidade de destino.
 4. O sistema consulta restrições da pessoa para a unidade (UC03) e autorizações prévias válidas.
 5. Se houver autorização prévia válida, o sistema a seleciona como autorizador e segue ao passo 8.

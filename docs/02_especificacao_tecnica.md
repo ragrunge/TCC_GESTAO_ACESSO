@@ -238,7 +238,7 @@ o bloqueio vive em `login_limite`, igual para login existente e inexistente.
 | documento_busca | text | UQ; HMAC-SHA256 (hex) dos 11 dígitos, com a chave `PORTARIA_HMAC_CPF_KEY` |
 | telefone | text | só dígitos (10 ou 11); NN, exceto importado (legado), anonimizado ou menor de idade |
 | empresa, servico | text | empresa obrigatória para prestador; serviço opcional |
-| foto_documento_id | uuid | FK documento, opcional (RN-10) |
+| foto_documento_id | uuid | FK documento, opcional (RN-10). Fase futura: a API ainda não recebe foto e a tela não tem o campo (retirado em 2026-10-22: guardava só o nome do arquivo) |
 | importacao_id | uuid | FK importacao: origem do cadastro legado |
 | anonimizada_em | timestamptz | preenchido pela anonimização; o CHECK exige documento, telefone e foto nulos |
 

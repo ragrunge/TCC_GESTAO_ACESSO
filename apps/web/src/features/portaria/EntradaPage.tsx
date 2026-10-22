@@ -28,7 +28,7 @@ import { garantirNegado } from './negado';
 
 const SUGESTOES_EXCECAO = ['Morador não atende o interfone', 'Emergência médica', 'Serviço público (luz, água, gás)'];
 
-const NP_VAZIA = { nome: '', documento: '', telefone: '', semCpf: false, categoria: 'visitante' as CategoriaPessoa, empresa: '', servico: '', foto: '' };
+const NP_VAZIA = { nome: '', documento: '', telefone: '', semCpf: false, categoria: 'visitante' as CategoriaPessoa, empresa: '', servico: '' };
 
 const LIMITE_SUGESTOES = 8;
 /** Quem tem vínculo válido aparece na busca com o rótulo "Morador da D-32" (pode visitar outra unidade). */
@@ -474,11 +474,6 @@ export function EntradaPage() {
                     <Field label="Serviço"><input className="input" value={np.servico} onChange={(e) => setNp({ ...np, servico: e.target.value })} /></Field>
                   </>
                 )}
-                <div className="flex flex-wrap items-center gap-[14px] rounded-lg border border-dashed border-[#C5CDD3] p-3 sm:col-span-2">
-                  <label htmlFor="foto-np" className="sr-only">Foto (opcional)</label>
-                  <input id="foto-np" type="file" accept="image/*" className="!min-h-0 text-[14px]" onChange={(e) => setNp({ ...np, foto: e.target.files?.[0]?.name ?? '' })} />
-                  <span className="text-[14px] text-[#56616B]">Opcional — a recusa não impede o cadastro</span>
-                </div>
                 {erroNp && <Alert tom="vermelho" role="alert" className="sm:col-span-2">{erroNp}</Alert>}
                 <div className="flex flex-wrap gap-[10px] sm:col-span-2">
                   <Button type="submit" variante="primario">Usar este cadastro</Button>

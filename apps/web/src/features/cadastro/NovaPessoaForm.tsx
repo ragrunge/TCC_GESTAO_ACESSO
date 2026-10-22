@@ -10,7 +10,7 @@ import { type CategoriaPessoa } from '@portaria/domain/types';
 import { mensagemErro } from '../../app/useAsync';
 
 export const ID_FORM_PESSOA = 'f-pessoa';
-const AVISO_PADRAO = 'Morador cadastrado aqui ainda não tem acesso: peça o vínculo na tela da unidade. Foto é opcional e a recusa não impede o cadastro (RN-10).';
+const AVISO_PADRAO = 'Morador cadastrado aqui ainda não tem acesso: peça o vínculo na tela da unidade.';
 
 /** Formulário de cadastro de pessoa (sem moldura): quem o usa põe o botão `type=submit form={ID_FORM_PESSOA}`. */
 export function NovaPessoaForm({ onFeito, nomeInicial, aviso = AVISO_PADRAO }: { onFeito: (p: Pessoa) => void; nomeInicial?: string; aviso?: ReactNode }) {
