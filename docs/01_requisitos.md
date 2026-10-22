@@ -228,8 +228,9 @@ O condomínio é o **controlador** (Lei 13.709/2018, art. 5º, VI), representado
 | Nome, CPF (mascarado e HMAC) e telefone; empresa e serviço, no caso do prestador | Visitante, prestador | Registro de acesso. O telefone serve para contato em caso de ocorrência ou de pendência do acesso | Legítimo interesse (art. 7º, IX) | 3 anos após o último acesso |
 | Registro da conferência do comprovante (tipo, data, responsável) | Morador | Prevenção de fraude na ocupação da unidade (P2) | Legítimo interesse (art. 7º, IX); exercício regular de direitos (art. 7º, VI) | Enquanto houver vínculo + 3 anos |
 | Foto (opcional) | Morador, prestador | Identificação visual pelo porteiro | Consentimento (art. 7º, I) — por ser opcional | Até a revogação ou o fim do vínculo |
-| Veículo (placa, modelo, cor), vinculado à unidade | Morador | Identificação do veículo na portaria | Legítimo interesse (art. 7º, IX) | Enquanto houver vínculo + 3 anos |
+| Veículo (placa, modelo, cor), vinculado à unidade | Morador | Identificação do veículo na portaria | Legítimo interesse (art. 7º, IX) | Enquanto houver vínculo + 3 anos, contados da desativação do veículo pela administração (o veículo é da unidade) |
 | Operador, usuário do sistema (nome, login, papel, registros de ação) | Porteiro, administração, síndico, auditor | Rastreabilidade das decisões e ações (RN-11) | Exercício regular de direitos (art. 7º, VI) | Enquanto ativo + 3 anos |
+| IP e navegador das sessões de login | Porteiro, administração, síndico, auditor | Segurança do acesso ao sistema | Legítimo interesse (art. 7º, IX) | 90 dias após o último uso da sessão (proposta técnica, o mesmo prazo dos logs de aplicação) |
 | Funcionário do condomínio (função e escala) | Funcionário | Controle de acesso por escala | Execução de contrato (art. 7º, V) | Enquanto durar o contrato de trabalho + 3 anos |
 | Eventos de acesso, incluindo negado e recusado | Todos | Rastreabilidade e defesa em processo | Exercício regular de direitos (art. 7º, VI) | 3 anos a partir da data do evento |
 | Trilha de alterações | Todos | Rastreabilidade das alterações de cadastro e de permissões (RN-11) | Exercício regular de direitos (art. 7º, VI) | 3 anos a partir da data do registro |
@@ -242,6 +243,9 @@ Observações:
 - O aviso de privacidade é entregue impresso ou afixado no mural, junto ao regimento, porque nenhum titular usa aplicativo.
 - Direitos do art. 18: o acesso é atendido por exportação dos dados da pessoa; a correção é feita pela administração; a eliminação é feita por anonimização. Eventos de acesso e trilha de alterações ficam retidos até o fim do prazo, por exercício regular de direitos.
 - O evento de acesso referencia pessoas por identificador, sem copiar o nome, para que a anonimização não quebre a verificação de integridade (RNF-01).
+- A anonimização substitui o texto livre que é sobre a pessoa (nota e justificativa do vínculo, motivo da restrição, justificativa da autorização) e troca o nome completo dela por "[anonimizado]" em encomendas, ocorrências, mensagens da importação e trilha de alterações. Limites informados ao titular: menção por apelido ou abreviação não é encontrada; nome de uma palavra só ou igual ao de outra pessoa não é trocado automaticamente (revisão manual); o texto livre do evento de acesso faz parte do selo de integridade e só sai com o evento, ao fim dos 3 anos.
+- O atendimento de cada pedido de eliminação fica registrado, só com identificadores, fora do banco do condomínio, para ser refeito se um backup anterior for restaurado.
+- Dependente menor de idade (art. 14) é cadastrado sem CPF e sem telefone, se não os tiver: são exigidos só para proprietário e inquilino, e passam a ser obrigatórios quando o dependente deixa de ser menor.
 - A anonimização apaga também o código de busca do CPF (HMAC). Como ele é determinístico, mantê-lo permitiria reidentificar a pessoa a partir de um CPF conhecido.
 - Campos de texto livre (justificativa, observação) não devem conter nome nem documento de terceiros. Isso entra no treinamento (seção 8, etapa 4).
 - Não há armazenamento do arquivo do comprovante de vínculo: registra-se só a conferência. Isso atende à minimização (art. 6º, III); o condomínio não precisa guardar contrato de locação para provar que conferiu.
@@ -502,6 +506,10 @@ Inventário que orienta o protótipo navegável (`../prototipo/Portaria.dc.html`
 | --- | --- | --- |
 | 0.2 | 2026-10-09 | Rascunho inicial. |
 | 0.3 | 2026-10-17 | Atende aos comentários do orientador sobre resumir os requisitos e definir o MVP. Incluído o critério do MVP (seção 4) e o resumo do MVP (seção 4.5). RF-18 e RF-28 passam de M para S. RNFs ganham as colunas Prioridade e Origem. RNF-10 reescrito como "Preservação dos dados", com justificativa ligada a P3 e P9 e à escolha de backup em vez de sincronização. RNF-10 incluído na linha P3 da matriz (seção 9). Numeração de todos os requisitos mantida. |
+
+**Ajustes de 2026-10-22 (versão 0.3, sem nova versão), auditoria LGPD.** Seção 7: prazo de IP e navegador das sessões
+(90 dias), fato gerador do veículo (desativação), alcance e limites da anonimização no texto livre, registro dos pedidos
+fora do banco do condomínio e dependente menor sem CPF e telefone (art. 14).
 
 **Ajustes de 2026-10-17 (versão 0.3, sem nova versão).** Decisões de produto incorporadas ao texto:
 

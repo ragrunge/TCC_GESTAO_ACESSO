@@ -163,8 +163,11 @@ do restore, rodar `docker compose exec api node dist/cli/jobs.js retencao` antes
 eliminados não voltam (o arquivo foi apagado do volume), mas o registro restaurado ainda os teria como ativos: a varredura
 os conta como "registro sem arquivo".
 
-Atenção: a retenção refaz só o que vence por PRAZO. A anonimização A PEDIDO (art. 18, VI) feita depois da data do dump
-volta desfeita no restore, e o job não a refaz. Depois de um restore, reaplicar os pedidos de eliminação posteriores ao
-dump (lista no `audit_log` do banco antigo, ação `lgpd.anonimizar` com motivo `pedido`, ou no registro de pedidos da
-administração).
+Restore e anonimização (migração 0007 e `drizzle-plataforma/0001`): toda anonimização (a pedido ou por retenção) é
+registrada, só com ids, na tabela `lgpd_anonimizacao` do banco `plataforma`, fora do banco do condomínio. Depois de um
+restore, `docker compose exec api node dist/cli/jobs.js reaplicar-anonimizacoes [--condominio <código>]` refaz no banco
+restaurado as que ele desfez (a retenção diária também faz isso, como primeiro passo). Limite: se o banco `plataforma`
+for restaurado JUNTO, para a mesma data, o registro também volta, e os pedidos posteriores ao dump precisam ser
+reaplicados à mão (lista no `audit_log` do banco antigo, ação `lgpd.anonimizar`, ou no registro de pedidos da
+administração). Ver `docs/deploy.md`, seção 9.
 

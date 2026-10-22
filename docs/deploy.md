@@ -459,9 +459,19 @@ origem):
    `docker compose run --rm --no-deps -T --entrypoint tar api -C /var/lib/portaria -xf - < arquivos.tar`
 7. **Subir tudo:** `docker compose up -d --wait` (o `permissoes` acerta o dono, e o `migrate` não tem o que fazer porque a
    tabela de migrações veio no dump).
-8. **Depois do restore:** `docker compose exec api node dist/cli/jobs.js retencao` (o dump traz de volta o que já tinha
-   vencido) e reaplicar as anonimizações **a pedido** posteriores ao dump (`db/README.md` §Backup). Conferir a
-   integridade (Histórico → "Verificar integridade") e o `verificar-ancoras` contra o branch `ancoras`.
+8. **Anonimizações (antes de abrir para a portaria):**
+   `docker compose exec api node dist/cli/jobs.js reaplicar-anonimizacoes [--condominio <código>]`. O dump traz de volta,
+   com nome, CPF e telefone, quem foi anonimizado depois da data dele; o banco `plataforma` guarda a lista (tabela
+   `lgpd_anonimizacao`, só ids) e o comando anonimiza essas pessoas de novo. A saída tem só ids e contagens:
+   `reaplicadas`, `inexistentes` (o backup é anterior ao cadastro: nada a fazer) e `comVinculoValido` (no banco restaurado
+   a pessoa ainda tem vínculo válido: a anonimização é refeita mesmo assim, porque o pedido já foi atendido, e a
+   administração encerra o vínculo). Saída com código 3: a retenção está rodando; repetir. A retenção diária repete este
+   passo, mas só na hora do agendador: rodar o comando na hora fecha a janela em que o banco restaurado mostra os dados.
+   **Limite:** se o banco `plataforma` também for restaurado para a mesma data, a lista volta junto; aí os pedidos
+   posteriores ao dump vêm do `audit_log` do banco antigo (ação `lgpd.anonimizar`) ou do registro de pedidos da
+   administração, e são refeitos pela ficha da pessoa.
+9. **Depois do restore:** `docker compose exec api node dist/cli/jobs.js retencao` (o dump traz de volta o que já tinha
+   vencido). Conferir a integridade (Histórico → "Verificar integridade") e o `verificar-ancoras` contra o branch `ancoras`.
 
 ---
 
@@ -705,3 +715,19 @@ os cookies `v2.` (todos entram de novo).
 Ambiente de desenvolvimento (`docker-compose.yml`): a API só sobe com o piloto registrado no volume (comando no topo do
 compose); `npm run local` (PGlite) não muda.
 
+
+## 14. LGPD (migração 0007 e `drizzle-plataforma/0001`): deploy automático serve
+
+Só código da API, do front e migrações novas (nada de infra): o `deploy-vps.sh` faz backup, o `migrate` aplica as duas
+migrações em laço (plataforma primeiro) e sobe a API. Conferir e completar à mão:
+
+- `docker compose logs migrate | grep migrar-bancos` termina em `ok (plataforma + 1 condomínio(s))`;
+- **uma vez, logo depois:** `docker compose exec api node dist/cli/jobs.js retencao`. Além da retenção do dia, ela
+  copia para `lgpd_anonimizacao` (banco `plataforma`) as anonimizações feitas ANTES deste deploy, que só existiam no
+  banco do condomínio. Até essa primeira execução (ou a do agendador), um restore não as reaplicaria. Saída esperada:
+  `"registroExterno":"ok"`;
+- desativações antigas: o backfill da 0007 usa a data da trilha (`usuario.desativar`, `veiculo.editar`) ou, sem ela, a
+  data da migração. Nada vence antes de 3 anos;
+- rollback da imagem: a 0007 só anda para a frente, mas é compatível com a imagem anterior (a função antiga
+  `lgpd_anonimizar_pessoa` delega à nova, e o trigger mantém `desativado_em` quando a API antiga muda `ativo`). A API
+  antiga não lê `menor_idade`: um menor sem CPF aparece como "(sem CPF)" para ela.

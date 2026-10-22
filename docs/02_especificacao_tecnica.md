@@ -233,16 +233,17 @@ o bloqueio vive em `login_limite`, igual para login existente e inexistente.
 | nome | text | NN, não vazio |
 | categoria | enum (visitante, prestador, morador, funcionario) | NN. Vira `morador` só na aprovação do vínculo (regra da API) |
 | sem_cpf | boolean | NN, default false. Sem CPF, a pessoa só entra por `excecao_porteiro` (trigger do evento) |
+| menor_idade | boolean | NN, default false (0007). Dependente menor (LGPD art. 14): CPF e telefone opcionais; só `morador`, nunca `sem_cpf` (`pessoa_menor_ck`). Entra como morador; o vínculo de `dependente` é aprovado sem CPF e telefone, os de proprietário e inquilino não |
 | documento_mascarado | text | `***.456.789-**`; o CHECK impede gravar um CPF completo aqui |
 | documento_busca | text | UQ; HMAC-SHA256 (hex) dos 11 dígitos, com a chave `PORTARIA_HMAC_CPF_KEY` |
-| telefone | text | só dígitos (10 ou 11); NN, exceto importado (legado) ou anonimizado |
+| telefone | text | só dígitos (10 ou 11); NN, exceto importado (legado), anonimizado ou menor de idade |
 | empresa, servico | text | empresa obrigatória para prestador; serviço opcional |
 | foto_documento_id | uuid | FK documento, opcional (RN-10) |
 | importacao_id | uuid | FK importacao: origem do cadastro legado |
 | anonimizada_em | timestamptz | preenchido pela anonimização; o CHECK exige documento, telefone e foto nulos |
 
-CHECK `pessoa_documento_coerente_ck`: com CPF, o mascarado e a busca são obrigatórios; sem CPF, os dois são
-nulos. **O número do CPF não é armazenado**, nem em claro nem cifrado (decisão 18 da seção 14).
+CHECK `pessoa_documento_coerente_ck`: com CPF, o mascarado e a busca são obrigatórios; sem CPF (exceção do porteiro ou
+menor de idade), os dois são nulos. O menor com CPF tem a mesma máscara e o mesmo HMAC único de qualquer pessoa. **O número do CPF não é armazenado**, nem em claro nem cifrado (decisão 18 da seção 14).
 
 #### funcionario (RF-09)
 
@@ -293,7 +294,9 @@ a 0002 removeu `vinculo_unidade.documento_id` e o valor `comprovante_vinculo` do
 
 #### veiculo (RF-08)
 
-`unidade_id`, `placa` (7 caracteres, maiúsculas, sem hífen), `modelo`, `cor`, `ativo`; índice parcial UQ `placa WHERE ativo`.
+`unidade_id`, `placa` (7 caracteres, maiúsculas, sem hífen), `modelo`, `cor`, `ativo`, `desativado_em` (0007, fato gerador
+da retenção; mantido por trigger ao mudar `ativo`); índice parcial UQ `placa WHERE ativo`. `usuario_sistema` ganhou
+`desativado_em` (mesmo trigger) e `anonimizado_em` na mesma migração.
 
 #### autorizacao_previa (RF-14, RN-07)
 
@@ -825,8 +828,8 @@ Ocorrências implementadas em `apps/api/src/ocorrencias` (2026-10-18). O status 
 
 | Método | Rota | Papéis | Descrição |
 |---|---|---|---|
-| GET | /lgpd/pessoas/:id/exportacao | SI, AD | Dados da pessoa em JSON (seção 9.3), implementado: `{ nomeArquivo, conteudo, quantidade }`, formato `portaria-parque/lgpd-exportacao` v1; vai para o `audit_log` (`lgpd.exportar`) |
-| POST | /lgpd/pessoas/:id/anonimizar | SI | Atendimento de pedido de eliminação, respeitada a retenção. 422 `PESSOA_COM_VINCULO_VALIDO`, 409 `PESSOA_JA_ANONIMIZADA`. Resposta: `{ pessoaId, registrosRedigidos, retido, eventosRetidos, retidoAte, documentosEliminados }` |
+| GET | /lgpd/pessoas/:id/exportacao | SI, AD | Dados da pessoa em JSON (seção 9.3), implementado: `{ nomeArquivo, conteudo, quantidade }`, formato `portaria-parque/lgpd-exportacao` v2 (2026-10-22); vai para o `audit_log` (`lgpd.exportar`) |
+| POST | /lgpd/pessoas/:id/anonimizar | SI | Atendimento de pedido de eliminação, respeitada a retenção. 422 `PESSOA_COM_VINCULO_VALIDO`, 409 `PESSOA_JA_ANONIMIZADA`. Resposta: `{ pessoaId, registrosRedigidos, retido, eventosRetidos, retidoAte, documentosEliminados, limpeza }`; `retido` é montado do que a função fez (`limpeza.textoLivre`: `substituido`, `nome_curto` ou `homonimo`) |
 | POST | /lgpd/retencao | SI | Roda a retenção agora (a mesma rotina do agendador, 9.1); 409 `RETENCAO_EM_ANDAMENTO` |
 | GET | /lgpd/retencao | SI | Última execução: `{ ultima: { em, porNome, resultado } \| null }` |
 
@@ -1131,6 +1134,11 @@ Implementação (2026-10-18, `apps/api/src/lgpd/retencao.service.ts`, migração
 | Anexos de ocorrência | Só com `RETENCAO_ANEXO_OCORRENCIA_ANOS` definido, contado do encerramento da ocorrência (decisão 31, em aberto). Sem ele, nada sai por prazo |
 | Volume de documentos | Apaga o arquivo de documento já eliminado (a remoção anterior falhou), arquivo sem registro com mais de 1 hora (queda entre gravar e commitar) e temporário velho. Registro ativo sem arquivo só é contado e logado (perda de dado, não lixo) |
 | Permissão | `app_rw` continua sem DELETE e sem INSERT em `retencao_execucao`; só EXECUTE em `lgpd_anonimizar_pessoa`, `retencao_eliminar_documentos`, `retencao_descartar_audit` (novas) e nas da 0001 |
+| Reaplicação (0007) | Primeiro passo: anonimiza de novo quem o banco `plataforma` registra como anonimizado e voltou com dados pessoais (restore). Ver "Registro fora do banco" abaixo |
+| Veículos (0007) | `retencao_eliminar_veiculos()`: apaga o veículo com `desativado_em` há mais de 3 anos (relógio do banco). Nada referencia `veiculo`; os snapshots da trilha saem com a retenção da trilha |
+| Operadores (0007) | `retencao_anonimizar_operadores()`: inativo há mais de 3 anos vira "Operador anonimizado", login `anonimizado-<id>`, `anonimizado_em`; a linha fica (eventos e trilha apontam para o id), não pode ser reativado (409 `USUARIO_ANONIMIZADO`); `usuario_nome` e os snapshots dele na trilha são redigidos |
+| Sessões (0007) | `retencao_limpar_sessoes()`: `ip` e `user_agent` nulos 90 dias depois do `ultimo_uso_em` (o prazo dos logs de aplicação, 9.4); a linha fica (o token é só hash) |
+| Registro fora do banco (0007) | Último passo: copia `retencao_execucao` (tipo `pessoas`) para `lgpd_anonimizacao` no banco `plataforma` (idempotente). Falha na plataforma não para a retenção: `registroExterno: 'falhou'` e log |
 
 | Dado | Prazo da seção 7 | Ação do job |
 |---|---|---|
@@ -1198,13 +1206,45 @@ encomendas retiradas, conferências de comprovante dos vínculos (tipo, data, co
 | Correção | `PATCH /pessoas/:id` por síndico/administração, com `audit_log` antes/depois |
 | Eliminação | `POST /lgpd/pessoas/:id/anonimizar`: anonimiza o que pode ser eliminado e informa o que é retido pela necessidade de exercício regular de direitos (eventos de acesso até o fim do prazo da seção 7) |
 
+**Registro fora do banco do condomínio e restore (2026-10-22).** A lista de quem foi anonimizado vivia só no banco do
+condomínio, e o restore de um dump anterior ao pedido desfazia a anonimização sem aviso. Toda anonimização (a pedido,
+por retenção ou reaplicada) é registrada na tabela `lgpd_anonimizacao` do banco `plataforma` (`condominio_id`,
+`pessoa_id`, `motivo`, `anonimizada_em`; append-only; `app_plataforma` só com SELECT e INSERT), depois do COMMIT
+(sem transação distribuída) e, de novo, pela cópia diária de `retencao_execucao`. Não há dado pessoal: o `pessoa_id`
+aponta para uma linha que já está anonimizada, e o `app_plataforma` não tem CONNECT no banco do condomínio. A
+reaplicação (`jobs.js reaplicar-anonimizacoes` e primeiro passo da retenção) ignora a regra do vínculo válido (o pedido
+já foi atendido) e lista quem a tem no banco restaurado. Alternativas descartadas: arquivo no volume (não sobrevive a
+perda do servidor e não é transacional) e tabela no próprio banco do condomínio (volta junto no restore). Limite
+aceito: restaurar o banco `plataforma` para a mesma data do condomínio leva o registro junto (docs/deploy.md, seção 9).
+
+**Anonimização completa (0007, `lgpd_anonimizar_titular`).** Antes, a função limpava só a tabela `pessoa` e a trilha
+dela, e a resposta dizia que o resto ficava "só pelo id", o que não era verdade para o texto livre. Agora, na mesma
+transação: (1) o texto livre ligado à pessoa pelo id e que é sobre ela (nota, justificativa e observação dos vínculos
+dela, motivo das restrições contra ela, justificativa das autorizações prévias para ela) é substituído por "Removido na
+anonimização (LGPD)"; (2) o NOME COMPLETO dela no texto livre sem FK (destinatário de encomenda, descrição e envolvidos
+de ocorrência, motivo/justificativa/nota de outros registros, mensagens da importação, snapshots do `audit_log` de
+qualquer entidade) vira "[anonimizado]", com busca sem acento e sem caixa (`lgpd_padrao_nome`); (3) os registros
+congelados (encomenda retirada, ocorrência encerrada, restrição e autorização revogadas, vínculo em estado final) aceitam
+essa troca só dentro da função, que roda como dono da tabela (`lgpd_limpeza_controlada`). Limites declarados ao titular
+na resposta: nome de uma palavra ou curto demais não é procurado (`nome_curto`); havendo outra pessoa ou operador cujo
+nome contém o mesmo nome, a troca sem FK não é feita (`homonimo`), porque apagaria a menção a um terceiro; apelido,
+abreviação e erro de digitação não são achados; o texto livre do **evento** entra no hash e não muda (é contado em
+`eventosComTexto` e sai com o evento, ao fim dos 3 anos). Nenhuma das tabelas alteradas entra na cadeia de hash: a
+verificação de integridade continua válida.
+
 Decisões da exportação (2026-10-18): CPF só mascarado (o número não é guardado, decisão 18); o HMAC do CPF fica
 fora (é código de busca derivado, e no arquivo só serviria para cruzar o titular com o banco); telefone mascarado
 (o arquivo sai do sistema, a conferência de identidade no balcão é fraca, e o titular conhece e corrige
 o número pela administração; o arquivo diz que o número completo é mantido); eventos só os da própria pessoa
 (aqueles em que ela autorizou a entrada de outra são dados de terceiros); documentos só com metadados (foto e anexos
 de ocorrências ligadas a eventos da pessoa, sem a descrição da ocorrência); a conferência do comprovante leva o nome
-do conferente, como pede esta seção. Restrições e autorizações prévias da pessoa não entram (decisão 33).
+do conferente, como pede esta seção. ~~Restrições e autorizações prévias da pessoa não entram (decisão 33).~~
+
+Versão 2 da exportação (2026-10-22, decisão 33): entram as restrições e autorizações prévias **sobre** a pessoa e as que
+ela **pediu** (destino, datas, situação; sem o texto livre e sem a identidade do outro lado), as autorizações de
+retirada em que ela aparece, as encomendas com o nome dela no destinatário e as ocorrências ligadas a eventos dela ou
+que citam o nome completo (só código, tipo, situação e datas). A busca pelo nome usa o mesmo padrão da anonimização.
+O titular ganha também `menorIdade`.
 
 ### 9.4 Logs de aplicação
 
@@ -1403,7 +1443,7 @@ O morador não opera o sistema em nenhuma fase prevista: não há ator novo nem 
 | 20 | Eliminação de eventos após 3 anos com append-only | Partição mensal com DROP; DELETE de prefixo selado por função controlada | **Resolvida:** prefixo selado (`retencao_descartar_eventos`); partição descartada pelo volume e pela perda de unicidade global (9.1) | Resolvida |
 | 21 | Serialização canônica do hash | Texto separado por `\|` (v0.1); JSON canônico | **Resolvida:** JSON compacto v1 com ordem fixa, null explícito e instante ISO com ms (4.3). A string com `\|` era ambígua | Resolvida |
 | 22 | ORM do backend | Prisma; TypeORM; Drizzle | **Resolvida:** Drizzle (cabeçalho) | Resolvida |
-| 23 | Retenção de dados pessoais fora da tabela da seção 7 | — | Em aberto: `encomenda.destinatario`, `importacao_inconsistencia.mensagem` (cita nomes) e `autorizacao_retirada`. (`audit_log.usuario_nome` em `auth.login_falha` sai com a retenção de 3 anos da trilha, implementada em 2026-10-18.) Proposta: mesmo prazo de 3 anos, anonimizados pelo job | Síndico com validação jurídica |
+| 23 | Retenção de dados pessoais fora da tabela da seção 7 | — | **Parcial (2026-10-22):** na anonimização da pessoa, o nome completo dela sai de `encomenda.destinatario` e `importacao_inconsistencia.mensagem` (9.3). Continua em aberto o prazo próprio desses registros para quem não pediu nada. Antes: em aberto: `encomenda.destinatario`, `importacao_inconsistencia.mensagem` (cita nomes) e `autorizacao_retirada`. (`audit_log.usuario_nome` em `auth.login_falha` sai com a retenção de 3 anos da trilha, implementada em 2026-10-18.) Proposta: mesmo prazo de 3 anos, anonimizados pelo job | Síndico com validação jurídica |
 | 24 | Morador importado sem telefone | Bloquear a importação; permitir e exigir na aprovação | **Resolvida:** `telefone` só pode ser nulo em pessoa importada (`importacao_id`) ou anonimizada; aprovar o vínculo exige telefone (regra da API) | Resolvida |
 | 25 | Modelo da conferência do comprovante (RF-05) | Colunas no vínculo (uma conferência vigente); tabela própria com histórico de conferências; manter o arquivo cifrado em `documento` | **Resolvida (2026-10-17):** colunas `conferencia_*` e `conferido_por_id` em `vinculo_unidade`, sem arquivo. A regra "aprovado exige conferência" fica num CHECK da própria linha, sem trigger entre tabelas, e o histórico de conferências refeitas já está no `audit_log` (`vinculo.conferir`, antes e depois). Uma tabela própria só se justificaria se fosse preciso consultar várias conferências por vínculo, e nenhum RF pede isso. Saíram `documento_id`, o checklist `conferencias` (jsonb de texto livre, que costumava citar nomes e CPF parcial) e o valor `comprovante_vinculo` de `tipo_documento`. Com isso, aprovar "com item que não confere mediante justificativa" deixa de existir: comprovante que não confere não é registrado, e o vínculo é rejeitado (RN-02) | Resolvida |
 | 26 | Deploy do front (Vercel) e da API (VPS) com cookie `SameSite=Strict` | Domínios separados (`*.vercel.app` e domínio da VPS) com `SameSite=None` + CORS + CSRF por cabeçalho; rewrite de `/api/*` pela Vercel para a VPS (mesma origem); domínio próprio com subdomínios (`app.` e `api.` do mesmo site); front servido pela própria VPS | **Resolvida (2026-10-18): rewrite pela Vercel** no `apps/web/vercel.json`, ANTES do fallback da SPA: `{ "source": "/api/:caminho*", "destination": "https://179-197-78-78.sslip.io/api/:caminho*" }` (2026-10-19: VPS da Betech, sem domínio, TLS pelo proxy da VPS; runbook em `docs/deploy.md`). O navegador vê uma origem só, o cookie fica `Strict` e o CORS fica desligado em produção (`CORS_ORIGENS` vazio). Descartado `SameSite=None`: perde a proteção de CSRF sem código, exige CSRF por cabeçalho e CORS exato, e cada combinação parcial falha parecendo bug. **Custo aceito:** o IP do cliente chega à API só pelo `X-Forwarded-For` que a Vercel monta, e quem acessar a VPS direto pode forjar esse cabeçalho. Por isso o limite por IP é auxiliar, e o controle que vale é o limite por login. Configuração: no proxy da VPS (Caddy), confiar no salto da Vercel e repassar o XFF (a Vercel não publica faixa fixa de IP, então na prática é um `trusted_proxies` amplo, e daí vem a possibilidade de forjar), e na API `TRUST_PROXY=2` (Vercel + Caddy). Com `TRUST_PROXY` errado, o IP visto vira o da borda da Vercel, e 30 falhas de qualquer pessoa (o limite por IP) bloqueiam o login de todos por trás daquela borda: conferir com `curl` no deploy. Evolução sem esse custo: domínio próprio com `api.` no mesmo site (IP real pelo Caddy, sem a Vercel no caminho da autenticação) | Responsável técnico |
@@ -1413,4 +1453,4 @@ O morador não opera o sistema em nenhuma fase prevista: não há ator novo nem 
 | 30 | Prazo de regularização do legado (RN-09) | Fixo em 90 dias; configurável | **Resolvida (2026-10-18):** `IMPORTACAO_PRAZO_LEGADO_DIAS` (padrão 90, de 1 a 730), porque o prazo é definido em assembleia. Vale para as importações novas; os legados já criados guardam o prazo do dia da importação | Resolvida |
 | 31 | Prazo de retenção dos anexos de ocorrência | 3 anos do encerramento da ocorrência (como os eventos); enquanto a ocorrência estiver aberta + 3 anos; outro | **Em aberto (2026-10-18):** a seção 7 dos requisitos não lista ocorrências nem anexos. O mecanismo existe (`RETENCAO_ANEXO_OCORRENCIA_ANOS`, contado do encerramento), mas sem valor nenhum anexo sai por prazo. Recomendação: 3 anos do encerramento, alinhado à prescrição (seção 7) | Síndico com validação jurídica |
 | 32 | Agendamento dos jobs (selo, âncora, retenção) | `@nestjs/schedule` com cron na API; serviço cron separado no compose; timer na API que pergunta ao banco o que falta | **Resolvida (2026-10-18):** timer na API, sem dependência nova. A cada 10 min pergunta ao banco se falta o selo de ontem ou a retenção do dia: API reiniciada na hora "marcada" recupera no ciclo seguinte. Várias réplicas: advisory lock de sessão (`pg_try_advisory_lock`) pula quem chega depois, e cada passo é idempotente no banco. Serviço cron separado descartado: outro processo Node na VPS de pouca memória (a API roda com 384 MiB) | Resolvida |
-| 33 | Retenção sem fato gerador no modelo, e conteúdo da exportação | Veículo (seção 7: vínculo + 3 anos), operador (ativo + 3 anos) e funcionário (contrato + 3 anos); restrições e autorizações prévias na exportação do titular | **Em aberto (2026-10-18):** o veículo é da unidade, não da pessoa, e o modelo não guarda a data de desativação; operador e funcionário não guardam a data de desligamento. Sem o fato gerador, o job não aplica esses prazos (não inventa). Proposta: `desativado_em` em `veiculo`, `usuario_sistema` e `funcionario`, e anonimizar 3 anos depois. A exportação segue a lista desta seção (9.3), que não inclui restrições e autorizações prévias da pessoa; incluí-las (sem o texto livre, que cita terceiros) é recomendado | Síndico com validação jurídica |
+| 33 | Retenção sem fato gerador no modelo, e conteúdo da exportação | Veículo (seção 7: vínculo + 3 anos), operador (ativo + 3 anos) e funcionário (contrato + 3 anos); restrições e autorizações prévias na exportação do titular | **Resolvida em parte (2026-10-22, migração 0007):** `desativado_em` em `veiculo` e `usuario_sistema` (mantido por trigger); o job apaga o veículo e anonimiza o operador 3 anos depois da desativação; IP e navegador da sessão saem em 90 dias. O veículo conta da **desativação** (o morador saiu e a administração desativou), não do fim do vínculo: veículo esquecido ativo não vence. Funcionário continua sem fato gerador. A exportação v2 inclui restrições e autorizações (9.3). Histórico: **em aberto (2026-10-18):** o veículo é da unidade, não da pessoa, e o modelo não guarda a data de desativação; operador e funcionário não guardam a data de desligamento. Sem o fato gerador, o job não aplica esses prazos (não inventa). Proposta: `desativado_em` em `veiculo`, `usuario_sistema` e `funcionario`, e anonimizar 3 anos depois. A exportação segue a lista desta seção (9.3), que não inclui restrições e autorizações prévias da pessoa; incluí-las (sem o texto livre, que cita terceiros) é recomendado | Síndico com validação jurídica |
