@@ -69,9 +69,12 @@ async function contarTabelas(db: Db): Promise<Record<string, number | null>> {
 }
 
 async function ultimaMigracao(db: Db): Promise<ResumoLinhaDeBase['ultimaMigracao']> {
+  // Pelo catálogo e por OID: resolver 'drizzle.x' pelo nome dá "permission denied for schema" a quem não tem USAGE
+  // (o app_rw), e o CASE não protege (as funções com constante são avaliadas no planejamento). Sem a tabela, sem linha.
   const [ok] = await linhas<{ pode: boolean | null }>(db, sql`
-    SELECT CASE WHEN to_regclass('drizzle.__drizzle_migrations') IS NULL THEN false
-                ELSE has_schema_privilege('drizzle', 'USAGE') AND has_table_privilege('drizzle.__drizzle_migrations', 'SELECT') END AS pode`);
+    SELECT has_schema_privilege(n.oid, 'USAGE') AND has_table_privilege(c.oid, 'SELECT') AS pode
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'drizzle' AND c.relname = '__drizzle_migrations'`);
   if (!ok?.pode) return null;
   const [m] = await linhas<{ hash: string; created_at: string | number }>(db, sql`
     SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 1`);
