@@ -2,6 +2,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Ban, Check, Info } from 'lucide-react';
 import { useApi, type AutorizacaoView, type PessoaBusca, type RestricaoView, type VinculoView } from '../../api';
+import type { CategoriaPessoa, Pessoa } from '@portaria/domain/types';
 import { useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
 import { Badge, SeloVinculo } from '../../components/Badge';
@@ -53,6 +54,7 @@ export function UnidadeDetalhe({ id }: { id: string }) {
   const podeEncerrar = useCan('vinculo.decidir');
   const podeCadastrarMorador = useCan('pessoa.cadastrar_morador');
   const podePrevia = useCan('autorizacao.criar');
+  const podeCadastrarExterno = useCan('pessoa.cadastrar_externo');
   const podeRestricao = useCan('restricao.criar');
   const podeRevogar = useCan('unidade.editar');
   const podeVeiculo = useCan('veiculo.cadastrar');
@@ -225,7 +227,7 @@ export function UnidadeDetalhe({ id }: { id: string }) {
         </ConfirmarModal>
       )}
       {encerrando && <EncerrarVinculoModal vinculo={encerrando} onClose={() => setEncerrando(null)} onConfirmar={(motivo) => encerrarVinculo(encerrando, motivo)} />}
-      {d && modo === 'previa' && <PreviaModal unidade={uid} onClose={() => setModo(null)} onFeito={() => feito('Autorização prévia cadastrada.')} />}
+      {d && modo === 'previa' && <PreviaModal unidade={uid} podeCadastrar={podeCadastrarExterno} onClose={() => setModo(null)} onFeito={() => feito('Autorização prévia cadastrada.')} />}
       {d && modo === 'restricao' && <RestricaoModal unidade={uid} onClose={() => setModo(null)} onFeito={(todo) => feito(todo ? 'Pedido de restrição para todo o condomínio registrado. Aguarda aprovação do síndico.' : 'Restrição cadastrada.')} />}
       {d && modo === 'veiculo' && <VeiculoModal unidade={uid} onClose={() => setModo(null)} onFeito={() => { setModo(null); avisar({ texto: 'Veículo cadastrado.' }); void invalidar(APOS_VEICULO); }} />}
       {d && veiculoEditado && <VeiculoModal unidade={uid} atual={veiculoEditado} onClose={() => setVeiculoEditado(null)}
@@ -303,12 +305,9 @@ function VinculoModal({ unidade, incluir, podeCadastrar, onClose, onFeito }: { u
   }
   if (cadastrando !== null) {
     return (
-      <Modal titulo="Nova pessoa" onClose={() => setCadastrando(null)} largura={600} gap={14}
-        rodape={<><Button type="submit" form={ID_FORM_PESSOA} variante="primario" grande className="flex-1">Cadastrar e escolher</Button><Button grande onClick={() => setCadastrando(null)}>Voltar</Button></>}>
-        <UnidadeTitulo unidade={unidade} />
-        <NovaPessoaForm nomeInicial={/\d/.test(cadastrando) ? '' : cadastrando} aviso="Depois de cadastrada, a pessoa já fica escolhida no vínculo. O vínculo continua pendente até a aprovação em Vínculos."
-          onFeito={(p) => { setPessoa({ ...p, ultimoAcesso: '', unidadesVinculadas: [], unidadesVinculadasCodigos: [] }); setCadastrando(null); setErro(''); }} />
-      </Modal>
+      <CadastroNoSeletor unidade={unidade} texto={cadastrando} onVoltar={() => setCadastrando(null)}
+        aviso="Depois de cadastrada, a pessoa já fica escolhida no vínculo. O vínculo continua pendente até a aprovação em Vínculos."
+        onEscolhida={(p) => { setPessoa(p); setCadastrando(null); setErro(''); }} />
     );
   }
   const titulo = incluir ? 'Incluir morador' : 'Solicitar vínculo';
@@ -329,7 +328,29 @@ function VinculoModal({ unidade, incluir, podeCadastrar, onClose, onFeito }: { u
   );
 }
 
-function PreviaModal({ unidade, onClose, onFeito }: { unidade: string; onClose: () => void; onFeito: () => void }) {
+/** Pessoa recém-cadastrada (ou o cadastro existente) no formato do seletor. */
+const paraSeletor = (p: Pessoa): PessoaBusca => ({ ...p, ultimoAcesso: '', unidadesVinculadas: [], unidadesVinculadasCodigos: [] });
+
+/**
+ * Cadastro de pessoa no lugar do formulário de quem tem um seletor (mesma janela: dois modais empilhados quebrariam o
+ * foco). CPF já cadastrado: "Usar o cadastro existente" (ou "Reativar e usar…") escolhe essa pessoa no seletor.
+ */
+function CadastroNoSeletor({ unidade, texto, aviso, categoriaInicial, onEscolhida, onVoltar }: {
+  unidade: string; texto: string; aviso: string; categoriaInicial?: CategoriaPessoa; onEscolhida: (p: PessoaBusca) => void; onVoltar: () => void;
+}) {
+  const api = useApi();
+  return (
+    <Modal titulo="Nova pessoa" onClose={onVoltar} largura={600} gap={14}
+      rodape={<><Button type="submit" form={ID_FORM_PESSOA} variante="primario" grande className="flex-1">Cadastrar e escolher</Button><Button grande onClick={onVoltar}>Voltar</Button></>}>
+      <UnidadeTitulo unidade={unidade} />
+      <NovaPessoaForm nomeInicial={/\d/.test(texto) ? '' : texto} aviso={aviso} categoriaInicial={categoriaInicial}
+        onFeito={(p) => onEscolhida(paraSeletor(p))}
+        onExistente={async (id) => onEscolhida(paraSeletor((await api.pessoas.ficha(id)).pessoa))} />
+    </Modal>
+  );
+}
+
+function PreviaModal({ unidade, podeCadastrar, onClose, onFeito }: { unidade: string; podeCadastrar?: boolean; onClose: () => void; onFeito: () => void }) {
   const api = useApi();
   const [pessoa, setPessoa] = useState<PessoaBusca | null>(null);
   const [pedidaPor, setPedidaPor] = useState('');
@@ -340,6 +361,7 @@ function PreviaModal({ unidade, onClose, onFeito }: { unidade: string; onClose: 
   const [hf, setHf] = useState('');
   const [erro, setErro] = useState('');
   const aut = useAsync(() => api.vinculos.autorizadores(unidade), [unidade]);
+  const [cadastrando, setCadastrando] = useState<string | null>(null);
   async function salvar(e: FormEvent) {
     e.preventDefault();
     if (!pessoa) { setErro('Escolha a pessoa autorizada.'); return; }
@@ -352,11 +374,18 @@ function PreviaModal({ unidade, onClose, onFeito }: { unidade: string; onClose: 
       onFeito();
     } catch (err) { setErro(mensagemErro(err)); }
   }
+  if (cadastrando !== null) {
+    return (
+      <CadastroNoSeletor unidade={unidade} texto={cadastrando} categoriaInicial="visitante" onVoltar={() => setCadastrando(null)}
+        aviso="Depois de cadastrada, a pessoa já fica escolhida na autorização prévia."
+        onEscolhida={(p) => { setPessoa(p); setCadastrando(null); setErro(''); }} />
+    );
+  }
   return (
     <Modal titulo="Nova autorização prévia" onClose={onClose} rodape={rodapeForm(onClose, "f-prev", "Cadastrar autorização")}>
       <UnidadeTitulo unidade={unidade} />
       <form id="f-prev" onSubmit={salvar} className="flex flex-col gap-[14px]">
-        <PessoaPicker rotulo="Pessoa autorizada" valor={pessoa} onChange={setPessoa} autoFocus />
+        <PessoaPicker rotulo="Pessoa autorizada" valor={pessoa} onChange={setPessoa} autoFocus onCadastrar={podeCadastrar ? setCadastrando : undefined} />
         <Field label="Morador que pediu"><select className="input" value={pedidaPor} onChange={(e) => setPedidaPor(e.target.value)}><option value="">Selecione…</option>{(aut.data ?? []).map((a) => <option key={a.pessoa.id} value={a.pessoa.id}>{a.pessoa.nome}</option>)}</select></Field>
         {!pedidaPor && (
           <Field label={`Justificativa (obrigatória sem morador solicitante, mínimo ${MIN_JUSTIFICATIVA} caracteres)`} dica="A autorização ficará marcada como “Sem solicitante” e contará como exceção de quem a cadastrou.">
