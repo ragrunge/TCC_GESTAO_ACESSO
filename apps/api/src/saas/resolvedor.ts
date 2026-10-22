@@ -19,10 +19,11 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import { CODIGO_CONDOMINIO as CODIGO } from '@portaria/domain/condominio';
+import { AGRUPAMENTOS, type Agrupamento, ESTRUTURA_PADRAO } from '@portaria/domain/units';
 import { log } from '../comum/log';
 import { CONFIG, type Config } from '../config/config';
 import { REGISTRO_BANCOS, type RegistroBancos } from '../database/registro-bancos';
-import { documento } from '../db/schema';
+import { configuracao, documento } from '../db/schema';
 import { kekAbreDek } from '../documentos/cofre';
 import { type ChaveMestra, desembrulhar, ErroChave, mesmaChave } from './chave-mestra';
 import { type CondominioResolvido, STATUS_ATENDIDOS, type StatusAtendido } from './condominio';
@@ -192,7 +193,22 @@ export class ResolvedorCondominio implements OnModuleInit {
     const hmac = ativa('hmac_cpf');
     const kek = ativa('kek_documentos');
     if (kek.claro.length !== 32) throw new ErroChave(`condomínio ${l.codigo}: KEK com tamanho diferente de 32 bytes`);
-    return { id: l.id, codigo: l.codigo, nome: l.nome, banco: l.banco, piloto: l.banco === BANCO_PILOTO, chaves: { hmacCpf: hmac.claro, kek: kek.claro, kekVersao: kek.versao } };
+    const agrupamento = await this.agrupamentoDo(l);
+    return {
+      id: l.id, codigo: l.codigo, nome: l.nome, banco: l.banco, piloto: l.banco === BANCO_PILOTO, agrupamento,
+      chaves: { hmacCpf: hmac.claro, kek: kek.claro, kekVersao: kek.versao },
+    };
+  }
+
+  /**
+   * Agrupamento da `configuracao` do banco do condomínio (linha gravada pelo provisionamento). Sem a linha (o piloto,
+   * que nasceu antes da tabela): o padrão de antes. Erro de leitura sobe: a resolução falha e não fica em cache.
+   */
+  private async agrupamentoDo(l: Linha): Promise<Agrupamento> {
+    const [c] = await this.registro.db(l.banco).select({ agrupamento: configuracao.agrupamento }).from(configuracao).limit(1);
+    if (!c) return ESTRUTURA_PADRAO.agrupamento;
+    if (!(AGRUPAMENTOS as readonly string[]).includes(c.agrupamento)) throw new ErroChave(`condomínio ${l.codigo}: agrupamento desconhecido na configuração`);
+    return c.agrupamento as Agrupamento;
   }
 
   private async conferirNoBoot() {

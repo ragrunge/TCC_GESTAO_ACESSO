@@ -6,7 +6,7 @@
 // Toda escrita grava audit_log na mesma transação.
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  codigoUnidade, leiturasDoCodigo, normalizarBloco, normalizarNumero, rotuloUnidade, validarEstruturaUnidade, type ConfigEstrutura,
+  codigoUnidade, leiturasDoCodigo, normalizarBloco, normalizarNumero, rotuloUnidade, validarEstruturaUnidade,
 } from '@portaria/domain/units';
 import { and, asc, eq, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
@@ -17,7 +17,7 @@ import { diaBrt } from '../comum/datas';
 import { codificarCursor, decodificarCursor, Pagina } from '../comum/pagina';
 import { RELOGIO, type Relogio } from '../comum/relogio';
 import { ESTRUTURA } from '../config/config';
-import { DB, type Db, type Executor, type Tx } from '../database/database.module';
+import { DB, type Db, type EstruturaCondominio, type Executor, type Tx } from '../database/database.module';
 import {
   areaComum, autorizacaoPrevia, encomenda, eventoAcesso, ocorrencia, pontoAcesso, restricao, unidade, veiculo, vinculoUnidade,
 } from '../db/schema';
@@ -44,7 +44,7 @@ export class UnidadesService {
     @Inject(DB) private readonly db: Db,
     @Inject(RELOGIO) private readonly relogio: Relogio,
     @Inject(AuditoriaService) private readonly auditoria: AuditoriaService,
-    @Inject(ESTRUTURA) private readonly estrutura: ConfigEstrutura,
+    @Inject(ESTRUTURA) private readonly estrutura: EstruturaCondominio,
   ) {}
 
   /**

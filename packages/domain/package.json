@@ -36,6 +36,14 @@
       "types": "./src/hashChain.ts",
       "default": "./src/hashChain.ts"
     },
+    "./modulos": {
+      "require": {
+        "types": "./dist/cjs/modulos.d.ts",
+        "default": "./dist/cjs/modulos.js"
+      },
+      "types": "./src/modulos.ts",
+      "default": "./src/modulos.ts"
+    },
     "./rbac": {
       "require": {
         "types": "./dist/cjs/rbac.d.ts",

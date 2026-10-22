@@ -11,6 +11,8 @@ import { REQUEST } from '@nestjs/core';
 import type { ExtractTablesWithRelations } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT, PgTransaction } from 'drizzle-orm/pg-core';
 import type { Pool } from 'pg';
+import { type ConfigEstrutura, ESTRUTURA_PADRAO } from '@portaria/domain/units';
+import { ESTRUTURA } from '../config/config';
 import * as schema from '../db/schema';
 import { CONDOMINIO, type CondominioResolvido } from '../saas/condominio';
 import type { PayloadCondominio } from '../saas/contexto';
@@ -26,6 +28,9 @@ export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
 export type Tx = PgTransaction<PgQueryResultHKT, typeof schema, ExtractTablesWithRelations<typeof schema>>;
 /** Onde uma escrita roda: a conexão do pool ou a transação do chamador. */
 export type Executor = Db | Tx;
+
+/** O que a API usa da estrutura do condomínio: só o nome do agrupamento (as unidades vêm do banco). */
+export type EstruturaCondominio = Pick<ConfigEstrutura, 'agrupamento'>;
 
 export class SemCondominio extends Error {
   constructor() { super('acesso a banco sem condomínio resolvido'); }
@@ -67,11 +72,17 @@ export const dbSemCondominio = (): Db => new Proxy({} as Db, {
       useFactory: (c: CondominioResolvido | null, r: RegistroBancos): Db => (c ? r.db(c.banco) : dbSemCondominio()),
     },
     {
+      // Agrupamento ("Bloco"/"Torre") do condomínio da subárvore (tabela `configuracao`, lida pelo resolvedor). Sem
+      // condomínio: o padrão (só rótulo; quem usa também usa o DB, que falha fechado).
+      provide: ESTRUTURA, scope: Scope.REQUEST, durable: true, inject: [CONDOMINIO],
+      useFactory: (c: CondominioResolvido | null): EstruturaCondominio => ({ agrupamento: c?.agrupamento ?? ESTRUTURA_PADRAO.agrupamento }),
+    },
+    {
       provide: PG_POOL, scope: Scope.REQUEST, durable: true, inject: [CONDOMINIO, REGISTRO_BANCOS],
       useFactory: (c: CondominioResolvido | null, r: RegistroBancos): Pool | null => (c ? r.pool(c.banco) : null),
     },
   ],
-  exports: [DB, PG_POOL, CONDOMINIO, REGISTRO_BANCOS, ResolvedorCondominio, RegistroAnonimizacoes],
+  exports: [DB, PG_POOL, CONDOMINIO, ESTRUTURA, REGISTRO_BANCOS, ResolvedorCondominio, RegistroAnonimizacoes],
 })
 export class DatabaseModule implements OnApplicationShutdown {
   constructor(

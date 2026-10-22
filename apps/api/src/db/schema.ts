@@ -659,3 +659,22 @@ export const retencaoExecucao = pgTable('retencao_execucao', {
   quantidade: integer('quantidade').notNull(),
   detalhes: jsonb('detalhes'),
 }, () => [check('retencao_tipo_ck', sql`tipo IN ('eventos', 'audit_redacao', 'pessoas', 'documentos', 'audit_descarte', 'veiculos', 'operadores', 'sessoes')`)]);
+
+// ----- Configuração do condomínio (SaaS, SAAS-06/18; docs/05_arquitetura_saas.md, provisionamento) ----------------
+
+/**
+ * Linha única (`id = 1`) com o que era fixo no código e passa a ser de cada condomínio: o nome do agrupamento
+ * ("Bloco"/"Torre", só rótulo) e o fuso (SAAS-18: CHECK fixo em Brasília na primeira versão). Gravada pela CLI de
+ * provisionamento. Ausente (o piloto, que nasceu antes): a API usa `ESTRUTURA_PADRAO.agrupamento`, o comportamento de
+ * antes. app_rw: SELECT e INSERT; sem UPDATE até existir a tela de configuração (fase posterior).
+ */
+export const configuracao = pgTable('configuracao', {
+  id: smallint('id').primaryKey().default(1),
+  agrupamento: text('agrupamento').notNull(),
+  fuso: text('fuso').notNull().default('America/Sao_Paulo'),
+  criadoEm: criadoEm(),
+}, () => [
+  check('configuracao_linha_unica_ck', sql`id = 1`),
+  check('configuracao_agrupamento_ck', sql`agrupamento IN ('Bloco', 'Torre')`),
+  check('configuracao_fuso_ck', sql`fuso = 'America/Sao_Paulo'`),
+]);

@@ -4,9 +4,9 @@ import { Buffer } from 'node:buffer';
 
 export const CONFIG = Symbol('CONFIG');
 /**
- * Estrutura do condomínio (`ConfigEstrutura` de @portaria/domain/units): o nome do agrupamento que o front exibe
- * (vai no /catalogo) e a grade inicial do seed. Vem do código, não do ambiente: trocar a estrutura é editar
- * ESTRUTURA_PADRAO (uma linha) e rodar a CLI recriar-estrutura num banco sem uso.
+ * Estrutura do condomínio (`EstruturaCondominio`, database.module.ts): o nome do agrupamento que o front exibe (vai no
+ * /catalogo). Por condomínio desde o provisionamento (SaaS): vem da tabela `configuracao` do banco dele, lida pelo
+ * ResolvedorCondominio; sem a linha (o piloto), `ESTRUTURA_PADRAO.agrupamento`. As unidades sempre vieram do banco.
  */
 export const ESTRUTURA = Symbol('ESTRUTURA');
 

@@ -416,7 +416,7 @@ describe('transição e status do condomínio', () => {
 
 describe('boot: conferência das chaves (transição da F2)', () => {
   const vazio = { hmacCpf: null, kek: null, kekVersao: null };
-  const piloto = { id: 'x', codigo: 'piloto', nome: 'Condomínio de teste', banco: 'portaria', piloto: true, chaves: { hmacCpf: CHAVE_HMAC_TESTE, kek: KEK_TESTE, kekVersao: 1 } };
+  const piloto = { id: 'x', codigo: 'piloto', nome: 'Condomínio de teste', banco: 'portaria', piloto: true, agrupamento: 'Bloco' as const, chaves: { hmacCpf: CHAVE_HMAC_TESTE, kek: KEK_TESTE, kekVersao: 1 } };
 
   it('chaves do ambiente iguais às da plataforma: confere; ausentes: nada a conferir; diferentes: recusa', () => {
     expect(conferirChavesDoAmbiente(vazio, piloto)).toEqual([]);

@@ -2,6 +2,7 @@
 // subárvore de injeção de um condomínio recebe: o banco dele, as chaves dele (desembrulhadas da plataforma pela chave
 // mestra) e a pasta dos anexos dele. Nada aqui é dado pessoal; as chaves nunca vão a log nem a resposta.
 import { join } from 'node:path';
+import type { Agrupamento } from '@portaria/domain/units';
 
 /** Token do provider durável com o condomínio da subárvore (`null` na subárvore "sem condomínio"). */
 export const CONDOMINIO = Symbol('CONDOMINIO');
@@ -30,6 +31,11 @@ export interface CondominioResolvido {
   banco: string;
   /** O piloto é o banco `portaria` de antes do SaaS: mantém a pasta de anexos e o endpoint público v1. */
   piloto: boolean;
+  /**
+   * "Bloco"/"Torre" da tabela `configuracao` do banco do condomínio (provisionamento); sem a linha (piloto),
+   * `ESTRUTURA_PADRAO.agrupamento`. Lido na 1ª resolução, como o nome.
+   */
+  agrupamento: Agrupamento;
   chaves: ChavesCondominio;
 }
 

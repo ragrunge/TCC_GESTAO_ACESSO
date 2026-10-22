@@ -24,6 +24,14 @@ export const STATUS_CONDOMINIO = ['provisionando', 'ativo', 'suspenso', 'encerra
 /** Tipos de chave por condomínio (SAAS-04): HMAC do CPF (não rotacionável) e KEK dos anexos. */
 export const TIPOS_CHAVE = ['hmac_cpf', 'kek_documentos'] as const;
 export type TipoChave = (typeof TIPOS_CHAVE)[number];
+/**
+ * Módulos contratáveis (cópia literal de MODULOS de @portaria/domain/modulos: este arquivo não importa o domain, porque a
+ * imagem `migrate` copia só ele; test/saas-provisionar.test.ts confere as duas listas). Padrão: todos ligados.
+ */
+export const MODULOS_PLATAFORMA = ['encomendas', 'ocorrencias', 'autorizacoes_previas', 'importacao', 'veiculos', 'funcionarios', 'relatorios'] as const;
+/** Siglas das UFs (cópia literal de UFS de @portaria/domain/condominio, pelo mesmo motivo). */
+export const UFS_PLATAFORMA = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'] as const;
+const listaSql = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(', ');
 
 export const condominio = pgTable('condominio', {
   id: pk(),
@@ -38,6 +46,11 @@ export const condominio = pgTable('condominio', {
   ancoraId: uuid('ancora_id').notNull().defaultRandom(),
   criadoEm: instante('criado_em').notNull().defaultNow(),
   encerradoEm: instante('encerrado_em'),
+  /** Cidade e UF do condomínio (cadastro e lista "Licenças" do Master). Nulos só no piloto, registrado antes (F1). */
+  cidade: text('cidade'),
+  uf: text('uf'),
+  /** Módulos ligados (contratados). Nasce com todos; a tela de ligar/desligar é da F5. Núcleo da portaria não entra. */
+  modulos: text('modulos').array().notNull().default(sql.raw(`ARRAY[${listaSql(MODULOS_PLATAFORMA)}]::text[]`)),
 }, (t) => [
   uniqueIndex('condominio_codigo_uq').on(t.codigo),
   uniqueIndex('condominio_banco_uq').on(t.banco),
@@ -48,6 +61,8 @@ export const condominio = pgTable('condominio', {
   check('condominio_status_ck', sql.raw(`status IN (${STATUS_CONDOMINIO.map((s) => `'${s}'`).join(', ')})`)),
   check('condominio_nome_ck', sql`length(btrim(nome)) BETWEEN 1 AND 200`),
   check('condominio_encerrado_ck', sql`(status IN ('encerrado', 'excluido')) = (encerrado_em IS NOT NULL)`),
+  check('condominio_local_ck', sql.raw(`(cidade IS NULL) = (uf IS NULL) AND (cidade IS NULL OR length(btrim(cidade)) BETWEEN 1 AND 100) AND (uf IS NULL OR uf IN (${listaSql(UFS_PLATAFORMA)}))`)),
+  check('condominio_modulos_ck', sql.raw(`modulos <@ ARRAY[${listaSql(MODULOS_PLATAFORMA)}]::text[] AND array_position(modulos, NULL) IS NULL`)),
 ]);
 
 /** Dados do cliente (contrato): a plataforma é controladora destes (execução de contrato, art. 7º, V). Nunca morador. */

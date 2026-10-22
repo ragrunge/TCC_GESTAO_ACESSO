@@ -71,6 +71,13 @@
       "when": 1792709398389,
       "tag": "0009_pessoa_desativacao",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792711855204,
+      "tag": "0010_configuracao",
+      "breakpoints": true
     }
   ]
 }
