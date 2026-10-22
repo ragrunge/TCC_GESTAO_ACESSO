@@ -1,0 +1,852 @@
+# Portaria Parque como SaaS multi-condomínio — Arquitetura
+
+> **Status:** v0.2 (2026-10-22). v0.1 era só proposta; na v0.2 o usuário respondeu às perguntas 1, 2, 3 e 5 da
+> seção 10 (SaaS agora, repositório público, banco por condomínio, VPS compartilhada), e F0/F1 foram implementadas
+> (código e migrações, sem deploy). Nada muda em produção sem os passos manuais de `docs/deploy.md`, seção 12.
+> Complementa `01_requisitos.md` (v0.3) e `02_especificacao_tecnica.md` (v0.1); não os altera.
+> O condomínio real do estudo de caso é chamado aqui de **condomínio-piloto**.
+
+## 0. Resumo
+
+O sistema hoje é single-tenant por construção: uma cabeça de cadeia (`id = 1`), uma chave HMAC, uma KEK, uma
+estrutura de unidades no código e um banco. Transformá-lo em SaaS para vários condomínios, com um dono da plataforma
+("Master"), exige decidir isolamento, identidade, chaves, trilha e operação.
+
+| # | Decisão | Posição levada ao usuário | Esta proposta |
+|---|---|---|---|
+| SAAS-01 | Isolamento | Banco único + `condominio_id` + RLS | **Diverge: um banco Postgres por condomínio** no mesmo cluster, mais um banco de plataforma. RLS fica documentado como alternativa (apêndice A) |
+| SAAS-02 | Trilha por condomínio | Cadeia, selo, âncora, retenção por tenant | Mantida. Com banco por condomínio, a cadeia do piloto **não é tocada** |
+| SAAS-03 | Master e LGPD | Operador, sem dado pessoal, break-glass | Mantida, com reforço: o Master usa outro role de banco, que **não tem CONNECT** nos bancos de condomínio |
+| SAAS-04 | Chaves por condomínio | HMAC e KEK por tenant, envelope | Mantida. Ressalva: a chave HMAC do CPF **não é rotacionável** (o CPF não é guardado) |
+| SAAS-05 | Login | Global vs por condomínio | **Por condomínio**, com "código do condomínio" na tela de login. Subdomínio fica para quando houver domínio próprio |
+| SAAS-06 | Estrutura de unidades | Cadastrável por condomínio | Mantida. `ESTRUTURA_PADRAO` vira só gerador do onboarding |
+| SAAS-07 a 18 | Master fora do RBAC, sessão e origem separadas com TOTP, onboarding, fim de contrato, backup/restore, jobs, limites, observabilidade, migração em N bancos, infraestrutura, fuso | — | Seção 3 |
+
+Calendário: a recomendação era entregar o TCC antes; **o usuário decidiu fazer o SaaS agora, junto do TCC** (seção 10,
+pergunta 1), com as salvaguardas registradas lá.
+
+---
+
+## 1. Estado atual verificado (o que o desenho precisa respeitar)
+
+| Fato | Onde |
+|---|---|
+| Cabeça da cadeia é linha única (`CHECK id = 1`) e o trigger a trava com `FOR UPDATE` | `apps/api/src/db/schema.ts:480-486`; `apps/api/drizzle/0001_regras_imutabilidade.sql:171` |
+| O serviço de selo e a auditoria leem a cabeça por `id = 1` | `apps/api/src/selo/selo.module.ts:85,108,232`; `apps/api/src/auditoria/auditoria.controller.ts:61` |
+| Gênese = SHA-256 de `"genesis"`, igual no banco e no domain | `0001_regras_imutabilidade.sql:22-25`; `packages/domain/src/hashChain.ts:47` |
+| Serialização canônica v1 **não contém** identificador de condomínio; `formato_hash` já versiona o formato | `0001_regras_imutabilidade.sql:55-84`; `hashChain.ts:11,58` |
+| Unicidades globais: login, unidade, CPF (HMAC), placa, área comum, ponto de acesso, seq e hash do evento, número de encomenda e de ocorrência (identity), selo diário por data | `schema.ts:64,72,80,106,221,330,404,433,492,539,623` |
+| Funções `SECURITY DEFINER` (donas: `app_migrator`) fazem as exceções controladas do append-only | `0001:92,388,413,432`; `0004_lgpd_selo_ancora.sql:63,88,123`; `0005_unidade_bloco.sql:44` |
+| Append-only por trigger que só libera o dono da tabela com marcador `portaria.operacao` | `0001:202-219`; versão atual em `0004:39-60` |
+| `app_rw` sem DELETE, sem UPDATE nas trilhas, sem CREATE; tabela nova sem GRANT falha fechada | `0001:454-484`; `db/bootstrap/00_roles.sh` |
+| A API conecta como `app_rw`; migrações como `app_migrator` | `docker-compose.prod.yml:84,105` |
+| Um pool, um `Db` global injetado em 24 arquivos; 103 consultas fora de transação e 42 transações | `apps/api/src/database/database.module.ts:22-31` (contagem por `grep` em `apps/api/src`) |
+| Decisão explícita de **não** usar AsyncLocalStorage: contexto passado à mão | `apps/api/src/auth/tipos.ts:17` |
+| Sessão: token opaco em cookie `__Host-`, `SameSite=Strict`, sem `Domain` | `apps/api/src/auth/cookie.ts:1-12`; `apps/api/src/auth/guards.ts:24-33` |
+| Login procurado por `lower(login)` em toda a tabela | `apps/api/src/auth/auth.service.ts:86` |
+| HMAC do CPF com chave única do ambiente; o CPF em claro não é guardado | `apps/api/src/db/cpf.ts:1-27` |
+| Anexos: DEK por arquivo cifrada por KEK única do ambiente; AAD amarra id e versão | `apps/api/src/documentos/cofre.ts:1-12,64-65`; `apps/api/src/config/config.ts:120-124` |
+| Estrutura de unidades e agrupamento ("Bloco"/"Torre") vêm do código, como provider global | `packages/domain/src/units.ts:34`; `apps/api/src/config/config.module.ts:12` |
+| Agendador interno com fuso BRT fixo e trava por advisory lock de nome fixo | `apps/api/src/jobs/agendador.ts:24,56-77`; `apps/api/src/jobs/trava.ts:23` |
+| Endpoint público de selos sem parâmetro, com `totalDoDia` | `apps/api/src/selo/publico.ts:1-35` |
+| Testes da API rodam no PGlite **como superusuário** (só alguns trechos usam `SET ROLE app_rw`) | `apps/api/test/helpers/app.ts:77-91`; `apps/api/test/helpers/banco.ts:84-87` |
+| Backup: um `pg_dump -Fc` do banco `portaria`, cifrado com age | `db/backup/backup-portaria.sh:60-63` |
+| Front na Vercel com rewrite `/api/*` para a VPS (mesma origem para o navegador) | `apps/web/vercel.json` |
+| Matriz RBAC com quatro papéis de condomínio | `packages/domain/src/rbac.ts:22-67` |
+
+## 2. Premissas
+
+| # | Premissa | Se estiver errada |
+|---|---|---|
+| P1 | Dezenas de condomínios nos primeiros anos, não milhares | Banco por condomínio pesa em conexões e migrações acima de ~100–200 bancos no mesmo cluster. Revisitar SAAS-01; o caminho para RLS existe (apêndice A), mas é uma migração grande |
+| P2 | Cada condomínio é independente: nenhuma funcionalidade cruza dados de dois condomínios (ex.: administradora vendo vários) | Usuário multi-condomínio vira entidade da plataforma. O desenho não bloqueia (seção 3, SAAS-05), mas a primeira versão não o oferece |
+| P3 | Um único processo de API atende todos os condomínios | Se a API for comprometida, todos os condomínios caem juntos. Isso vale para qualquer um dos três modelos de isolamento; só servidores separados mudam isso |
+| P4 | O condomínio é o controlador e o dono do SaaS é o operador (LGPD, art. 5º, VI e VII, e art. 39), formalizado em contrato | Se o SaaS decidir finalidades (ex.: usar dado agregado para outro produto), vira controlador e precisa de base legal própria |
+| P5 | Todos os condomínios estão no fuso de Brasília na primeira versão | Selo diário e relatórios cortariam o dia na hora errada (SAAS-18) |
+| P6 | Não existe domínio próprio por enquanto (API em `sslip.io`, front em `vercel.app`) | Com domínio, subdomínio por condomínio vira opção de login melhor (SAAS-05) |
+
+---
+
+## 3. Decisões
+
+### SAAS-01 — Isolamento: um banco por condomínio, no mesmo cluster
+
+**Contexto.** O requisito é que um erro na API não vaze dado entre condomínios. O sistema tem regras de integridade
+no banco (triggers, `SECURITY DEFINER`, cadeia de hash com cabeça única) que hoje assumem um condomínio só.
+
+**Alternativas.**
+
+| Critério | Banco único + RLS | Schema por condomínio | **Banco por condomínio** |
+|---|---|---|---|
+| Vazamento por `WHERE` esquecido | Bloqueado pela política | Bloqueado (`search_path`) | Impossível: o dado não está na conexão |
+| Vazamento por chave estrangeira | **Possível**: checagem de FK ignora RLS (doc. do Postgres, "Row Security Policies"). Exige FK composta `(condominio_id, id)` em ~50 FKs | Não | Não |
+| Vazamento por função `SECURITY DEFINER` | **Possível**: a dona (`app_migrator`) ignora RLS. As 8 funções precisam filtrar por tenant à mão | Possível se a função qualificar o schema errado | Não: a função só enxerga o próprio banco |
+| Vazamento por contexto errado na requisição | Possível (`app.condominio_id` errado) | Possível (`search_path` errado em conexão reaproveitada) | Possível (pool errado), mas a sessão é validada no banco escolhido (SAAS-05) |
+| Quem consegue forjar o contexto | Qualquer SQL de `app_rw` pode chamar `set_config`: RLS por GUC protege de bug, não de injeção | Idem com `SET search_path` | Trocar de banco exige outra conexão: SQL injetado não muda de banco |
+| Mudança no schema atual | Todas as 26 tabelas, ~12 unicidades, ~50 FKs, cabeça da cadeia, 8 funções, triggers de selo | Migrações viram N, schema qualificado | **Nenhuma** nas tabelas existentes |
+| Cadeia do piloto | Cabeça vira por tenant; risco de errar a migração da tabela append-only | Copiar para schema novo | **Intocada** |
+| Backup, restore e exclusão de um condomínio | Difícil: restore parcial em tabela append-only; exclusão exige função nova que fure o append-only | Médio | `pg_dump -d`, `pg_restore` num banco novo, `DROP DATABASE` |
+| Migração de schema | 1 vez | N vezes | N vezes (laço com portão de versão, SAAS-16) |
+| Conexões | 1 pool | 1 pool, cuidado com `search_path` | 1 pool por banco ativo (pequeno, com timeout de ocioso) |
+| Consulta entre condomínios (métricas do Master) | Uma consulta | Uma por schema | Uma por banco, em laço (aceitável para dezenas) |
+| Escala | Milhares | Centenas | Centenas (limite prático: conexões e tempo de migração) |
+
+**Decisão.** Um banco por condomínio (`portaria_<id curto>`) no cluster Postgres existente, mais um banco
+`plataforma` para o que é do SaaS. O banco atual `portaria` vira o banco do condomínio-piloto **sem renomear nada
+dentro dele**.
+
+**Por que diverge da posição 1.** As duas cumprem "bug na API não vaza", mas o RLS só cumpre com trabalho extra em
+três pontos fáceis de errar (FK, `SECURITY DEFINER`, contexto forjável por qualquer SQL), e a migração da produção
+mexeria na tabela append-only e na cabeça da cadeia. O banco por condomínio deixa intocadas as tabelas, as funções e a
+cadeia existentes, e resolve de graça backup, restore, exportação e exclusão de um condomínio, que são requisitos de
+operador LGPD (SAAS-11, SAAS-12). O custo (migrar N bancos, um pool por banco) é operacional e cabe na escala da
+premissa P1.
+
+**Consequências.**
+- A API precisa escolher o banco por requisição (SAAS-03b). É o mesmo trabalho que o RLS exigiria para definir o
+  contexto: nos dois modelos, todo acesso a dado precisa saber o condomínio.
+- Postgres: `max_connections` e memória do container precisam caber em "pools ativos × máximo por pool". Pool por
+  condomínio com `max: 3` e `idleTimeoutMillis: 30000`; teto global de conexões na API.
+- Revisitar ao passar de ~100 condomínios ou ao surgir funcionalidade que cruze condomínios.
+
+### SAAS-02 — Banco de plataforma e roles
+
+**Decisão.**
+- Banco `plataforma` (dono `app_migrator`), acessado pela API com o role novo **`app_plataforma`**: SELECT/INSERT/UPDATE
+  só nas tabelas da plataforma, sem DELETE, e **sem CONNECT nos bancos de condomínio**.
+- `app_rw` continua sendo o role da API nos bancos de condomínio, com os mesmos GRANTs de hoje, e **sem CONNECT em
+  `plataforma`**. A leitura que a parte de condomínio precisa da plataforma (resolver código → banco, chaves embrulhadas)
+  é feita pelo pool `app_plataforma`, num serviço único (`ResolvedorCondominio`) e só com colunas não pessoais.
+- `app_migrator` ganha `CREATEDB` **ou** a criação de banco fica num role `app_provisionador` usado só pela CLI de
+  onboarding (recomendado: CLI, nunca a API; ver SAAS-10).
+- Ninguém tem `BYPASSRLS` (não há RLS neste modelo, mas o atributo continua desligado, que é o padrão).
+
+**Consequência.** "O Master não vê dado pessoal" passa a ser garantido pelo banco, não só pelo código: o pool que
+atende as rotas do Master não consegue abrir conexão no banco de um condomínio.
+
+### SAAS-03 — Contexto do condomínio na requisição
+
+**Contexto.** Os 24 serviços injetam um `Db` global. O projeto decidiu passar contexto à mão e não usar
+AsyncLocalStorage (`auth/tipos.ts:17`).
+
+**Decisão.** Usar **durable providers** do NestJS 11 (`ContextIdStrategy`), o padrão do framework para
+multi-tenant: um subárvore de injeção por condomínio, criado na primeira requisição dele e reaproveitado depois. O
+provider `DB` passa a ser `durable` e resolve o `Db` do condomínio a partir do identificador que a estratégia extrai da
+requisição. Os serviços continuam com `this.db`, sem reescrever as 145 chamadas.
+
+- De onde vem o condomínio:
+  1. Requisição autenticada: prefixo do cookie de sessão (`v2.<condominio_id>.<token>`). O prefixo **não é confiável
+     sozinho**: só escolhe o banco. A sessão é validada nesse banco pelo hash do token; prefixo trocado = sessão
+     inexistente = 401.
+  2. Login e rotas públicas de condomínio: cabeçalho `X-Condominio: <codigo>` enviado pelo front.
+  3. Nenhum dos dois: subárvore "sem condomínio", cujo `DB` **lança erro ao primeiro uso** (falha fechada). Rotas que
+     não são de condomínio (`/saude`, `/plataforma/*`, `/auditoria/selos/publico`) não injetam `DB`.
+- Jobs (singleton) não têm requisição: obtêm a instância do condomínio com
+  `ContextIdFactory.create()` + `moduleRef.registerRequestByContextId({ condominioId }, id)` + `moduleRef.resolve(...)`.
+- `PLATAFORMA_DB` (pool `app_plataforma`) só pode ser importado pelo módulo `plataforma` e pelo `ResolvedorCondominio`.
+  Um teste de arquitetura (grep nos imports) falha se outro módulo importar.
+
+**Alternativas.** (a) Passar o executor explicitamente (`ctx.db`) em toda chamada: mais fiel à decisão do
+`tipos.ts:17`, mas são 145 pontos de mudança em código já testado, cada um uma chance de usar o banco errado.
+(b) AsyncLocalStorage com um `Db` proxy: menos linhas que (a), mas o contexto vira implícito e um `await` fora da
+cadeia perde o condomínio. Os durable providers mantêm a garantia que motivou a decisão original (nenhuma instância de
+serviço mistura condomínios) sem estado implícito por requisição.
+
+**Consequências.** Guardas globais que dependem de `SessaoService` passam a ser resolvidas por condomínio (suportado
+pelo Nest). Caches em memória que hoje são globais (`LimiteTaxaPublico`, cache de selos públicos, `ESTRUTURA`) precisam
+ser revistos um a um: o que é por condomínio fica na subárvore; o que é global fica fora dela.
+
+### SAAS-04 — Chaves por condomínio (envelope)
+
+**Contexto.** Com uma chave HMAC só, o mesmo CPF gera o mesmo `documento_busca` em todos os condomínios: quem tiver
+leitura em dois bancos correlaciona a pessoa. Com uma KEK só, comprometer um condomínio é comprometer todos os anexos.
+
+**Decisão.**
+- Banco `plataforma`, tabela `condominio_chave`: por condomínio, uma chave HMAC do CPF e uma KEK de documentos, cada
+  uma com 32 bytes aleatórios, **cifradas (AES-256-GCM) pela chave mestra** `PORTARIA_CHAVE_MESTRA` do ambiente, com
+  AAD `portaria:chave:<condominio_id>:<tipo>:v<versao>`. A chave mestra nunca vai ao banco nem ao backup.
+- A API desembrulha na primeira requisição do condomínio e mantém em memória no subárvore dele.
+- Subchave do `login_limite` (hoje HKDF da chave HMAC global, `limite-login.service.ts:41`) passa a derivar da chave
+  HMAC do condomínio para o limite por login e de uma chave da plataforma para o limite por IP (SAAS-14).
+- **Piloto:** importa `PORTARIA_HMAC_CPF_KEY` e `PORTARIA_KEK` atuais como versão 1 das chaves dele, com a mesma
+  `chave_versao` de hoje. Nenhum `documento_busca` nem DEK é recalculado.
+
+**Rotação.**
+| Chave | Rotação | Custo |
+|---|---|---|
+| Mestra | Re-embrulhar as linhas de `condominio_chave` (2 por condomínio) | P, sem janela |
+| KEK do condomínio | Versão nova; re-embrulhar as DEKs de `documento` (coluna `chave_versao` já existe) | P a M por condomínio |
+| HMAC do CPF | **Não rotacionável**: o CPF em claro não existe para recalcular. Só por recadastro | — |
+
+**Consequências.**
+- A chave HMAC fica protegida só pela mestra. Vazamento da mestra + dump = força bruta de CPF possível, como hoje com a
+  chave global. Guardar a mestra fora da VPS em cofre (pergunta 6).
+- *Crypto-shredding* na exclusão (SAAS-11): apagar as chaves do condomínio torna os anexos ilegíveis e o HMAC
+  inútil. Limite honesto: backups antigos do banco `plataforma` ainda contêm a chave embrulhada até expirarem.
+
+### SAAS-05 — Login por condomínio
+
+**Alternativas.**
+| Opção | Prós | Contras |
+|---|---|---|
+| Login global (e-mail único na plataforma) | Um campo a menos; suporta pessoa em vários condomínios | Porteiro nem sempre tem e-mail; colisão de logins simples (`porteiro1`); precisa de tabela global de identidade, que vira dado pessoal cruzando condomínios |
+| Subdomínio (`<codigo>.dominio`) | Isolamento de cookie por origem; UX boa | Exige domínio próprio, certificado curinga e projeto Vercel com curinga. Hoje não há domínio (P6) |
+| **Código do condomínio no login** | Funciona com a infraestrutura de hoje; unicidade de login continua por banco (`schema.ts:106` não muda) | Um campo a mais na primeira vez |
+
+**Decisão.** Código do condomínio (slug curto, ex. `parque`) no formulário de login, lembrado no navegador da portaria
+como **preferência de UI** (não é sessão nem dado pessoal; regra do `react-storage` no `CLAUDE.md` do projeto). O
+cookie de sessão leva o prefixo `v2.<condominio_id>.` (SAAS-03). Mensagem de erro única para "código inexistente",
+"usuário inexistente" e "senha errada" (mesmo princípio de `auth.service.ts:56-57`), com o mesmo custo de argon2.
+
+**Transição do piloto.** Durante uma janela igual à expiração absoluta da sessão, cookie sem prefixo e login sem código
+são resolvidos para o piloto. Depois, recusados.
+
+**Não bloqueia:** subdomínio depois (o código vira o subdomínio) e conta multi-condomínio depois (identidade na
+plataforma apontando para usuários em N bancos).
+
+### SAAS-06 — Estrutura de unidades cadastrável
+
+**Decisão.**
+- Tabela nova de linha única `configuracao` em cada banco de condomínio: nome exibido, `agrupamento` (`Bloco`/`Torre`),
+  fuso (SAAS-18). Substitui o provider `ESTRUTURA` (`config.module.ts:12`) na subárvore do condomínio.
+- `ESTRUTURA_PADRAO` (`units.ts:34`) sai do caminho de produção e vira exemplo/gerador: o onboarding recebe uma
+  `ConfigEstrutura` (blocos, andares, finais, ausentes), mostra a prévia e insere as unidades pelo `gerarUnidades`
+  existente (`units.ts:139`). Exceções seguem pelo CRUD e pela planilha, como hoje.
+- `recriar-estrutura` passa a receber o condomínio e a estrutura (arquivo JSON), e continua dependendo de
+  `unidade_descartar_estrutura` (`0005:44`), que já se recusa a apagar unidade usada. Como cada banco é um condomínio,
+  a função não muda.
+- Áreas comuns e pontos de acesso: o onboarding cria "Portaria social" e a lista que o síndico informar.
+
+### SAAS-07 — Master fora do RBAC de condomínio
+
+**Decisão.** O Master **não** é um quinto valor do enum `papel` (`schema.ts:30`) nem entra em `MATRIZ`
+(`rbac.ts:24`). Tem tabela, sessão, guarda, matriz e prefixo de rota próprios:
+- `master_usuario`, `master_sessao` no banco `plataforma`; papéis da plataforma `master` (tudo) e, se houver
+  funcionários, `suporte` (sem financeiro). Matriz `MATRIZ_PLATAFORMA` em `packages/domain/src/rbac-plataforma.ts`.
+- Rotas em `/api/v1/plataforma/*`, decorator `@Plataforma(acao)`. A guarda de condomínio recusa sessão de plataforma e
+  vice-versa: cookies com nomes diferentes, validados em tabelas de bancos diferentes.
+- Ações da plataforma registradas em `plataforma_audit` (append-only, mesmo trigger de `0001:202`), sem dado pessoal
+  de morador.
+
+### SAAS-08 — Sessão do Master: origem separada e 2FA obrigatório
+
+**Decisão.**
+- **Origem separada:** front do Master em outro projeto Vercel (`<nome>-plataforma.vercel.app`), com o mesmo rewrite
+  para a mesma API. Cada origem tem seu próprio pote de cookies: XSS no app do condomínio não usa a sessão do Master,
+  e vice-versa.
+- Cookie `__Host-portaria_plataforma`, `SameSite=Strict`, inatividade de 15 min e máximo de 8 h.
+- **TOTP obrigatório** (RFC 6238, implementável com `node:crypto` sem dependência nova), segredo cifrado pela chave
+  mestra, 10 códigos de recuperação com hash argon2id. WebAuthn fica para depois.
+- Limite de tentativas próprio, no banco `plataforma`.
+
+**Alternativa descartada.** Mesma SPA com rota `/plataforma`: mais simples, mas a sessão do Master ficaria no mesmo
+pote de cookies da portaria, e um XSS em qualquer tela de condomínio poderia agir como Master.
+
+### SAAS-09 — Master e LGPD; acesso de suporte (break-glass)
+
+**Contexto.** O condomínio é o controlador; o SaaS, operador (P4). O operador trata dado só por instrução do
+controlador (art. 39).
+
+**Decisão.**
+- O Master gerencia: condomínios (cadastro, plano, status), usuário síndico inicial, chaves (rotação), saúde e métricas
+  **agregadas sem dado pessoal** (contagem de eventos por dia, tamanho do banco, último selo, falhas de job).
+- Dados que a plataforma trata como **controladora** (relação comercial): razão social, CNPJ, contato do responsável
+  pelo contrato, faturamento. Ficam no banco `plataforma`, com base legal de execução de contrato (art. 7º, V).
+- **Acesso de suporte**, quando for preciso ver dado do condomínio:
+  1. Master abre o pedido com motivo (mínimo 15 caracteres, mesmo critério de `JUST` em `schema.ts:25`) e prazo
+     (máximo 4 h).
+  2. O síndico aprova na tela dele. O pedido e a aprovação são gravados **no banco do condomínio** (tabela
+     `acesso_suporte`) e no `audit_log` dele: a trilha é do controlador.
+  3. A API cria no banco do condomínio uma sessão para um usuário técnico de origem `suporte`, com papel `auditor`
+     (somente leitura, `rbac.ts`), entregue ao front do condomínio por código de uso único (60 s, hash no banco) que o
+     navegador do Master troca por cookie. O Master nunca recebe senha de ninguém.
+  4. Toda requisição dessa sessão vira linha no `audit_log` (`suporte.requisicao`: rota, método, status; sem corpo).
+  5. Expira sozinho; o síndico encerra a qualquer momento.
+  - **Emergência sem síndico disponível** (ex.: síndico bloqueado): pergunta 4. Recomendação: aprovação por outro
+    usuário `sindico` ativo ou, sem nenhum, só com ciência registrada e e-mail imediato ao contato do contrato, prazo
+    de 1 h, marcado como "sem aprovação" no relatório.
+- Escrita pelo suporte (corrigir cadastro a pedido): fora da primeira versão. O síndico faz, com o suporte olhando.
+
+**Por que usuário técnico com papel `auditor` em vez de papel novo.** Reaproveita sessão, RBAC, `audit_log` e as
+checagens existentes (`evento_operador_papel_ck` já proíbe `auditor` de registrar evento, `schema.ts:472`). Um papel
+novo mexeria no enum, na matriz e nas telas.
+
+### SAAS-10 — Onboarding de condomínio
+
+1. Master cadastra o condomínio (nome, código, plano, contato do contrato) → status `provisionando`.
+2. CLI `provisionar-condominio <codigo>` na VPS (role `app_provisionador`): `CREATE DATABASE`, `GRANT CONNECT` a
+   `app_rw`, migrações, geração e embrulho das chaves, `configuracao`, estrutura de unidades (SAAS-06), áreas e pontos
+   de acesso, usuário síndico com senha temporária (validade de 72 h já existente) registrado no `audit_log` com ator
+   nulo e nome `Plataforma (onboarding)`, no mesmo padrão de `NOME_AGENDADOR` (`selo.module.ts:54`).
+3. A cabeça da cadeia nasce na gênese pela migração `0001`. Status `ativo`.
+4. A senha temporária vai ao síndico por canal fora do sistema (pergunta 8).
+
+A API não cria banco: `CREATEDB` num processo exposto à internet amplia o estrago de uma invasão. Onboarding é raro e
+pode ser manual nas primeiras dezenas.
+
+### SAAS-11 — Fim de contrato: exportação e exclusão
+
+**Decisão.** Estados `ativo → suspenso → encerrado → excluido`.
+- `suspenso` (inadimplência): login recusado com mensagem própria; jobs de selo e retenção **continuam** (a trilha não
+  pode ter buraco nem dado vencido retido).
+- `encerrado`: exportação completa entregue ao controlador. Conteúdo: dump lógico por tabela em JSON/CSV, a
+  exportação verificável da cadeia (já existe, spec §4.7) com os selos, e os anexos **decifrados** num pacote cifrado
+  com a chave pública que o síndico informar (age). O controlador fica com a obrigação de guarda dos 3 anos (seção 7
+  dos requisitos).
+- `excluido`, depois de prazo contratual (sugestão: 30 dias após a entrega): `DROP DATABASE`, apagar o volume de
+  anexos do condomínio, apagar as chaves (`condominio_chave`). Registro em `plataforma_audit` só com id, datas e
+  hash do pacote exportado. Backups expiram pela rotação normal (SAAS-12).
+- Duas pessoas para excluir (Master + confirmação por código enviado ao contato do contrato), porque é irreversível.
+
+Com banco por condomínio, nada disso fura o append-only: o banco inteiro sai, não linhas.
+
+### SAAS-12 — Backup e restore de um condomínio
+
+**Decisão.**
+- `backup-portaria.sh` passa a fazer um `pg_dump -Fc` por banco (laço sobre os condomínios ativos + `plataforma`),
+  cifrado com age. Volume de anexos separado por condomínio (`/documentos/<condominio_id>/`), arquivado por condomínio.
+- Restore de **um** condomínio: `pg_restore` num banco novo, conferir a cadeia contra a âncora, trocar o apontamento em
+  `condominio.banco` e manter o antigo renomeado até a conferência. Os outros condomínios não param.
+- A ressalva já registrada vale por condomínio: restore desfaz anonimizações posteriores ao dump; o procedimento de
+  `db/README.md` (reaplicar os pedidos) é executado no banco restaurado.
+- Retenção dos backups com prazo fixo (sugestão 35 dias) declarada no contrato: é o limite do *crypto-shredding*.
+
+### SAAS-13 — Jobs por condomínio
+
+**Decisão.** O ciclo do agendador (`agendador.ts:56`) itera os condomínios `ativo` e `suspenso` e, para cada um,
+roda selo, âncoras e retenção na subárvore dele (SAAS-03).
+- Trava por condomínio: `portaria:job:<nome>:<condominio_id>` (`trava.ts:23` hoje usa só o nome).
+- Falha isolada: erro num condomínio é registrado e o laço segue. Métrica de "condomínio com job atrasado" para o
+  Master.
+- Espalhar no tempo: no máximo N condomínios em paralelo (sugestão 2), para não consumir todas as conexões.
+- As funções `SECURITY DEFINER` de retenção não mudam: rodam no banco do condomínio.
+
+### SAAS-14 — Limites por condomínio
+
+- Login: limite por login no banco do condomínio (como hoje); **limite por IP global**, no banco `plataforma`, para
+  que o atacante não ganhe 30 tentativas por condomínio.
+- Taxa de requisições por condomínio (janela em memória, um processo): impede que um cliente degrade os outros.
+- Cotas do plano, conferidas na API: unidades, usuários ativos, armazenamento de anexos (soma de `tamanho_bytes` em
+  `documento`). Estourar cota bloqueia criação, nunca registro de evento de acesso (a portaria não pode parar).
+
+### SAAS-15 — Observabilidade sem dado pessoal
+
+- Campo `condominio_id` (uuid, não o código) entra na *allowlist* de `comum/log.ts`; o resto da allowlist não muda.
+- Métricas para o Master saem de funções de agregação no banco do condomínio executadas pelo job (contagens, último
+  selo, tamanho), copiadas para `condominio_metrica` no banco `plataforma`. O Master lê só essa tabela.
+- `/saude` continua sem dado de condomínio; um `/plataforma/saude` autenticado mostra o estado por condomínio.
+
+### SAAS-16 — Migrações de schema em N bancos
+
+**Decisão.**
+- `scripts/deploy/deploy-vps.sh` roda `drizzle-kit migrate` em `plataforma` e depois em cada banco de condomínio, em
+  série. Falhou um: para, não sobe a API nova.
+- Toda migração em duas etapas (*expand/contract*): a versão N da API funciona com o schema N-1 e N. Assim um deploy
+  interrompido no meio do laço não derruba ninguém.
+- Na subida, a API confere em cada banco a última migração aplicada (`drizzle.__drizzle_migrations`); condomínio
+  defasado recebe 503 só para ele, com alerta ao Master.
+- Pastas de migração separadas: `apps/api/drizzle/` (condomínio, como hoje) e `apps/api/drizzle-plataforma/`.
+
+### SAAS-17 — Infraestrutura
+
+- A VPS é compartilhada com outro sistema de produção (ADR de 2026-10-19). A recomendação era VPS dedicada antes do
+  segundo condomínio real; **o usuário decidiu continuar na VPS compartilhada, inclusive com vários clientes**
+  (seção 10, pergunta 5, 2026-10-22). O operador responde por segurança (art. 46) perante cada controlador, então a
+  decisão vale **com as mitigações obrigatórias M1 a M9 da seção 10**, que viram condição de F6 e F8.
+- Postgres: subir memória e `max_connections` de acordo com "condomínios ativos × 3 + plataforma + jobs". Com 30
+  condomínios (pergunta 3) são até ~100 conexões e o `mem_limit` do banco sai de 512 MiB: conferir a RAM livre da VPS
+  com o outro sistema no ar antes de subir (M1).
+- Confirmar o país do datacenter da VPS (transferência internacional, seção 7).
+
+### SAAS-18 — Fuso por condomínio (sem implementar)
+
+`configuracao.fuso` com `CHECK (fuso = 'America/Sao_Paulo')` na primeira versão. O código continua com BRT fixo
+(`agendador.ts:24`, `comum/datas.ts`); a coluna só garante que o schema não bloqueia. Liberar outro fuso é trocar o
+CHECK e o cálculo de dia, e reverificar o selo diário.
+
+---
+
+## 4. Modelo de dados
+
+### 4.1 Banco `plataforma` (novo)
+
+```sql
+CREATE TABLE condominio (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  codigo        text NOT NULL,                 -- slug do login
+  nome          text NOT NULL,
+  banco         text NOT NULL,                 -- nome do banco Postgres
+  status        text NOT NULL DEFAULT 'provisionando',
+  plano         text NOT NULL,
+  ancora_id     uuid NOT NULL DEFAULT gen_random_uuid(), -- folha da âncora pública (§4.3), não revela o código
+  criado_em     timestamptz(3) NOT NULL DEFAULT now(),
+  encerrado_em  timestamptz(3),
+  CONSTRAINT condominio_codigo_uq UNIQUE (codigo),
+  CONSTRAINT condominio_banco_uq  UNIQUE (banco),
+  CONSTRAINT condominio_codigo_ck CHECK (codigo ~ '^[a-z][a-z0-9-]{2,30}$'),
+  CONSTRAINT condominio_banco_ck  CHECK (banco ~ '^portaria(_[a-z0-9]{8})?$'),
+  CONSTRAINT condominio_status_ck CHECK (status IN ('provisionando','ativo','suspenso','encerrado','excluido'))
+);
+
+-- Dados do cliente (a plataforma é controladora destes): contrato, não morador.
+CREATE TABLE condominio_contrato (
+  condominio_id     uuid PRIMARY KEY REFERENCES condominio(id),
+  razao_social      text NOT NULL,
+  cnpj              text NOT NULL,
+  contato_nome      text NOT NULL,
+  contato_email     text NOT NULL,
+  limites           jsonb NOT NULL DEFAULT '{}'  -- cotas do plano (SAAS-14)
+);
+
+CREATE TABLE condominio_chave (
+  condominio_id   uuid NOT NULL REFERENCES condominio(id),
+  tipo            text NOT NULL CHECK (tipo IN ('hmac_cpf','kek_documentos')),
+  versao          smallint NOT NULL CHECK (versao > 0),
+  chave_cifrada   bytea NOT NULL,             -- AES-256-GCM pela chave mestra (+ tag)
+  nonce           bytea NOT NULL CHECK (length(nonce) = 12),
+  mestra_versao   smallint NOT NULL,
+  ativa           boolean NOT NULL,
+  criada_em       timestamptz(3) NOT NULL DEFAULT now(),
+  PRIMARY KEY (condominio_id, tipo, versao)
+);
+CREATE UNIQUE INDEX condominio_chave_ativa_uq ON condominio_chave (condominio_id, tipo) WHERE ativa;
+
+CREATE TABLE master_usuario (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  nome             text NOT NULL,
+  email            text NOT NULL,
+  senha_hash       text NOT NULL CHECK (senha_hash LIKE '$argon2id$%'),
+  totp_cifrado     bytea NOT NULL,            -- 2FA obrigatório: NOT NULL de propósito
+  papel            text NOT NULL CHECK (papel IN ('master','suporte')),
+  ativo            boolean NOT NULL DEFAULT true,
+  criado_em        timestamptz(3) NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX master_usuario_email_uq ON master_usuario (lower(email));
+
+CREATE TABLE master_codigo_recuperacao (master_usuario_id uuid REFERENCES master_usuario(id),
+  codigo_hash text NOT NULL, usado_em timestamptz(3), PRIMARY KEY (master_usuario_id, codigo_hash));
+
+CREATE TABLE master_sessao (  -- mesmo desenho de `sessao` (schema.ts:114-135), outra tabela
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), token_hash text NOT NULL UNIQUE,
+  master_usuario_id uuid NOT NULL REFERENCES master_usuario(id),
+  criada_em timestamptz(3) NOT NULL DEFAULT now(), ultimo_uso_em timestamptz(3) NOT NULL DEFAULT now(),
+  expira_em timestamptz(3) NOT NULL, revogada_em timestamptz(3), totp_confirmado_em timestamptz(3), ip inet
+);
+
+-- plataforma_login_limite: mesmo desenho de login_limite (schema.ts:140-153), limite global por IP (SAAS-14) e do Master
+
+CREATE TABLE plataforma_audit (       -- append-only (trigger igual a trilha_bloqueia_alteracao)
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  seq bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
+  em timestamptz(3) NOT NULL DEFAULT clock_timestamp(),
+  master_usuario_id uuid REFERENCES master_usuario(id),
+  acao text NOT NULL, condominio_id uuid REFERENCES condominio(id),
+  detalhes jsonb                       -- nunca dado de morador
+);
+
+CREATE TABLE condominio_metrica (     -- preenchida pelo job (SAAS-15)
+  condominio_id uuid REFERENCES condominio(id), dia date, eventos int, tamanho_bytes bigint,
+  ultimo_selo date, jobs_atrasados int, PRIMARY KEY (condominio_id, dia)
+);
+
+CREATE TABLE ancora_diaria (          -- âncora pública agregada (§4.3)
+  data date PRIMARY KEY, raiz text NOT NULL CHECK (raiz ~ '^[0-9a-f]{64}$'),
+  folhas jsonb NOT NULL,              -- [{ancora_id, seq, hash}] ordenado por ancora_id; sem contagem
+  criada_em timestamptz(3) NOT NULL DEFAULT now()
+);
+
+-- Roles
+GRANT CONNECT ON DATABASE plataforma TO app_plataforma;
+REVOKE CONNECT ON DATABASE plataforma FROM app_rw, PUBLIC;
+GRANT SELECT ON condominio, condominio_chave TO app_plataforma;
+GRANT INSERT, UPDATE ON condominio, condominio_contrato, master_usuario, master_sessao,
+  plataforma_login_limite, condominio_metrica, ancora_diaria TO app_plataforma;
+GRANT INSERT ON plataforma_audit, condominio_chave TO app_plataforma;
+GRANT UPDATE (ativa) ON condominio_chave TO app_plataforma;
+-- sem DELETE em nada; exclusão de condomínio pela CLI (SAAS-11)
+```
+
+### 4.2 Bancos de condomínio (migração `0007`, só *expand*)
+
+Nenhuma tabela existente perde coluna, unicidade ou FK. Mudanças:
+
+| Objeto | Mudança | Motivo |
+|---|---|---|
+| `configuracao` (nova, linha única `id = 1`) | `nome_exibicao`, `agrupamento` (`Bloco`/`Torre`), `fuso` (CHECK fixo) | SAAS-06, SAAS-18 |
+| `usuario_sistema.origem` | `text NOT NULL DEFAULT 'local' CHECK (origem IN ('local','suporte'))`. Usuário `suporte` não entra por senha e não aparece na gestão de usuários | SAAS-09 |
+| `acesso_suporte` (nova, append-only com transição) | `id`, `master_usuario_id` (uuid **sem FK**: outro banco), `master_nome`, `motivo`, `solicitado_em`, `expira_em`, `aprovado_por_id` (FK `usuario_sistema`), `aprovado_em`, `encerrado_em`, `sem_aprovacao boolean` | SAAS-09 |
+| `sessao.acesso_suporte_id` | FK opcional; `CHECK` de que sessão de usuário `suporte` tem acesso vinculado | SAAS-09 |
+| `suporte_codigo` (nova) | Código de uso único: `codigo_hash`, `acesso_suporte_id`, `expira_em`, `usado_em` | SAAS-09 |
+| `selo_cadeia.ancora_publica_em` | Registro de inclusão do selo na raiz pública do dia | §4.3 |
+| GRANTs | `INSERT` em `acesso_suporte`, `suporte_codigo`; `UPDATE` só nas colunas de transição | Padrão da `0001` |
+
+O que **continua** como está, porque cada banco é um condomínio: cabeça da cadeia `id = 1`, gênese, serialização
+canônica v1, `seq` e numeração de encomenda/ocorrência por identity, todas as unicidades da tabela da seção 1, todas
+as funções `SECURITY DEFINER` e os triggers.
+
+**Considerado e descartado:** gênese por condomínio (`sha256('genesis:' || id)`) para amarrar a cadeia ao
+condomínio. Copiar a cadeia inteira de um condomínio para outro já é detectado pela âncora de cada um (§4.3), e a
+mudança exigiria parametrizar `0001` e o verificador do domain (`hashChain.ts:47`).
+
+### 4.3 Âncora pública com vários condomínios
+
+**Problema.** Publicar `seq`, `hash` e `totalDoDia` por condomínio (`publico.ts:26-35`) revela o volume diário de
+cada cliente e quem são os clientes. Para um condomínio só isso foi aceito; para vários, é informação comercial de
+terceiros.
+
+**Decisão.**
+- Por dia, uma **raiz de Merkle** sobre as folhas `sha256(ancora_id || data || seq || hash)` dos selos diários de todos
+  os condomínios, em ordem de `ancora_id`. O endpoint público passa a devolver só `{data, raiz}` (formato v2); o
+  workflow `ancora-selo.yml` grava em arquivo novo (`raizes.jsonl`).
+- Cada condomínio recebe, junto com o selo, a prova de inclusão (caminho de Merkle), guardada no banco dele e
+  disponível na exportação verificável. A verificação offline confere: cadeia → selo → folha → raiz publicada.
+- **Piloto:** o arquivo atual `selos.jsonl` do branch `ancoras` é congelado no dia da troca (último commit com
+  mensagem de fechamento) e continua conferível com `verificar-ancoras`. Nada é reescrito.
+- E-mail ao síndico e ao conselho (destino `email`, já implementado) passa a ser a âncora **controlada pelo cliente**;
+  recomendado como obrigatório a partir do segundo condomínio, porque o GitHub e a VPS são do operador (pergunta 7).
+
+---
+
+## 5. Plano de migração a partir da produção
+
+Princípio: o banco `portaria` do piloto não sofre nenhuma escrita de migração que toque as tabelas existentes. Toda
+fase tem rollback por *redeploy* da imagem anterior.
+
+| Fase | O quê | Rollback | Janela | Tamanho |
+|---|---|---|---|---|
+| F0 | **Linha de base.** Exportação verificável completa da cadeia do piloto + cabeça (`seq`, `hash`) + contagem por tabela + `verificar-ancoras` contra o branch `ancoras`, guardados fora da VPS. Backup age testado com restore num banco descartável. Testes de caracterização do que vai mudar (login, sessão, selo público, agendador) | — | Não | P |
+| F1 | Banco `plataforma`, roles `app_plataforma`/`app_provisionador`, tabelas da §4.1. Piloto registrado com `banco = 'portaria'`. Chaves atuais importadas embrulhadas pela chave mestra (versão 1). **API inalterada** | `DROP DATABASE plataforma`; remover roles | Não | M |
+| F2 | API multi-banco: `ResolvedorCondominio`, durable providers, `PLATAFORMA_DB`, chaves vindas da plataforma (fallback para o ambiente desligado ao fim da fase), cookie `v2.` com aceitação do formato antigo para o piloto, login com código (opcional para o piloto), agendador por condomínio, laço de migração e de backup. Produção continua com um condomínio | Imagem anterior: o schema do piloto não mudou, as sessões antigas continuam válidas | Reinício da API (segundos; RNF-05 cobre com formulário) | G |
+| F3 | Migração `0007` (§4.2) em `portaria` | Migração reversa (só `DROP` de colunas e tabelas novas, vazias) | Não (tabelas pequenas, `ADD COLUMN` com default constante não reescreve linha) | P |
+| F4 | Âncora agregada (§4.3): selos públicos v2, workflow novo, prova de inclusão, congelamento do `selos.jsonl` | Reativar o endpoint v1 (o código fica até o fim da fase) | Não | M |
+| F5 | Plataforma: API `/plataforma/*`, front separado na Vercel, TOTP, onboarding (CLI), acesso de suporte, métricas | Desligar o projeto Vercel e as rotas (flag) | Não | G |
+| F6 | **Condomínio de teste** em produção (`demo`, dados fictícios do seed) para smoke de isolamento: sessão de um não abre o outro, jobs dos dois rodam, backup e restore de um só | Excluir `demo` (SAAS-11) | Não | P |
+| F7 | Fim de contrato: exportação completa, exclusão com duas pessoas, rotação de chave | — | Não | M |
+| F8 | Primeiro cliente real (depois das mitigações M1 a M9 da seção 10, do contrato de operador e da revisão de segurança) | — | — | — |
+
+**Verificação da cadeia antiga** (fim de F2, F3 e F4): no banco `portaria`, `verificarCadeia` sobre a exportação nova
+deve dar `ok`, a cabeça deve ser igual ou posterior à de F0 com os mesmos hashes nos `seq` comuns, e
+`verificar-ancoras` deve conferir todo o `selos.jsonl`. Como nenhuma migração toca `evento_acesso`, `selo_cadeia` ou
+`evento_acesso_cadeia` (exceto a coluna nova de `selo_cadeia` em F3, que não entra no hash: o selo não é encadeado),
+uma divergência indica bug, não efeito esperado.
+
+**Ordem que não pode inverter:** F1 antes de F2 (a API nova lê chaves da plataforma); F2 antes de F5 (rotas do Master
+dependem do resolvedor); F4 antes do segundo condomínio (senão o endpoint v1 publicaria volume de dois clientes); F7 e
+SAAS-17 antes de F8.
+
+---
+
+## 6. Impacto
+
+### 6.1 API (`apps/api`)
+
+- `database.module.ts`: `DB` vira provider durable resolvido por condomínio; novo `PLATAFORMA_DB`; registro de pools
+  com teto global e fechamento por ociosidade.
+- Novo módulo `plataforma` (controllers `/plataforma/*`, guarda `@Plataforma`, sessão do Master, TOTP, condomínios,
+  acesso de suporte, métricas) e CLI `provisionar-condominio`, `excluir-condominio`, `rotacionar-chave`.
+- `auth`: cookie `v2.<condominio_id>.<token>`; login com código; `SessaoService.validar` no banco escolhido; rota
+  `POST /auth/suporte` (troca do código de uso único); usuário `origem = 'suporte'` recusado no login por senha.
+- `config`: `PORTARIA_HMAC_CPF_KEY` e `PORTARIA_KEK` saem do ambiente da API ao fim da F2; entra
+  `PORTARIA_CHAVE_MESTRA` (+ versão) e `DATABASE_URL_PLATAFORMA`. `ESTRUTURA` sai (vem de `configuracao`).
+- `documentos/cofre.ts`: KEK vem do condomínio; diretório `<dir>/<condominio_id>/`; AAD inclui o condomínio
+  (`portaria:dek:<condominio_id>:<id>:v<versao>`) **só nas DEKs novas**, com versão de formato para ler as antigas.
+- `jobs`: laço por condomínio, trava por condomínio, paralelismo limitado.
+- `selo`: endpoint público v2 (raiz do dia), prova de inclusão.
+- `comum/log.ts`: `condominio_id` na allowlist.
+
+**Testes obrigatórios de isolamento** (falham o CI):
+1. Para **cada rota** de `docs/api/openapi.json` com parâmetro de id: criar o recurso no condomínio B, chamar com
+   sessão de A → 404 (nunca 200 nem 403, que confirmaria a existência).
+2. Cookie de A com prefixo trocado para B → 401; sem prefixo depois da janela de transição → 401.
+3. Login com código de A e usuário de B (mesmo login nos dois) → credenciais inválidas; tempo de resposta na mesma faixa.
+4. Busca por CPF: o mesmo CPF cadastrado em A e B gera `documento_busca` diferente.
+5. Anexo de A com DEK desembrulhada pela KEK de B → falha de autenticação do GCM.
+6. Sessão de plataforma em rota de condomínio → 401, e vice-versa; pool `app_plataforma` tentando conectar em banco de
+   condomínio → erro de permissão (teste com Postgres real, `test:pg`).
+7. Teste de arquitetura: só `plataforma/` e `ResolvedorCondominio` importam `PLATAFORMA_DB`; nenhum serviço de
+   condomínio guarda estado em campo estático.
+8. Agendador com dois condomínios: falha forçada em A não impede o selo de B.
+
+**Ressalva de teste já existente:** a API nos testes roda no PGlite como superusuário (`test/helpers/app.ts:77-91`).
+Para os testes de isolamento, cada condomínio é uma instância PGlite própria (isolamento real), e os testes de
+permissão de role ficam no `test:pg`.
+
+### 6.2 Front (`apps/web`)
+
+- Login: campo "Código do condomínio", lembrado como preferência; cabeçalho `X-Condominio` só no login.
+- Layout: nome do condomínio (de `configuracao`) no cabeçalho; rótulos de agrupamento já vêm da API (`/catalogo`).
+- Tela do síndico: aprovar/encerrar acesso de suporte; aviso visível em todas as telas durante sessão de suporte.
+- Rota `/suporte?codigo=` para a troca do código.
+- **App novo** `apps/plataforma` (Vite, mesmas bibliotecas, mesmo CSP), projeto Vercel separado.
+
+### 6.3 Deploy e CI
+
+- `docker-compose.prod.yml`: volume de anexos com subpasta por condomínio; memória do Postgres revista; variáveis da
+  §6.1. Segredos novos gerados na VPS (padrão do `docs/deploy.md`).
+- `deploy-vps.sh`: laço de migração com portão (SAAS-16); o `command=` restrito da chave de deploy precisa conhecer o
+  novo script.
+- `db/bootstrap/00_roles.sh`: roles `app_plataforma` e `app_provisionador`.
+- Backup em laço (SAAS-12); `crontab.exemplo`/timer inalterados.
+- CI (`deploy-api.yml`, `testes-web.yml`): jobs dos testes de isolamento e do `test:pg` com dois bancos; e2e com dois
+  condomínios.
+- `ancora-selo.yml`: formato v2 em arquivo novo.
+
+---
+
+## 7. Impacto em requisitos e LGPD (para `01_requisitos.md` v0.4 — não editado aqui)
+
+**Seção 1 e 2 (contexto e escopo):** o produto passa a atender vários condomínios; o condomínio-piloto é o primeiro
+cliente. Fora do escopo da v0.4: usuário em vários condomínios, subdomínio, fuso diferente de Brasília, escrita pelo
+suporte.
+
+**Seção 3 (atores):** novos atores "Administrador da plataforma (Master)" e "Suporte da plataforma", ambos do operador,
+sem acesso a dado pessoal de condomínio fora do acesso de suporte.
+
+**Seção 4 (requisitos funcionais), IDs novos:**
+- RF-39 Cadastrar condomínio (Master), com plano e status.
+- RF-40 Configurar estrutura de blocos e unidades no onboarding (substitui a estrutura fixa citada em RF-01).
+- RF-41 Solicitar, aprovar, encerrar e auditar acesso de suporte.
+- RF-42 Exportar todos os dados do condomínio e excluí-los no fim do contrato.
+- RF-43 Painel de saúde da plataforma com métricas agregadas sem dado pessoal.
+
+**Seção 5 (regras de negócio):**
+- RN-12 O Master só acessa dado de condomínio por acesso de suporte aprovado, com prazo e registro na trilha do
+  condomínio.
+- RN-13 Login e cadastro são por condomínio: o mesmo login ou CPF em dois condomínios são registros independentes, sem
+  correlação.
+
+**Seção 6 (não funcionais):**
+- RNF-02 alterado: 2FA obrigatório para usuários da plataforma desde a primeira versão (continua opcional para
+  condomínio).
+- RNF-13 Isolamento entre condomínios: banco separado; teste de isolamento por rota no CI.
+- RNF-14 Exportação completa e exclusão verificável no fim do contrato, em prazo contratual.
+- RNF-01 e RNF-10 precisam citar cadeia e backup **por condomínio**.
+
+**Seção 7 (LGPD):**
+- Explicitar a relação controlador (condomínio) / operador (empresa do SaaS), com contrato de operação (art. 39) que
+  defina instruções, suboperadores, segurança, incidente e devolução/eliminação.
+- Lista de suboperadores: hospedagem da VPS, Vercel (o rewrite passa o tráfego da API, inclusive dado pessoal),
+  GitHub (só hashes e raízes, sem dado pessoal), provedor de e-mail se ligado.
+- Transferência internacional (art. 33): a Vercel e o GitHub estão fora do Brasil; o país do datacenter da VPS precisa
+  ser confirmado. Hoje isso já existe para o piloto e não está na seção 7.
+- Dados que a empresa do SaaS trata como **controladora**: cadastro comercial do cliente e contato do responsável pelo
+  contrato (execução de contrato, art. 7º, V).
+- Incidente: o operador comunica o controlador no prazo do contrato; o controlador comunica a ANPD e os titulares
+  (art. 48; prazo do regulamento de comunicação de incidente da ANPD a validar juridicamente).
+- Fim do contrato: devolução ao controlador e eliminação pelo operador (art. 16), com o prazo de backups declarado.
+- Acesso de suporte: finalidade, prazo máximo, aprovação do síndico e registro.
+- Chave de busca do CPF por condomínio: impede correlacionar a mesma pessoa entre clientes.
+
+**Seção 8 (implantação):** onboarding de condomínio (SAAS-10) antes da etapa de treinamento.
+
+**Seção 11 (riscos):** riscos da seção 9 deste documento.
+
+**Seção 12 (casos de uso):** UC33 Cadastrar condomínio, UC34 Solicitar acesso de suporte, UC35 Aprovar acesso de
+suporte, UC36 Encerrar contrato.
+
+**Seção 14:** entrada da v0.4 com as decisões SAAS-01 a SAAS-18.
+
+`02_especificacao_tecnica.md` também precisa de revisão (§1 arquitetura, §3.4 tabelas auxiliares, §4.6 selo e
+âncora, §5 autenticação, §9.2 chaves, §12 estrutura do projeto e uma §14 com as decisões novas).
+
+---
+
+## 8. Ganchos para o PWA offline (fase seguinte)
+
+Só o que este desenho precisa garantir para não bloquear:
+
+1. **Id gerado no cliente.** `evento_acesso.id` já é uuid com default no banco (`schema.ts:403`, `pk()` com `defaultRandom`); a API passa a aceitar
+   id enviado pelo cliente (uuid v4 ou v7). Ele é a chave de idempotência: reenvio com o mesmo id devolve o evento já
+   gravado se o conteúdo for igual, e 409 se for diferente. Nenhuma tabela nova de idempotência.
+2. **Quem encadeia é o servidor.** O dispositivo nunca calcula `seq` nem `hash`. O evento offline entra na cadeia do
+   condomínio na hora em que chega, com `registrado_em` do servidor e `ocorrido_em` do dispositivo. O schema já admite
+   `ocorrido_em < registrado_em` (`evento_retroativo_tempo_ck`, `schema.ts:470`).
+3. **Formato do hash versionado.** O evento offline precisa de campos novos no hash (dispositivo, relógio do
+   dispositivo, "restrição conferida contra cache de"), o que é `formato_hash = 2`. O banco e o domain já versionam
+   (`hashChain.ts:11,58` recusa formato desconhecido); a v2 convive com a v1 na mesma cadeia.
+4. **Dispositivo pertence a um condomínio.** Tabela `dispositivo` no banco do condomínio, com credencial própria
+   revogável. O prefixo de condomínio da sessão (SAAS-03) vale para o dispositivo.
+5. **Fila local guarda dado pessoal.** IndexedDB no posto da portaria, cifrado com chave entregue pela sessão e
+   descartada no logout. Entra na seção 7 como risco.
+6. **Restrição (RF-16) offline usa cópia antiga.** O evento registra a data da cópia; a conferência ao sincronizar
+   abre ocorrência se a pessoa estava restrita. Decisão de produto da fase do PWA.
+
+Nada disso exige mudança agora, exceto não criar unicidade ou trigger que impeça id vindo do cliente.
+
+---
+
+## 9. Riscos
+
+| # | Risco | Mitigação |
+|---|---|---|
+| R1 | Subárvore de injeção errada (bug no `ContextIdStrategy`) entrega o banco de outro condomínio | Sessão sempre validada no banco escolhido; testes 1–3 da §6.1; o `DB` sem condomínio falha fechado |
+| R2 | Estado global em memória sobrevive entre condomínios (cache, mapa estático) | Teste de arquitetura; revisão dos singletons atuais (`LimiteTaxaPublico`, cache de selos, `ESTRUTURA`) na F2 |
+| R3 | Deploy interrompido no meio do laço de migração | *Expand/contract*; portão de versão por banco (SAAS-16) |
+| R4 | Esgotamento de conexões com muitos condomínios | Pool pequeno com timeout; teto global; revisitar SAAS-01 acima de ~100 |
+| R5 | Perda da chave mestra = perda de todos os anexos e da busca por CPF de todos os condomínios | Cópia da chave mestra fora da VPS, em cofre, com procedimento de recuperação testado (pergunta 6) |
+| R6 | Vazamento da chave mestra + dump = força bruta de CPF | Mestra fora do backup; acesso restrito; rotação da mestra é barata |
+| R7 | Master comprometido | Origem separada, TOTP, role sem CONNECT nos condomínios, acesso de suporte com aprovação do síndico |
+| R8 | API comprometida = todos os condomínios | Inerente a um processo (P3). Reduz o alcance: `app_rw` sem DELETE, trilha append-only, âncora fora do servidor |
+| R9 | VPS compartilhada com sistema de terceiros, mantida com vários clientes (decisão de 2026-10-22) | Mitigações M1 a M9 (seção 10); gatilhos de saída para VPS dedicada (M9) |
+| R10 | Âncora controlada pelo operador não protege o cliente contra o operador | E-mail ao síndico obrigatório; raiz pública em repositório com proteção de branch |
+| R11 | Mudança grande perto da entrega acadêmica (decidido fazer agora) | Tag da versão avaliada antes da F2, F0 e testes de caracterização antes de mudar, rollback por fase (seção 10, pergunta 1) |
+| R12 | Repositório público com código de produto comercial (decidido manter) | Mitigações P1 a P6 (seção 10, pergunta 2) |
+
+---
+
+## 10. Perguntas e decisões
+
+### 10.1 Respondidas pelo usuário em 2026-10-22
+
+**1. Antes ou depois do TCC? → Agora, junto do TCC.** A recomendação era "depois". Muda: as fases começam já, com o
+piloto em produção e o artefato acadêmico no mesmo repositório. Risco residual (R11): uma fase com defeito atinge o
+sistema que será avaliado, perto da entrega. Salvaguardas obrigatórias:
+- **Tag da versão avaliada** (ex. `tcc-entrega`) no `main` antes de começar a F2; o texto do TCC e a demonstração
+  citam essa tag. A produção pode seguir adiante; a versão avaliada continua reconstruível.
+- **F0 antes de qualquer mudança** (linha de base cifrada fora da VPS, restore de teste, testes de caracterização) e
+  a verificação da cadeia antiga ao fim de F2, F3 e F4 (seção 5). Feito na v0.2: `scripts/saas/`, CLI `linha-de-base`,
+  `test/saas-caracterizacao.test.ts`.
+- **Uma fase por vez**, com o rollback da tabela da seção 5 testado antes. Nenhuma fase grande (F2, F5) nas duas
+  semanas anteriores à entrega ou à banca.
+
+**2. Repositório e licença → continua público, no mesmo repositório.** A recomendação era decidir (e sugeria avaliar
+um privado). Muda: código, desenho de segurança e runbooks do produto ficam públicos. A segurança já não depende de
+segredo do código, mas o repositório passa a ser também a vitrine de ataque de todos os clientes. Risco residual
+(R12): vazamento de segredo ou endereço num commit, reconhecimento facilitado, cópia por concorrente e, ainda sem
+resposta, **propriedade do código e licença** (autor acadêmico × empresa do SaaS), que fica como pergunta 2b.
+Mitigações obrigatórias:
+- **P1.** Nenhum segredo, endereço interno, IP, nome de host da VPS, nome de cliente, contato de contrato ou nome real de
+  pessoa em arquivo versionado (código, doc, teste, seed, migração). Documento usa placeholder (`<vps>`, `<slug>`).
+  Os documentos que já citam o endereço da VPS precisam ser revisados antes da F6.
+- **P2.** Varredura de segredo em todo push (secret scanning com push protection do GitHub, gratuito em repositório
+  público) ligada antes da F2.
+- **P3.** Proteção do `main` (checks obrigatórios, sem force-push): push no `main` faz deploy (`docs/deploy.md` §11).
+- **P4.** Dado de cliente nunca em fixture, seed ou issue; incidente tratado em canal privado (security advisory
+  privado do GitHub), não em issue pública.
+- **P5.** Revisão de segurança antes do primeiro cliente real (já em F8), olhando também o histórico do git.
+- **P6.** Pergunta 2b (propriedade e licença) respondida antes do primeiro contrato (F8).
+
+**3. Banco por condomínio ou RLS? → Banco por condomínio, até ~30 condomínios em 2 anos.** Coincide com a
+recomendação. Confirma SAAS-01 e a premissa P1 (dezenas). O limite de revisão (~100 condomínios) fica longe; o custo
+que aparece antes é memória e conexões do Postgres na VPS compartilhada (SAAS-17, M1).
+
+**5. VPS dedicada? → Não: continua na VPS de hoje, compartilhada com o outro sistema, inclusive com vários
+clientes.** (A resposta veio como 4ª decisão; ela responde à pergunta 5. A pergunta 4 continua em aberto.) A
+recomendação era VPS dedicada antes do segundo cliente real. Muda: SAAS-17 e F8 deixam de exigir VPS dedicada e
+passam a exigir as mitigações abaixo. Risco residual (R9): quem compromete o outro sistema ou tem root na VPS alcança
+os volumes, o `.env` (com a chave mestra a partir da F2) e o banco de **todos** os condomínios; os dois sistemas
+disputam memória, CPU, disco e rede; o operador responde por isso perante cada controlador (art. 46). Mitigações
+obrigatórias (condição de F6 e F8; as marcadas "já" existem para o piloto):
+- **M1.** Limites por container em todos os serviços da Portaria: `mem_limit` (já), `cpus` e `pids_limit`; Postgres com
+  `max_connections`, `shared_buffers` e `mem_limit` dimensionados para os condomínios ativos, conferindo a RAM livre
+  com o outro sistema no ar.
+- **M2.** Rede docker isolada: projeto com nome próprio (já), banco em rede `internal` sem porta publicada (já), API só
+  em `127.0.0.1` (já), nenhuma rede compartilhada com o outro sistema.
+- **M3.** `limit_req` e `limit_conn` no nginx **só no `server` da Portaria** (nada global no `http {}`, que afetaria o
+  outro sistema), além do limite por condomínio da API (SAAS-14).
+- **M4.** Nenhum segredo, endereço interno ou nome de host em documento (mesma regra da P1).
+- **M5.** Chave mestra fora do backup e com cópia em cofre (já é a regra da KEK); lista de quem tem root/shell na VPS,
+  SSH só por chave, e acesso revisto a cada cliente novo.
+- **M6.** Disco: alerta de uso e retenção dos backups por condomínio com prazo fixo (SAAS-12); logs com rotação (já).
+- **M7.** Revisão de segurança (`/security-review` e OWASP) e os testes de isolamento da §6.1 no CI antes do
+  primeiro cliente real.
+- **M8.** Contrato de operador declara a hospedagem compartilhada e quem administra a VPS como suboperador, e o país do
+  datacenter (seção 7).
+- **M9.** Gatilhos de saída para VPS dedicada, revistos a cada cliente novo: um sistema degradar o outro (OOM, CPU,
+  disco), passar de 10 condomínios ativos, ou um contrato exigir.
+
+### 10.2 Em aberto
+
+2b. **Propriedade do código e licença** (sobra da pergunta 2): quem é dono do código e sob qual licença, antes do
+    primeiro contrato.
+4. **Acesso de suporte sem síndico disponível:** aceitar "ciência sem aprovação" com prazo de 1 h, ou exigir sempre
+   aprovação de um usuário `sindico`?
+6. **Guarda da chave mestra:** onde fica a cópia fora da VPS (gerenciador de senhas da empresa, cofre de nuvem, papel
+   em envelope lacrado) e quem tem acesso? (A F1 já cria a chave: até a resposta, vale o cofre do responsável, como a
+   KEK.)
+7. **Âncora por e-mail obrigatória** a partir do segundo condomínio (exige SMTP em produção, que hoje não há)?
+8. **Entrega da senha temporária do síndico** no onboarding: por e-mail, por mensagem ou presencial?
+9. **Prazos contratuais:** dias entre `encerrado` e `excluido` (sugestão 30) e retenção dos backups (sugestão 35).
+10. **Domínio próprio:** existe plano de registrar? Mudaria SAAS-05 para subdomínio e tiraria a dependência do
+    `sslip.io`.
+11. **Planos e cotas:** quais limites por plano (unidades, usuários, armazenamento)? Cobrança fica fora do sistema?
+12. **Fuso:** algum cliente previsto fora do horário de Brasília?
+
+---
+
+## 11. Estimativa por fase
+
+| Fase | Tamanho | Observação |
+|---|---|---|
+| F0 Linha de base | P | Sem mudança de comportamento |
+| F1 Banco de plataforma e chaves | M | Envelope de chaves com testes |
+| F2 API multi-banco | **G** | Maior risco: resolvedor, sessão, login, jobs, backup, testes de isolamento |
+| F3 Migração `0007` | P | Só *expand* |
+| F4 Âncora agregada | M | Merkle, prova de inclusão, workflow |
+| F5 Plataforma (API + front + TOTP + onboarding + suporte) | **G** | App novo |
+| F6 Condomínio de teste em produção | P | Smoke de isolamento |
+| F7 Fim de contrato | M | Exportação completa e exclusão |
+| Revisão de requisitos/spec (v0.4) | M | Documento, sem código |
+
+---
+
+## Apêndice A — Se a decisão for banco único com RLS
+
+Para o caso de a pergunta 3 ser respondida com RLS. O que **muda** em relação ao corpo do documento:
+
+**A.1 Colunas, unicidades e FKs.**
+- `condominio_id uuid NOT NULL` em todas as tabelas de condomínio. Backfill sem `UPDATE` (as trilhas bloqueiam
+  `UPDATE` por trigger, `0001:202`): `ALTER TABLE x ADD COLUMN condominio_id uuid NOT NULL DEFAULT '<id do piloto>'`
+  (no Postgres 11+ não reescreve a tabela nem dispara trigger) e, em seguida,
+  `ALTER COLUMN condominio_id SET DEFAULT app_condominio()`.
+- Todas as unicidades da seção 1 ganham `condominio_id` na frente (`unidade`, `usuario_login_uq`,
+  `pessoa_documento_busca_uq`, `veiculo_placa_ativa_uq`, `evento_seq_uq`, `selo_cadeia_diario_uq`, ...).
+- `evento_acesso_cadeia`: PK passa a `condominio_id`, sai o `CHECK id = 1`; o trigger trava a linha do condomínio.
+- Numeração de encomenda e ocorrência por condomínio: identity global vira contador por condomínio (tabela
+  `contador` com `UPDATE ... RETURNING`), senão o número revela o volume dos outros clientes.
+- **FKs compostas**: `UNIQUE (condominio_id, id)` em cada tabela referenciada e
+  `FOREIGN KEY (condominio_id, pessoa_id) REFERENCES pessoa (condominio_id, id)` em cada FK (~50), criadas com
+  `NOT VALID` e depois `VALIDATE CONSTRAINT`. Sem isso, a checagem de FK, que ignora RLS, deixa um evento de A
+  apontar para a pessoa de B.
+
+**A.2 Contexto e políticas.**
+```sql
+CREATE FUNCTION app_condominio() RETURNS uuid LANGUAGE sql STABLE AS $$
+  -- Depois de um SET LOCAL, a variável volta como '' (não NULL) nas transações seguintes da mesma conexão.
+  SELECT nullif(current_setting('app.condominio_id', true), '')::uuid
+$$;
+
+ALTER TABLE pessoa ENABLE ROW LEVEL SECURITY;
+CREATE POLICY pessoa_condominio ON pessoa TO app_rw
+  USING (condominio_id = app_condominio())
+  WITH CHECK (condominio_id = app_condominio());
+-- Idem para cada tabela. Sem contexto: app_condominio() é NULL, a comparação é NULL, nenhuma linha passa
+-- e o INSERT falha no NOT NULL do default. Falha fechada.
+```
+- A API abre **uma transação por requisição** e faz `SELECT set_config('app.condominio_id', $1, true)` como primeiro
+  comando. As 103 consultas que hoje rodam fora de transação (`this.db.select...`) passam a rodar dentro dela; sem
+  isso, `SET` de sessão vazaria entre requisições pela conexão reaproveitada do pool.
+- `app_rw` continua `NOBYPASSRLS` (padrão do `CREATE ROLE` em `00_roles.sh`). Não usar `FORCE ROW LEVEL SECURITY`
+  com a dona `app_migrator`, que precisa enxergar tudo nas migrações.
+- Limite a declarar: qualquer SQL executado como `app_rw` pode chamar `set_config` com outro condomínio. RLS por GUC
+  protege de bug de consulta, não de injeção de SQL.
+
+**A.3 Funções `SECURITY DEFINER` e triggers.** A dona ignora RLS. Cada uma das 8 funções e o trigger da cadeia
+precisam:
+- ler o condomínio de `app_condominio()` e falhar se for NULL;
+- filtrar **toda** consulta interna por ele (ex.: em `evento_acesso_antes_inserir`, a busca do evento referido,
+  `0001:104`, e a da pessoa sem CPF, `0001:165`; em `retencao_descartar_audit`, o `DELETE` de `0004:75`, que hoje
+  apaga a trilha vencida inteira);
+- conferir `NEW.condominio_id = app_condominio()` nos triggers (a política `WITH CHECK` é aplicada depois dos
+  triggers `BEFORE`, mas as consultas do trigger rodam antes, como dona).
+- Teste no CI que lista `pg_proc` com `prosecdef` e falha se o corpo não chamar `app_condominio()`.
+- `unidade_descartar_estrutura` (`0005:44`) faz `LOCK TABLE unidade` e `DELETE FROM unidade` sem filtro: no modelo
+  compartilhado, travaria e apagaria a estrutura de todos. Precisa ser reescrita por condomínio.
+
+**A.4 Migração da produção.** A cadeia do piloto continua válida porque `condominio_id` não entra na serialização
+canônica v1 (`0001:55-84`), mas a migração toca a tabela append-only, a cabeça da cadeia e todas as funções numa
+janela de manutenção, com rollback por restore. Tamanho: **G** só para o schema, antes da API.
+
+**A.5 O que o RLS não dá** e precisaria de solução própria: restore de um condomínio (não há como repor linhas de uma
+tabela append-only sem afetar os outros), exclusão no fim do contrato (função nova que fura o append-only por
+condomínio) e backup por condomínio (`pg_dump` com filtro não existe; seria exportação lógica).

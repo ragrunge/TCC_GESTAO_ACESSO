@@ -15,6 +15,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
       APP_MIGRATOR_PASSWORD: ${APP_MIGRATOR_PASSWORD:?defina APP_MIGRATOR_PASSWORD no .env}
       APP_RW_PASSWORD: ${APP_RW_PASSWORD:?defina APP_RW_PASSWORD no .env}
+      # Banco plataforma do SaaS (db/bootstrap/10_plataforma.sh). Vazia: o role nasce sem LOGIN.
+      APP_PLATAFORMA_PASSWORD: ${APP_PLATAFORMA_PASSWORD:-}
       TZ: UTC
       PGTZ: UTC
     ports:
@@ -43,6 +45,38 @@ services:
     environment:
       DATABASE_URL_MIGRATOR: postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@db:5432/portaria
     command: ["npx", "drizzle-kit", "migrate"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # SaaS, fase F1: banco `plataforma`, só com --profile plataforma (a API ainda não o usa). Ver docs/deploy.md, seção 12.
+  #   docker compose --profile plataforma run --rm migrate-plataforma
+  #   docker compose --profile plataforma run --rm plataforma-cli node dist/cli/registrar-piloto.js --codigo demo --nome "Demo"
+  migrate-plataforma:
+    profiles: [plataforma]
+    image: portaria-migrate:dev
+    pull_policy: never
+    command: ["npx", "drizzle-kit", "migrate", "--config", "drizzle-plataforma.config.ts"]
+    environment:
+      DATABASE_URL_MIGRATOR: postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@db:5432/plataforma
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  plataforma-cli:
+    profiles: [plataforma]
+    image: portaria-api:${API_TARGET:-dev}
+    pull_policy: never
+    command: ["node", "dist/cli/registrar-piloto.js"]
+    environment:
+      DATABASE_URL_PLATAFORMA: postgres://app_plataforma:${APP_PLATAFORMA_PASSWORD:-}@db:5432/plataforma
+      PORTARIA_CHAVE_MESTRA: ${PORTARIA_CHAVE_MESTRA:-}
+      PORTARIA_CHAVE_MESTRA_VERSAO: ${PORTARIA_CHAVE_MESTRA_VERSAO:-}
+      PORTARIA_HMAC_CPF_KEY: ${PORTARIA_HMAC_CPF_KEY:?defina PORTARIA_HMAC_CPF_KEY no .env}
+      PORTARIA_KEK: ${PORTARIA_KEK:?defina PORTARIA_KEK no .env}
+      PORTARIA_KEK_VERSAO: ${PORTARIA_KEK_VERSAO:?defina PORTARIA_KEK_VERSAO no .env}
     depends_on:
       db:
         condition: service_healthy

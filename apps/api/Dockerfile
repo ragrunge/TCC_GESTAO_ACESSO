@@ -1,7 +1,7 @@
 # Contexto de build = raiz do monorepo (docker-compose.yml). Estágios:
 #   deps     todas as dependências do workspace apps/api (dev incluídas)
 #   build    tsc -> dist (CommonJS), antes o build CJS de @portaria/domain (packages/domain/dist/cjs)
-#   migrate  drizzle-kit + migrações + drizzle.config.ts (serviço "migrate": roda e termina)
+#   migrate  drizzle-kit + migrações + drizzle.config.ts (serviço "migrate": roda e termina) e as do banco plataforma
 #   dev      build + tsc-watch: recompila e reinicia a API a cada mudança em src/ (docker compose watch)
 #   prod     só dependencies de produção
 #   runtime  imagem final da API, usuário não-root
@@ -38,6 +38,10 @@ WORKDIR /app/apps/api
 COPY apps/api/drizzle.config.ts ./
 COPY apps/api/drizzle ./drizzle
 COPY apps/api/src/db/schema.ts ./src/db/schema.ts
+# Banco plataforma do SaaS (serviço migrate-plataforma, só com --profile plataforma): config, migrações e schema próprios.
+COPY apps/api/drizzle-plataforma.config.ts ./
+COPY apps/api/drizzle-plataforma ./drizzle-plataforma
+COPY apps/api/src/saas/schema-plataforma.ts ./src/saas/schema-plataforma.ts
 USER node
 CMD ["npx", "drizzle-kit", "migrate"]
 

@@ -32,6 +32,9 @@ services:
       PGTZ: UTC
     volumes:
       # Bootstrap de roles e do banco: roda UMA vez, na primeira subida do volume (00_roles.sh é 100755 no git).
+      # 10_plataforma.sh (banco plataforma do SaaS) cria app_plataforma SEM login aqui: APP_PLATAFORMA_PASSWORD fica de
+      # fora do `db` de propósito (variável nova no serviço recriaria o container do Postgres no próximo `up`). A senha
+      # entra por stdin (docs/deploy.md, seção 12).
       - ./db/bootstrap:/docker-entrypoint-initdb.d:ro
       - pgdata:/var/lib/postgresql/data
     networks: [banco]
@@ -88,6 +91,53 @@ services:
     networks: [banco]
     mem_limit: 256m
     security_opt: ["no-new-privileges:true"]
+    restart: "no"
+    logging: *logging
+
+  # SaaS, fase F1 (docs/05_arquitetura_saas.md; docs/deploy.md, seção 12): banco `plataforma`. Os dois serviços abaixo
+  # só existem com --profile plataforma: o `up` do deploy não os sobe, e a API desta fase não abre esse banco.
+  # Migrações do banco plataforma (pasta própria, drizzle-plataforma/), como app_migrator. Roda e termina.
+  migrate-plataforma:
+    profiles: [plataforma]
+    image: tcc-portaria-migrate:${API_TAG:-atual}
+    pull_policy: never
+    command: ["npx", "drizzle-kit", "migrate", "--config", "drizzle-plataforma.config.ts"]
+    environment:
+      DATABASE_URL_MIGRATOR: postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@db:5432/plataforma
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [banco]
+    mem_limit: 256m
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+    logging: *logging
+
+  # CLI do operador para o banco plataforma (registro do piloto e importação das chaves): a imagem da API, sem porta, só na
+  # rede interna. É o ÚNICO serviço que recebe a chave mestra nesta fase; a API não. Vazias, a CLI recusa com o nome
+  # da variável que falta.
+  plataforma-cli:
+    profiles: [plataforma]
+    image: tcc-portaria-api:${API_TAG:-atual}
+    pull_policy: never
+    command: ["node", "dist/cli/registrar-piloto.js"]
+    environment:
+      NODE_ENV: production
+      TZ: UTC
+      DATABASE_URL_PLATAFORMA: postgres://app_plataforma:${APP_PLATAFORMA_PASSWORD:-}@db:5432/plataforma
+      PORTARIA_CHAVE_MESTRA: ${PORTARIA_CHAVE_MESTRA:-}
+      PORTARIA_CHAVE_MESTRA_VERSAO: ${PORTARIA_CHAVE_MESTRA_VERSAO:-}
+      PORTARIA_HMAC_CPF_KEY: ${PORTARIA_HMAC_CPF_KEY:?defina PORTARIA_HMAC_CPF_KEY no .env}
+      PORTARIA_KEK: ${PORTARIA_KEK:?defina PORTARIA_KEK no .env}
+      PORTARIA_KEK_VERSAO: ${PORTARIA_KEK_VERSAO:?defina PORTARIA_KEK_VERSAO no .env}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [banco]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
     restart: "no"
     logging: *logging
 

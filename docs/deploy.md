@@ -553,3 +553,95 @@ do backup anterior a ela (seção 9). Antes de atualizar com migração nova, ro
 
 **Retirar tudo** (sem afetar o Tobe): `docker compose down` (mantém volumes) e remover o bloco do proxy e o `reload`.
 `docker compose down -v` **apaga o banco**: só com backup conferido.
+
+---
+
+## 12. SaaS: linha de base (F0) e banco `plataforma` (F1)
+
+Fases de `docs/05_arquitetura_saas.md` §5. Nenhuma delas muda o banco `portaria` nem o comportamento da API.
+`<vps>` abaixo é o host SSH do operador (não versionado aqui).
+
+### 12.1 F0: linha de base (só leitura)
+
+Pré-requisito: a imagem em produção já tem `dist/cli/linha-de-base.js` (deploy normal do código da F0).
+
+```bash
+sudo /opt/tcc-portaria/scripts/saas/linha-de-base.sh       # ~segundos; não para a API
+```
+
+Gera `/var/backups/tcc-portaria/linha-de-base/linha-de-base-<carimbo>.tar.age` (+ `.sha256`), cifrado com a mesma
+chave pública do backup. Dentro: `linha-de-base.json` (cabeça `seq`/`hash`, verificação interna, `verificar-ancoras`
+contra o branch `ancoras`, contagem por tabela, última migração), `trilha.jsonl` (exportação verificável **sem nomes**)
+e `selos.jsonl`. O terminal mostra só a cabeça, contagens e as conclusões. Código 4 = a cadeia ou as âncoras não
+conferem: o arquivo fica como evidência, e a F1 não começa.
+
+Levar para fora e abrir (na máquina com a chave privada):
+
+```bash
+scp '<vps>:/var/backups/tcc-portaria/linha-de-base/linha-de-base-<carimbo>.*' ~/backups/tcc-portaria/linha-de-base/
+cd ~/backups/tcc-portaria/linha-de-base && shasum -a 256 -c linha-de-base-<carimbo>.sha256
+age -d -i portaria-backup.key linha-de-base-<carimbo>.tar.age | tar -xOf - linha-de-base.json   # só o resumo
+```
+
+A `trilha.jsonl` tem o texto livre dos eventos (justificativa, observação): extrair só para conferir e apagar depois.
+
+### 12.2 F0: restore de teste num banco descartável
+
+Na máquina do responsável, nunca na VPS (a chave privada não vai para lá). Sobe um `postgres:17-alpine` descartável
+em `127.0.0.1`, restaura por pipe o dump do backup diário (de **depois** da linha de base), confere a cadeia, as âncoras
+e a cabeça contra a linha de base, e apaga tudo no fim. Não toca no banco `portaria` de produção.
+
+```bash
+npm ci && npm run build -w apps/api          # a CLI roda daqui
+AGE_IDENTIDADE=~/caminho/portaria-backup.key scripts/saas/restore-teste.sh \
+  ~/backups/tcc-portaria/diario/portaria-<carimbo>.dump.age \
+  ~/backups/tcc-portaria/linha-de-base/linha-de-base-<carimbo>.tar.age
+```
+
+Código 0 = `CONFERE`. Registrar a data e o resultado (é também o teste mensal de restauração da seção 8).
+
+### 12.3 F1: banco `plataforma` (deploy manual: o automático sai com código 2)
+
+Muda compose, `Dockerfile` e `db/bootstrap` (por isso é manual). A API continua igual: só os serviços
+`migrate-plataforma` e `plataforma-cli` (perfil `plataforma`, fora do `up`) usam o banco novo. Antes: F0 com
+`CONFERE`.
+
+```bash
+cd /opt/tcc-portaria
+sudo systemctl start tcc-portaria-backup.service                       # 1. backup antes
+pw()  { openssl rand -base64 32 | tr -d '/+=\n'; }                      # 2. segredos novos, gerados aqui
+key() { openssl rand -base64 32; }
+grep -q '^APP_PLATAFORMA_PASSWORD=' .env || printf 'APP_PLATAFORMA_PASSWORD=%s\n' "$(pw)" >> .env
+grep -q '^PORTARIA_CHAVE_MESTRA=' .env || printf 'PORTARIA_CHAVE_MESTRA=%s\nPORTARIA_CHAVE_MESTRA_VERSAO=1\n' "$(key)" >> .env
+grep -cE '^(APP_PLATAFORMA_PASSWORD|PORTARIA_CHAVE_MESTRA|PORTARIA_CHAVE_MESTRA_VERSAO)=.+' .env   # 3
+```
+
+**Cofre:** `PORTARIA_CHAVE_MESTRA` vai para o cofre **antes** do passo 6, como a KEK (seção 2). Perdê-la depois da F2
+é perder as chaves de todos os condomínios.
+
+```bash
+git fetch && git checkout --detach origin/main                           # 4. código e imagens
+sed -i "s|^API_TAG=.*|API_TAG=$(git rev-parse --short HEAD)|" .env
+docker compose build && docker compose up -d --wait                      #    só api/migrate/permissoes mudam de tag
+docker compose exec -T db sh /docker-entrypoint-initdb.d/10_plataforma.sh # 5. roles + banco (idempotente)
+printf "ALTER ROLE app_plataforma LOGIN PASSWORD '%s';\n" "$(sed -n 's/^APP_PLATAFORMA_PASSWORD=//p' .env)" \
+  | docker compose exec -T db psql -q -v ON_ERROR_STOP=1 -U postgres -d postgres   #    senha por stdin, sem eco
+docker compose --profile plataforma run --rm migrate-plataforma          # 6. tabelas da §4.1
+docker compose --profile plataforma run --rm plataforma-cli \
+  node dist/cli/registrar-piloto.js --codigo <slug> --nome "<nome exibido>"   # 7. piloto + chaves (v. de hoje)
+```
+
+Conferir:
+
+- passo 3 imprime `3`; passo 5 sem erro (o aviso de "sem LOGIN" do script é esperado: a senha vem logo depois);
+- passo 7: `"situacao": "registrado"`, `hmac_cpf` v1 e `kek_documentos` na versão de `PORTARIA_KEK_VERSAO`. Rodar de
+  novo responde `ja_registrado` (prova que o embrulho bate com o `.env`). As `impressao` batem com as do cofre:
+  `pbpaste | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(require('crypto').createHash('sha256').update('portaria:impressao:v1:').update(Buffer.from(s.trim(),'base64')).digest('hex').slice(0,16)))"`
+  (com a chave copiada do cofre);
+- isolamento de roles (`f|f|t|f`): `docker compose exec -T db psql -U postgres -tAc "select
+  has_database_privilege('app_rw','plataforma','CONNECT'), has_database_privilege('app_plataforma','portaria','CONNECT'),
+  has_database_privilege('app_plataforma','plataforma','CONNECT'), has_database_privilege('app_provisionador','portaria','CONNECT')"`;
+- a API: `/saude` com `"banco":"ok"`, login na portaria e "Verificar integridade" como antes.
+
+**Rollback da F1:** `docker compose exec -T db psql -U postgres -c 'DROP DATABASE plataforma' -c 'DROP ROLE app_plataforma' -c 'DROP ROLE app_provisionador'`
+e voltar o commit/tag (seção 11). O banco `portaria` não foi tocado.
