@@ -3,9 +3,10 @@
 # CONNECT por banco, bootstrap de db/bootstrap/*.sh e as CLIs do SaaS (F0/F1) contra o cluster.
 #
 # Ordem: bootstrap de roles (00_roles.sh, 10_plataforma.sh, rodados duas vezes: são idempotentes) -> migrações em laço
-# (apps/api/scripts/migrar-bancos.mjs, o serviço `migrate` da F2) -> npm run test:pg -> smoke das CLIs e dos privilégios
-# (docs/deploy.md, seções 12.3 e 13) -> smoke da API multi-banco (boot com as chaves da plataforma e recusa com chave
-# trocada). Qualquer divergência falha o job com ::error::.
+# (apps/api/scripts/migrar-bancos.mjs, o serviço `migrate` da F2) -> login do app_provisionador (como o runbook,
+# docs/deploy.md seção 16) -> npm run test:pg -> smoke das CLIs e dos privilégios (docs/deploy.md, seções 12.3, 13 e 16)
+# -> smoke da API multi-banco (boot com as chaves da plataforma e recusa com chave trocada) -> smoke da CLI
+# provisionar-condominio (condomínio novo, idempotência, laço de migração). Qualquer divergência falha o job com ::error::.
 #
 # Sem segredo do repositório: o único valor fixo é a senha do superusuário de um Postgres que morre com o job; as demais
 # senhas e as chaves das CLIs são geradas no job, mascaradas no log e descartadas. Nada aqui fala com a VPS.
@@ -123,6 +124,9 @@ jobs:
           [ -z "$sem_login" ] || { echo "::error::roles sem LOGIN apesar das senhas: $sem_login"; exit 1; }
           prov="$(psql -U postgres -d postgres -tAc "select rolcanlogin::text || '/' || rolcreatedb::text from pg_roles where rolname = 'app_provisionador'")"
           [ "$prov" = "false/true" ] || { echo "::error::app_provisionador deveria ser NOLOGIN CREATEDB (veio: $prov)"; exit 1; }
+          # Membro de app_migrator só com SET (CREATE DATABASE ... OWNER app_migrator), sem herdar privilégio.
+          memb="$(psql -U postgres -d postgres -tAc "select a.inherit_option::text || '/' || a.set_option::text from pg_auth_members a where a.roleid = 'app_migrator'::regrole and a.member = 'app_provisionador'::regrole")"
+          [ "$memb" = "false/true" ] || { echo "::error::app_provisionador deveria ser membro de app_migrator com INHERIT FALSE, SET TRUE (veio: $memb)"; exit 1; }
 
       - name: Migrações em laço (como o serviço migrate da F2)
         working-directory: apps/api
@@ -144,6 +148,16 @@ jobs:
           # Segunda passada: nada a aplicar, sai com 0 (idempotente, como a cada `up`).
           MIGRATOR_URL_BASE="postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@${PGHOST}:5432" node scripts/migrar-bancos.mjs >/dev/null \
             || falha "migrar-bancos.mjs falhou na segunda passada"
+
+      # Como o runbook (docs/deploy.md, seção 16, passo 2): o role nasce NOLOGIN e a senha entra por stdin.
+      - name: Login do app_provisionador (senha gerada aqui, por stdin)
+        env:
+          PGPASSWORD: ${{ env.POSTGRES_PASSWORD }}
+        run: |
+          v="$(openssl rand -hex 24)"
+          echo "::add-mask::$v"
+          printf 'APP_PROVISIONADOR_PASSWORD=%s\n' "$v" >> "$GITHUB_ENV"
+          printf "ALTER ROLE app_provisionador LOGIN PASSWORD '%s';\n" "$v" | psql -q -v ON_ERROR_STOP=1 -U postgres -d postgres
 
       # Os testes criam bancos descartáveis (portaria_teste_<n>) e usam o app_rw que o bootstrap já criou: por isso
       # precisam de APP_RW_PASSWORD (eles se recusam a alterar a senha de um role existente).
@@ -328,3 +342,44 @@ jobs:
           for chave in "$PORTARIA_CHAVE_MESTRA" "$PORTARIA_KEK" "$PORTARIA_HMAC_CPF_KEY"; do
             if grep -rqF -- "$chave" "$d"; then falha "uma chave apareceu num log da API ou da CLI"; fi
           done
+
+      - name: Smoke da CLI provisionar-condominio (docs/deploy.md seção 16)
+        working-directory: apps/api
+        run: |
+          falha() { echo "::error::$*"; exit 1; }
+          export DATABASE_URL_PROVISIONADOR="postgres://app_provisionador:${APP_PROVISIONADOR_PASSWORD}@${PGHOST}:5432/postgres"
+          export MIGRATOR_URL_BASE="postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@${PGHOST}:5432"
+          export DATABASE_URL="postgres://app_rw:${APP_RW_PASSWORD}@${PGHOST}:5432/portaria"
+          export DATABASE_URL_PLATAFORMA="postgres://app_plataforma:${APP_PLATAFORMA_PASSWORD}@${PGHOST}:5432/plataforma"
+          export PORTARIA_CHAVE_MESTRA_VERSAO=1
+          d="$RUNNER_TEMP/prov"; mkdir -p "$d"
+          cat > "$d/entrada.json" <<'JSON'
+          { "codigo": "ci-novo", "nome": "Condomínio de CI", "cidade": "Cidade Fictícia", "uf": "SP",
+            "estrutura": { "agrupamento": "Torre", "blocos": ["1", "2"], "andares": [0, 1], "finais": [1, 2], "ausentes": [] },
+            "sindico": { "nome": "Síndico Fictício", "login": "sindico.ci" } }
+          JSON
+          node dist/cli/provisionar-condominio.js < "$d/entrada.json" >"$d/out1.json" 2>"$d/err1.txt" || { cat "$d/err1.txt"; falha "provisionamento (1a execução) falhou"; }
+          node dist/cli/provisionar-condominio.js < "$d/entrada.json" >"$d/out2.json" 2>"$d/err2.txt" || { cat "$d/err2.txt"; falha "provisionamento (2a execução) falhou"; }
+          node -e '
+            const fs = require("fs"); const d = process.argv[1];
+            const a = JSON.parse(fs.readFileSync(d + "/out1.json", "utf8")), b = JSON.parse(fs.readFileSync(d + "/out2.json", "utf8"));
+            if (a.situacao !== "provisionado" || b.situacao !== "ja_provisionado") throw new Error("situações " + a.situacao + "/" + b.situacao);
+            if (a.unidades !== 8 || !/^portaria_[a-z0-9]{8}$/.test(a.banco) || a.banco !== b.banco) throw new Error("banco/unidades inesperados");
+            if ("sindico" in a || "sindico" in b) throw new Error("a senha do síndico apareceu no stdout");
+            fs.writeFileSync(d + "/banco", a.banco);
+          ' "$d" || falha "saída da provisionar-condominio fora do contrato"
+          grep -q "SENHA TEMPORÁRIA DO SÍNDICO" "$d/err1.txt" || falha "a 1a execução não mostrou a senha temporária"
+          if grep -q "SENHA TEMPORÁRIA" "$d/err2.txt"; then falha "a 2a execução gerou senha de novo"; fi
+          for chave in "$PORTARIA_CHAVE_MESTRA" "$APP_PROVISIONADOR_PASSWORD" "$APP_MIGRATOR_PASSWORD" "$APP_RW_PASSWORD" "$APP_PLATAFORMA_PASSWORD"; do
+            if grep -rqF -- "$chave" "$d"; then falha "segredo apareceu na saída da CLI"; fi
+          done
+          banco="$(cat "$d/banco")"
+          export PGPASSWORD="$POSTGRES_PASSWORD"
+          m="$(psql -U postgres -d postgres -tAc "select format('%s|%s|%s|%s|%s', pg_get_userbyid(datdba), has_database_privilege('app_rw','$banco','CONNECT'), has_database_privilege('app_plataforma','$banco','CONNECT'), has_database_privilege('app_provisionador','$banco','CONNECT'), has_database_privilege('public','$banco','CONNECT')) from pg_database where datname = '$banco'")"
+          [ "$m" = "app_migrator|true|false|false|false" ] || falha "dono/CONNECT do banco novo fora do padrão: $m"
+          st="$(psql -U postgres -d plataforma -tAc "select status from condominio where codigo = 'ci-novo'")"
+          [ "$st" = "ativo" ] || falha "condomínio novo não ficou ativo ($st)"
+          # O laço de migração do deploy passa a incluir o banco novo (ativo).
+          node scripts/migrar-bancos.mjs > "$d/laco.txt" 2>&1 || { cat "$d/laco.txt"; falha "migrar-bancos.mjs falhou com o condomínio novo"; }
+          grep -q "migrar-bancos: $banco" "$d/laco.txt" || falha "o laço de migração não incluiu $banco"
+          rm -rf "$d"

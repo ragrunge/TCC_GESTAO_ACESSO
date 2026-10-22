@@ -21,6 +21,8 @@ COPY packages/domain/tsconfig.json packages/domain/tsconfig.build.json packages/
 COPY packages/domain/src packages/domain/src
 COPY apps/api/tsconfig.json apps/api/tsconfig.build.json apps/api/
 COPY apps/api/src apps/api/src
+# Migrações do condomínio: a CLI provisionar-condominio migra o banco novo (dist/cli -> ../../drizzle).
+COPY apps/api/drizzle apps/api/drizzle
 RUN npm run build -w apps/api
 
 # Desenvolvimento com reload: parte do `build` (dependências de dev, domain compilado, dist/package.json CommonJS já
@@ -64,6 +66,9 @@ COPY --from=build --chown=node:node /app/packages/domain/package.json /app/packa
 COPY --from=build --chown=node:node /app/packages/domain/dist /app/packages/domain/dist
 COPY --from=build --chown=node:node /app/apps/api/dist ./dist
 COPY --chown=node:node apps/api/package.json ./
+# Migrações do banco de condomínio (só SQL e meta/), lidas pela CLI provisionar-condominio. A API não as aplica: o
+# serviço `migrate` continua sendo quem migra no deploy.
+COPY --chown=node:node apps/api/drizzle ./drizzle
 # Pasta dos anexos cifrados (volume `documentos` do compose): criada aqui com dono node, para o volume novo herdar.
 # Idem para o arquivo append-only da âncora do selo (volume `ancoras`).
 RUN mkdir -p /var/lib/portaria/documentos /var/lib/portaria/ancoras \

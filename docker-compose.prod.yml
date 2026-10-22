@@ -133,6 +133,38 @@ services:
     restart: "no"
     logging: *logging
 
+  # Provisionamento de condomínio novo (SAAS-10; docs/deploy.md, seção 16), só com --profile provisionar. Entrada JSON
+  # pelo stdin (-T), nunca por argumento. Quatro roles, cada um no seu passo: app_provisionador (CREATE DATABASE, banco
+  # `postgres`), app_migrator (migrações do banco novo), app_rw (dados) e app_plataforma (cadastro e chaves). Vazias, a
+  # CLI recusa com o nome da variável que falta. 192m: um hash argon2 de 64 MiB para a senha do síndico.
+  provisionar-cli:
+    profiles: [provisionar]
+    image: tcc-portaria-api:${API_TAG:-atual}
+    pull_policy: never
+    command: ["node", "dist/cli/provisionar-condominio.js"]
+    environment:
+      NODE_ENV: production
+      TZ: UTC
+      DATABASE_URL_PROVISIONADOR: postgres://app_provisionador:${APP_PROVISIONADOR_PASSWORD:-}@db:5432/postgres
+      MIGRATOR_URL_BASE: postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@db:5432
+      DATABASE_URL: postgres://app_rw:${APP_RW_PASSWORD}@db:5432/portaria
+      DATABASE_URL_PLATAFORMA: postgres://app_plataforma:${APP_PLATAFORMA_PASSWORD:-}@db:5432/plataforma
+      PORTARIA_CHAVE_MESTRA: ${PORTARIA_CHAVE_MESTRA:-}
+      PORTARIA_CHAVE_MESTRA_VERSAO: ${PORTARIA_CHAVE_MESTRA_VERSAO:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [banco]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 192m
+    restart: "no"
+    # Sem log em disco: o stderr leva a senha temporária do síndico (mostrada uma vez no terminal). A saída anexada ao
+    # `docker compose run` continua aparecendo; só o `docker logs` (arquivo json) deixa de guardar.
+    logging:
+      driver: none
+
   api:
     build:
       context: .

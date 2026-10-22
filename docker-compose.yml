@@ -17,6 +17,8 @@ services:
       APP_RW_PASSWORD: ${APP_RW_PASSWORD:?defina APP_RW_PASSWORD no .env}
       # Banco plataforma do SaaS (db/bootstrap/10_plataforma.sh). Vazia: o role nasce sem LOGIN.
       APP_PLATAFORMA_PASSWORD: ${APP_PLATAFORMA_PASSWORD:-}
+      # CLI provisionar-condominio (db/bootstrap/10_plataforma.sh). Vazia: o role nasce sem LOGIN.
+      APP_PROVISIONADOR_PASSWORD: ${APP_PROVISIONADOR_PASSWORD:-}
       TZ: UTC
       PGTZ: UTC
     ports:
@@ -70,6 +72,28 @@ services:
       db:
         condition: service_healthy
     restart: "no"
+
+  # Provisionamento de condomínio novo (docs/deploy.md, seção 16): API_TARGET=runtime ou dev (as duas têm dist/ e drizzle/).
+  #   docker compose --profile provisionar run --rm -T provisionar-cli < condominio.json
+  provisionar-cli:
+    profiles: [provisionar]
+    image: portaria-api:${API_TARGET:-dev}
+    pull_policy: never
+    command: ["node", "dist/cli/provisionar-condominio.js"]
+    environment:
+      DATABASE_URL_PROVISIONADOR: postgres://app_provisionador:${APP_PROVISIONADOR_PASSWORD:-}@db:5432/postgres
+      MIGRATOR_URL_BASE: postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@db:5432
+      DATABASE_URL: postgres://app_rw:${APP_RW_PASSWORD}@db:5432/portaria
+      DATABASE_URL_PLATAFORMA: postgres://app_plataforma:${APP_PLATAFORMA_PASSWORD:-}@db:5432/plataforma
+      PORTARIA_CHAVE_MESTRA: ${PORTARIA_CHAVE_MESTRA:-}
+      PORTARIA_CHAVE_MESTRA_VERSAO: ${PORTARIA_CHAVE_MESTRA_VERSAO:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    # O stderr leva a senha temporária do síndico: sem arquivo de log (a saída do `run` continua no terminal).
+    logging:
+      driver: none
 
   api:
     build:
