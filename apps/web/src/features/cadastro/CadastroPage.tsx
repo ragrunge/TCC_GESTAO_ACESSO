@@ -27,6 +27,8 @@ export function CadastroPage() {
   const invalidar = useInvalidar();
   const [q, setQ] = useState('');
   const [cat, setCat] = useState<'todas' | CategoriaPessoa>('todas');
+  // RF-02: desativados ficam fora por padrão (como na portaria); aqui dá para vê-los e reativá-los pela ficha.
+  const [desativados, setDesativados] = useState(false);
   const [ficha, setFicha] = useState<string | null>(null);
   const [novo, setNovo] = useState(false);
   const termo = useDebounce(q.trim(), 200);
@@ -34,8 +36,8 @@ export function CadastroPage() {
 
   // Sem texto: a lista inteira, paginada no servidor (categoria filtra lá).
   const lista = useInfiniteQuery({
-    queryKey: CHAVES.pessoasLista(cat),
-    queryFn: ({ pageParam }) => api.pessoas.listarPagina({ categoria: cat === 'todas' ? undefined : cat, cursor: pageParam, limite: POR_PAGINA }),
+    queryKey: CHAVES.pessoasLista(cat, desativados),
+    queryFn: ({ pageParam }) => api.pessoas.listarPagina({ categoria: cat === 'todas' ? undefined : cat, cursor: pageParam, limite: POR_PAGINA, incluirDesativadas: desativados }),
     initialPageParam: null as string | null,
     getNextPageParam: (p) => (p.temMais && p.cursor ? p.cursor : undefined),
     enabled: !buscando,
@@ -43,8 +45,8 @@ export function CadastroPage() {
   });
   // Com texto: a mesma busca da portaria (nome, CPF, unidade, placa); a categoria filtra o resultado.
   const busca = useQuery({
-    queryKey: CHAVES.pessoasBusca(termo),
-    queryFn: () => api.pessoas.buscar(termo, { limite: LIMITE_BUSCA }),
+    queryKey: CHAVES.pessoasBusca(termo, desativados),
+    queryFn: () => api.pessoas.buscar(termo, { limite: LIMITE_BUSCA, incluirDesativadas: desativados }),
     enabled: buscando,
     staleTime: 0,
     gcTime: 30_000,
@@ -61,7 +63,8 @@ export function CadastroPage() {
     return {
       tipo: v ? ROTULO_VINCULO[v.tipo] : ROTULO_CATEGORIA[p.categoria],
       unidade: v?.unidadeId ?? p.unidadesVinculadas[0] ?? null,
-      status: v ? <SeloVinculo status={v.status} /> : <Badge tom="neutro">{ROTULO_CATEGORIA[p.categoria]}</Badge>,
+      status: p.desativadaEm ? <Badge tom="ambar">Desativado</Badge>
+        : v ? <SeloVinculo status={v.status} /> : <Badge tom="neutro">{ROTULO_CATEGORIA[p.categoria]}</Badge>,
     };
   }
 
@@ -78,6 +81,9 @@ export function CadastroPage() {
         <Field label="Tipo"><select className="input" value={cat} onChange={(e) => setCat(e.target.value as typeof cat)}>
           <option value="todas">Todos</option>{(Object.keys(ROTULO_CATEGORIA) as CategoriaPessoa[]).map((c) => <option key={c} value={c}>{ROTULO_CATEGORIA[c]}</option>)}
         </select></Field>
+        <label className="flex min-h-[44px] cursor-pointer items-center gap-2 pb-1 text-[14px]">
+          <input type="checkbox" checked={desativados} onChange={(e) => setDesativados(e.target.checked)} />Mostrar desativados
+        </label>
         <p className="pb-2.5 text-[14px] text-[#56616B]" aria-live="polite">{contagem}</p>
       </div>
       {erro && <Alert tom="vermelho" role="alert">{mensagemErro(erro)}</Alert>}
@@ -100,7 +106,8 @@ export function CadastroPage() {
         <Button className="self-start" carregando={lista.isFetchingNextPage} onClick={() => void lista.fetchNextPage()}>Carregar mais</Button>
       )}
       {ficha && <FichaPessoaModal id={ficha} onClose={() => setFicha(null)} />}
-      {novo && <NovaPessoaModal onClose={() => setNovo(false)} onFeito={(p) => { setNovo(false); avisar({ texto: `${p.nome} cadastrado(a).` }); void invalidar(APOS_PESSOA); }} />}
+      {novo && <NovaPessoaModal onClose={() => setNovo(false)} onFeito={(p) => { setNovo(false); avisar({ texto: `${p.nome} cadastrado(a).` }); void invalidar(APOS_PESSOA); }}
+        onExistente={(pid) => { setNovo(false); setFicha(pid); void invalidar(APOS_PESSOA); }} />}
     </div>
   );
 }

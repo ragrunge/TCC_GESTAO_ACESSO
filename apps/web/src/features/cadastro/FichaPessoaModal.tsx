@@ -6,6 +6,7 @@ import { useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
 import { Badge, SeloVinculo } from '../../components/Badge';
 import { Button } from '../../components/Button';
+import { ConfirmarModal } from '../../components/ConfirmarModal';
 import { Field } from '../../components/Field';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
@@ -13,14 +14,17 @@ import { Avatar } from '../../components/UnitTag';
 import { ROTULO_CATEGORIA, ROTULO_VINCULO, type Pessoa } from '@portaria/domain/types';
 import { formatarTelefone } from '@portaria/domain/cpf';
 import { agora, fmtData, fmtDataHora } from '@portaria/domain/time';
+import { MIN_JUSTIFICATIVA, justificativaValida } from '@portaria/domain/rules';
 import { mensagemErro } from '../../app/useAsync';
-import { APOS_LGPD, APOS_PESSOA, CHAVES, useInvalidar } from '../../app/consultas';
+import { APOS_DESATIVACAO, APOS_LGPD, APOS_PESSOA, CHAVES, useInvalidar } from '../../app/consultas';
 import { chipDoEvento, quandoCurto, textoAutorizacao } from '../common/evento';
 import { baixarArquivo } from '../historico/download';
 
 /**
  * Ficha da pessoa. Para síndico e administração: correção do cadastro (LGPD art. 18 e RN-09), exportação dos dados do
- * titular (spec 9.3). Para o síndico: anonimização a pedido (art. 18, VI). A API decide; a UI só oculta.
+ * titular (spec 9.3) e desativar/reativar o cadastro (RF-02: não exclui; a API recusa com a pessoa dentro, com vínculo
+ * válido ou funcionário ativo, e revoga junto as autorizações prévias vigentes). Para o síndico: anonimização a pedido
+ * (art. 18, VI). A API decide; a UI só oculta.
  */
 export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => void }) {
   const api = useApi();
@@ -28,6 +32,9 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
   const podeEditar = useCan('pessoa.editar');
   const podeExportar = useCan('lgpd.exportar');
   const podeAnonimizar = useCan('lgpd.anonimizar');
+  const podeDesativar = useCan('pessoa.desativar');
+  const [desativando, setDesativando] = useState(false);
+  const [motivo, setMotivo] = useState('');
   const invalidar = useInvalidar();
   const ficha = useQuery({ queryKey: CHAVES.ficha(id), queryFn: () => api.pessoas.ficha(id), staleTime: 0 });
   const [editando, setEditando] = useState(false);
@@ -36,6 +43,7 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
   const [erro, setErro] = useState('');
   const f = ficha.data;
   const anonimizada = !!f?.pessoa.anonimizadaEm;
+  const desativada = !!f?.pessoa.desativadaEm;
 
   async function exportar() {
     try {
@@ -55,10 +63,39 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
     } catch (e) { setErro(mensagemErro(e)); }
   }
 
+  async function desativar() {
+    const r = await api.pessoas.desativar(id, motivo);
+    setDesativando(false); setMotivo('');
+    avisar({ tom: 'ambar', titulo: 'Cadastro desativado', texto: `${r.nome} não aparece mais nas buscas e não pode entrar.${r.autorizacoesRevogadas ? ` ${r.autorizacoesRevogadas} autorização(ões) prévia(s) revogada(s).` : ''} O histórico continua.` });
+    void invalidar(APOS_DESATIVACAO);
+  }
+  async function reativar() {
+    try {
+      const r = await api.pessoas.reativar(id);
+      avisar({ titulo: 'Cadastro reativado', texto: `${r.nome} volta a aparecer nas buscas. Autorizações revogadas não voltam.` });
+      void invalidar(APOS_DESATIVACAO);
+    } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
+  }
+
+  // Confirmação no lugar da ficha (um modal só: dois empilhados quebrariam o foco); Cancelar volta para a ficha.
+  if (desativando && f) {
+    return (
+      <ConfirmarModal titulo="Desativar cadastro" rotulo="Desativar cadastro" desabilitado={!justificativaValida(motivo)}
+        onConfirmar={desativar} onClose={() => { setDesativando(false); setMotivo(''); }}>
+        <p>Desativar o cadastro de <strong>{f.pessoa.nome}</strong>? Não é exclusão: o histórico continua, a pessoa some das buscas e não pode entrar até ser reativada. Autorizações prévias vigentes para ela são revogadas.</p>
+        <Field label={`Motivo (obrigatório, mínimo ${MIN_JUSTIFICATIVA} caracteres)`}>
+          <textarea className="input" rows={2} autoFocus value={motivo} onChange={(e) => setMotivo(e.target.value)} />
+        </Field>
+      </ConfirmarModal>
+    );
+  }
+
   return (
     <Modal titulo="Ficha da pessoa" largura={720} onClose={onClose} rodape={<>
       {f && !anonimizada && podeEditar && !editando && <Button onClick={() => setEditando(true)}>Editar cadastro</Button>}
       {f && podeExportar && <Button onClick={() => void exportar()}>Exportar dados (LGPD)</Button>}
+      {f && !anonimizada && podeDesativar && !desativada && <Button variante="perigo" onClick={() => setDesativando(true)}>Desativar cadastro</Button>}
+      {f && !anonimizada && podeDesativar && desativada && <Button onClick={() => void reativar()}>Reativar cadastro</Button>}
       {f && !anonimizada && podeAnonimizar && !anonimizando && <Button variante="perigo" onClick={() => { setAnonimizando(true); setErro(''); }}>Anonimizar…</Button>}
       <Button className="ml-auto" data-autofocus onClick={onClose}>Fechar</Button>
     </>}>
@@ -71,8 +108,14 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
               <p className="text-[18px] font-semibold">{f.pessoa.nome}</p>
               <p className="text-[14px] text-[#33424B]"><span className="font-mono">{f.pessoa.documentoMascarado}</span>{f.pessoa.telefone ? <> · {formatarTelefone(f.pessoa.telefone)}</> : f.pessoa.telefoneMascarado ? <> · {f.pessoa.telefoneMascarado}</> : null}{f.pessoa.empresa && <> · {f.pessoa.empresa}{f.pessoa.servico ? ` (${f.pessoa.servico})` : ''}</>}</p>
             </div>
+            {desativada && <Badge tom="ambar">Desativado</Badge>}
             <Badge tom="neutro">{ROTULO_CATEGORIA[f.pessoa.categoria]}</Badge>
           </div>
+          {desativada && !anonimizada && (
+            <Alert tom="ambar" role="status">
+              Cadastro desativado em {fmtDataHora(f.pessoa.desativadaEm!)}{f.pessoa.desativacaoMotivo ? <>: {f.pessoa.desativacaoMotivo}</> : null}. Não aparece nas buscas e não pode entrar; o histórico continua.
+            </Alert>
+          )}
           {anonimizada && <Alert tom="neutro" role="status">Cadastro anonimizado em {fmtDataHora(f.pessoa.anonimizadaEm!)}. Os eventos de acesso continuam na trilha só pelo id, até o fim do prazo de retenção.</Alert>}
           {resultado && (
             <Alert tom="ambar" titulo="O que fica retido" role="status">

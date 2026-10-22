@@ -278,6 +278,27 @@ describe('adaptador HTTP: catálogo, unidades, busca e contagem', () => {
     expect(corpo(adapter.mock.calls[1]![0])).toEqual({ q: '52998224725', limite: 9, semMoradores: true });
   });
 
+  it('pessoas: desativar (motivo no corpo), reativar, e "mostrar desativados" na busca e na lista', async () => {
+    const p = { id: 'p1', nome: 'Bruno', documentoTipo: 'cpf', documentoMascarado: '***.148.503-**', categoria: 'visitante', desativadaEm: 1, criadoEm: 0 };
+    const { api, adapter } = montar((c) => {
+      if (c.url === '/pessoas/busca') return { status: 200, data: { data: { pessoas: [], temMais: false } } };
+      if (c.url === '/pessoas') return { status: 200, data: { data: [], pagination: { cursor: null, hasNextPage: false } } };
+      if (c.url?.endsWith('/desativar')) return { status: 200, data: { data: { ...p, autorizacoesRevogadas: 2 } } };
+      return { status: 200, data: { data: { ...p, desativadaEm: null } } };
+    });
+    expect((await api.pessoas.desativar('p1', 'Não frequenta mais o condomínio')).autorizacoesRevogadas).toBe(2);
+    expect((await api.pessoas.reativar('p1')).desativadaEm).toBeNull();
+    await api.pessoas.buscar('Bruno', { incluirDesativadas: true });
+    await api.pessoas.buscar('Bruno');
+    await api.pessoas.listarPagina({ incluirDesativadas: true });
+    const cs = adapter.mock.calls.map((c) => c[0]);
+    expect(cs.map((c) => `${c.method} ${c.url}`)).toEqual(['post /pessoas/p1/desativar', 'post /pessoas/p1/reativar', 'post /pessoas/busca', 'post /pessoas/busca', 'get /pessoas']);
+    expect(corpo(cs[0]!)).toEqual({ motivo: 'Não frequenta mais o condomínio' });
+    expect(corpo(cs[2]!)).toMatchObject({ incluirDesativadas: true });
+    expect(corpo(cs[3]!)).not.toHaveProperty('incluirDesativadas');
+    expect(cs[4]!.params).toMatchObject({ incluirDesativadas: 'true' });
+  });
+
   it('contagem de vínculos: GET /vinculos/contagem?status=pendente devolve o número', async () => {
     const { api, adapter } = montar(() => ({ status: 200, data: { data: { status: 'pendente', total: 3 } } }));
     expect(await api.vinculos.contar('pendente')).toBe(3);

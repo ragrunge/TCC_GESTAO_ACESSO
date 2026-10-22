@@ -57,7 +57,7 @@ export function PainelPage() {
   const hh = partes(agora).hh;
   const turnoTxt = hh >= 6 && hh < 18 ? 'Turno diurno · 06:00 às 18:00' : 'Turno noturno · 18:00 às 06:00';
   const cartoes = [
-    { rotulo: 'Pessoas no condomínio', valor: r?.pessoasDentro, sub: 'Ver lista →', para: '/pessoas' },
+    { rotulo: 'Presentes agora', valor: r?.pessoasDentro, sub: 'Ver lista →', para: '/pessoas' },
     { rotulo: 'Encomendas aguardando', valor: r?.encomendasPendentes, sub: (() => { const n = encs.data?.atrasadas ?? 0; return n > 0 ? `${n} há mais de ${encs.data!.diasAtraso} dias →` : 'Ver encomendas →'; })(), para: '/encomendas' },
     { rotulo: 'Ocorrências abertas', valor: r?.ocorrenciasAbertas, sub: 'Ver ocorrências →', para: '/ocorrencias' },
   ];

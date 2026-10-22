@@ -42,7 +42,7 @@ export function PessoasDentroPage() {
   const dados = lista.data ?? [];
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader titulo="Pessoas no condomínio"
+      <PageHeader titulo="Presentes agora"
         descricao={`${dados.length} ${dados.length === 1 ? 'pessoa entrou' : 'pessoas entraram'} e ainda não ${dados.length === 1 ? 'teve' : 'tiveram'} a saída registrada.`}
         acoes={podeRegistrar && <Link to="/entrada" className="inline-flex h-11 items-center gap-[10px] rounded-lg bg-[#0B5563] max-lg:h-[44px] px-[18px] font-semibold !text-white hover:bg-[#08434E]">Nova entrada <kbd className="rounded-[5px] border border-white/50 px-[7px] py-0.5 font-mono text-[13px]">F2</kbd></Link>} />
       {lista.error && <Alert tom="vermelho" role="alert">{mensagemErro(lista.error)}</Alert>}

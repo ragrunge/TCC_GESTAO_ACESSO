@@ -332,7 +332,7 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
     // Pessoas. Texto livre (pode ser CPF) só no CORPO de POST /pessoas/busca, nunca na URL.
     pessoas: {
       async buscar(q, o) {
-        const r = dados<{ pessoas: PessoaBusca[] }>((await http.post('/pessoas/busca', { q, limite: o?.limite ?? 8, semMoradores: !!o?.semMoradores })).data);
+        const r = dados<{ pessoas: PessoaBusca[] }>((await http.post('/pessoas/busca', { q, limite: o?.limite ?? 8, semMoradores: !!o?.semMoradores, ...(o?.incluirDesativadas ? { incluirDesativadas: true } : {}) })).data);
         if (!r || !Array.isArray(r.pessoas)) throw respostaInvalida();
         return r.pessoas.map(pessoaDe);
       },
@@ -340,6 +340,7 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
       async listarPagina(f = {}) {
         const params: Record<string, string | number> = { limite: f.limite ?? 50 };
         if (f.categoria) params.categoria = f.categoria;
+        if (f.incluirDesativadas) params.incluirDesativadas = 'true';
         if (f.cursor) params.cursor = f.cursor;
         const p = paginaDe<PessoaLista>((await http.get('/pessoas', { params })).data);
         return { ...p, itens: p.itens.map(pessoaDe) };
@@ -368,6 +369,12 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
       },
       async editar({ id: pid, ...resto }) {
         return pessoaDe(dados<PessoaApi>((await http.patch(`/pessoas/${id(pid)}`, semIndefinidos(resto))).data));
+      },
+      async desativar(pid, motivo) {
+        return pessoaDe(dados<PessoaApi & { autorizacoesRevogadas: number }>((await http.post(`/pessoas/${id(pid)}/desativar`, { motivo })).data));
+      },
+      async reativar(pid) {
+        return pessoaDe(dados<PessoaApi>((await http.post(`/pessoas/${id(pid)}/reativar`)).data));
       },
       // Tela de entrada: só a escala da pessoa sendo registrada (a lista de funcionários não é do porteiro).
       async funcionario(pid) {

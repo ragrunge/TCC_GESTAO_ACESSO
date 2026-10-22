@@ -18,9 +18,9 @@ export const CHAVES = {
   autorizadores: (unidadeId: string) => ['vinculos', 'autorizadores', unidadeId] as const,
   /** Prefixo de tudo que é de pessoa: lista do Cadastro, busca da tela e ficha. */
   pessoas: ['pessoas'] as const,
-  pessoasLista: (categoria: string) => ['pessoas', 'lista', categoria] as const,
+  pessoasLista: (categoria: string, desativadas = false) => ['pessoas', 'lista', categoria, desativadas] as const,
   /** O termo pode ser CPF: a chave fica só na memória (gcTime curto, nada de persistir o cache). */
-  pessoasBusca: (q: string) => ['pessoas', 'busca', q] as const,
+  pessoasBusca: (q: string, desativadas = false) => ['pessoas', 'busca', q, desativadas] as const,
   ficha: (id: string) => ['pessoas', 'ficha', id] as const,
   funcionarios: ['funcionarios'] as const,
   /** Prefixo da busca do topo. */
@@ -75,6 +75,8 @@ export const APOS_EVENTO = [CHAVES.eventos, CHAVES.turno, CHAVES.unidades, CHAVE
  */
 export const APOS_LGPD = [...APOS_PESSOA, CHAVES.retencao, CHAVES.eventos, CHAVES.integridade, CHAVES.selos, ['auditoria', 'alteracoes']] as const;
 export const APOS_AUTORIZACAO = [...APOS_VINCULO, CHAVES.turno, CHAVES.autorizacoes, CHAVES.restricoes] as const;
+/** Desativar/reativar pessoa (RF-02): as escritas de pessoa e as autorizações prévias revogadas junto (unidade, hoje, turno). */
+export const APOS_DESATIVACAO = [...APOS_PESSOA, CHAVES.unidades, CHAVES.autorizacoes, CHAVES.turno, ['auditoria', 'alteracoes']] as const;
 
 /** Receber, entregar ou autorizar retirada: as filas, as contagens, o painel (turno) e a trilha de alterações. */
 export const APOS_ENCOMENDA = [CHAVES.encomendas, CHAVES.turno, ['auditoria', 'alteracoes']] as const;

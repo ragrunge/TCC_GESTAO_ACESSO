@@ -326,7 +326,7 @@ export interface FichaPessoa { pessoa: Pessoa; funcionario?: Funcionario; vincul
 export interface PessoaLista extends PessoaBusca {
   vinculoPrincipal: { id: string; unidadeId: string; unidadeCodigo: string; tipo: TipoVinculo; status: StatusVinculo } | null;
 }
-export interface FiltroPessoas { categoria?: CategoriaPessoa; cursor?: string | null; limite?: number }
+export interface FiltroPessoas { categoria?: CategoriaPessoa; cursor?: string | null; limite?: number; incluirDesativadas?: boolean }
 /** recentes: solicitação mais nova primeiro; decisao: decisão/encerramento mais novo; prazo: prazo de regularização (vencidos primeiro). */
 export type OrdemVinculos = 'recentes' | 'decisao' | 'prazo';
 export interface FiltroVinculos { status?: StatusVinculo[]; unidadeId?: string; pessoaId?: string; ordem?: OrdemVinculos; cursor?: string | null; limite?: number }
@@ -379,7 +379,8 @@ export interface Api {
   busca: { global(q: string): Promise<ResultadoBuscaGlobal> };
   pessoas: {
     /** `limite`: máximo de resultados (padrão 8). A portaria pede 9 para saber se há mais que 8. */
-    buscar(q: string, opts?: { semMoradores?: boolean; limite?: number }): Promise<PessoaBusca[]>;
+    /** `incluirDesativadas`: só a tela Cadastro ("mostrar desativados"); a portaria e os seletores nunca. */
+    buscar(q: string, opts?: { semMoradores?: boolean; limite?: number; incluirDesativadas?: boolean }): Promise<PessoaBusca[]>;
     listar(): Promise<PessoaBusca[]>;
     /** Uma página (cursor), em ordem alfabética; `categoria` filtra no servidor. Texto livre vai por `buscar` (pode ser CPF). */
     listarPagina(f?: FiltroPessoas): Promise<Pagina<PessoaLista>>;
@@ -388,6 +389,9 @@ export interface Api {
     /** pessoa.editar (SI/AD): completa ou corrige o cadastro, com antes/depois na trilha. */
     editar(i: EditarPessoaInput): Promise<Pessoa>;
     funcionario(pessoaId: string): Promise<Funcionario | null>;
+    /** RF-02, pessoa.desativar (SI/AD): não exclui; revoga junto as autorizações prévias vigentes. */
+    desativar(id: string, motivo: string): Promise<Pessoa & { autorizacoesRevogadas: number }>;
+    reativar(id: string): Promise<Pessoa>;
   };
   catalogo: { obter(): Promise<Catalogo> };
   unidades: {
