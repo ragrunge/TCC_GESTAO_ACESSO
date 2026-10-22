@@ -107,7 +107,7 @@ export function CadastroPage() {
 
 function NovaPessoaModal({ onClose, onFeito }: { onClose: () => void; onFeito: (nome: string) => void }) {
   const api = useApi();
-  const [f, setF] = useState<NovaPessoaInput>({ nome: '', documento: '', telefone: '', categoria: 'morador', semCpf: false });
+  const [f, setF] = useState<NovaPessoaInput>({ nome: '', documento: '', telefone: '', categoria: 'morador', semCpf: false, menorIdade: false });
   const [erro, setErro] = useState('');
   const criar = useMutation({ mutationFn: (i: NovaPessoaInput) => api.pessoas.criar(i) });
   async function salvar(e: FormEvent) {
@@ -120,12 +120,18 @@ function NovaPessoaModal({ onClose, onFeito }: { onClose: () => void; onFeito: (
       rodape={<><Button type="submit" form="f-pessoa" variante="primario" grande className="flex-1">Cadastrar</Button><Button grande onClick={onClose}>Cancelar</Button></>}>
       <form id="f-pessoa" onSubmit={salvar} className="grid grid-cols-1 gap-[14px] sm:grid-cols-2">
         <Field label="Nome completo" className="sm:col-span-2"><input data-autofocus className="input" value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} /></Field>
-        <Field label="CPF" dica="Só o CPF é aceito. Fica guardado mascarado, com um hash para busca.">
-          <input className="input font-mono" inputMode="numeric" placeholder="000.000.000-00" disabled={f.semCpf} required={!f.semCpf} value={f.documento ?? ''} onChange={(e) => setF({ ...f, documento: e.target.value })} />
+        <Field label={f.menorIdade ? 'CPF (opcional para menor)' : 'CPF'} dica="Só o CPF é aceito. Fica guardado mascarado, com um hash para busca.">
+          <input className="input font-mono" inputMode="numeric" placeholder="000.000.000-00" disabled={f.semCpf} required={!f.semCpf && !f.menorIdade} value={f.documento ?? ''} onChange={(e) => setF({ ...f, documento: e.target.value })} />
         </Field>
-        <Field label="Telefone (obrigatório)"><input className="input" inputMode="tel" required placeholder="(11) 9____-____" value={f.telefone} onChange={(e) => setF({ ...f, telefone: e.target.value })} /></Field>
-        <Field label="Tipo"><select className="input" value={f.categoria} onChange={(e) => setF({ ...f, categoria: e.target.value as CategoriaPessoa, semCpf: e.target.value === 'morador' ? false : f.semCpf })}><option value="morador">Morador</option><option value="visitante">Visitante</option><option value="prestador">Prestador</option></select></Field>
+        <Field label={f.menorIdade ? 'Telefone (opcional para menor)' : 'Telefone (obrigatório)'}><input className="input" inputMode="tel" required={!f.menorIdade} placeholder="(11) 9____-____" value={f.telefone} onChange={(e) => setF({ ...f, telefone: e.target.value })} /></Field>
+        <Field label="Tipo"><select className="input" value={f.categoria} onChange={(e) => setF({ ...f, categoria: e.target.value as CategoriaPessoa, semCpf: e.target.value === 'morador' ? false : f.semCpf, menorIdade: e.target.value === 'morador' ? f.menorIdade : false })}><option value="morador">Morador</option><option value="visitante">Visitante</option><option value="prestador">Prestador</option></select></Field>
         {f.categoria === 'prestador' && <><Field label="Empresa"><input className="input" value={f.empresa ?? ''} onChange={(e) => setF({ ...f, empresa: e.target.value })} /></Field><Field label="Serviço"><input className="input" value={f.servico ?? ''} onChange={(e) => setF({ ...f, servico: e.target.value })} /></Field></>}
+        {f.categoria === 'morador' && (
+          <label className="sm:col-span-2 flex cursor-pointer items-start gap-3 rounded-lg border border-[#B9C3CA] p-3">
+            <input type="checkbox" className="mt-1" checked={!!f.menorIdade} onChange={(e) => setF({ ...f, menorIdade: e.target.checked })} />
+            <span><span className="font-medium">Dependente menor de idade</span><span className="block text-[13px] text-[#56616B]">Documento e telefone ficam opcionais (LGPD, art. 14). Vale para o vínculo de dependente; proprietário e inquilino continuam exigindo os dois.</span></span>
+          </label>
+        )}
         {f.categoria !== 'morador' && (
           <label className="sm:col-span-2 flex cursor-pointer items-start gap-3 rounded-lg border border-[#B9C3CA] p-3">
             <input type="checkbox" className="mt-1" checked={!!f.semCpf} onChange={(e) => setF({ ...f, semCpf: e.target.checked, documento: '' })} />

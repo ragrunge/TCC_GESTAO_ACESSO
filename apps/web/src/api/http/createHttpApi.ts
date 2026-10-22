@@ -358,10 +358,11 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
       },
       async criar(i) {
         const corpo = semIndefinidos({
-          nome: i.nome, telefone: i.telefone, categoria: i.categoria,
+          nome: i.nome, telefone: i.menorIdade && !i.telefone?.trim() ? undefined : i.telefone, categoria: i.categoria,
           documento: !i.semCpf && i.documento?.trim() ? i.documento : undefined,
           empresa: i.empresa?.trim() || undefined, servico: i.servico?.trim() || undefined,
           semCpf: i.semCpf ? true : undefined,
+          menorIdade: i.menorIdade ? true : undefined,
         });
         return pessoaDe(dados<PessoaApi>((await http.post('/pessoas', corpo)).data));
       },

@@ -30,17 +30,22 @@ export interface TrocarSenhaInput { senhaAtual: string; novaSenha: string }
 
 export interface NovaPessoaInput {
   nome: string;
-  /** CPF (só ele é aceito). Dispensado quando `semCpf`. */
+  /** CPF (só ele é aceito). Dispensado quando `semCpf` ou `menorIdade`. */
   documento?: string;
+  /** Obrigatório, salvo `menorIdade`. */
   telefone: string;
   categoria: CategoriaPessoa; empresa?: string; servico?: string;
   /** Exceção "sem CPF": a pessoa só entra por exceção do porteiro. */
   semCpf?: boolean;
+  /** Dependente menor de idade (LGPD art. 14): CPF e telefone opcionais; só morador. */
+  menorIdade?: boolean;
 }
 
 /** RN-09/art. 18: completar ou corrigir o cadastro. Campos ausentes não mudam. CPF informado tira a pessoa de "sem CPF". */
 export interface EditarPessoaInput {
   id: string; nome?: string; telefone?: string; documento?: string; empresa?: string | null; servico?: string | null;
+  /** false: deixou de ser menor (a API exige CPF e telefone). */
+  menorIdade?: boolean;
 }
 
 export interface NovoEventoInput {
@@ -243,6 +248,8 @@ export interface ResultadoBuscaGlobal {
 /** LGPD art. 18 (spec 9.3). */
 export interface ResultadoAnonimizacao {
   pessoaId: string; registrosRedigidos: number; retido: string[];
+  /** API real: o que a anonimização limpou (contagens) e se o nome foi procurado no texto livre. */
+  limpeza?: { textoLivre: 'substituido' | 'nome_curto' | 'homonimo'; eventosComTexto: number };
   /** API real: eventos da pessoa que ficam retidos (só pelo id) e até quando (início do dia BRT, ms). */
   eventosRetidos?: number; retidoAte?: number | null;
   /** API real: arquivos da pessoa (foto) eliminados do storage. */
@@ -264,6 +271,17 @@ export interface ResultadoRetencao {
   arquivosOrfaosRemovidos?: number;
   /** Registros de documento cujo arquivo não está no volume (só registrado em log; nada é alterado). */
   registrosSemArquivo?: number;
+  /** Veículos desativados há mais de 3 anos apagados. */
+  veiculosEliminados?: number;
+  /** Operadores desativados há mais de 3 anos com nome e login genéricos. */
+  operadoresAnonimizados?: number;
+  /** Sessões sem uso há mais de 90 dias com IP e navegador apagados. */
+  sessoesLimpas?: number;
+  /** Anonimizações refeitas depois de um restore (registro na plataforma). */
+  anonimizacoesReaplicadas?: number;
+  reaplicadasComVinculoValido?: string[];
+  /** 'falhou': o registro das anonimizações fora do banco do condomínio não respondeu (fica para a próxima execução). */
+  registroExterno?: 'ok' | 'falhou';
 }
 /** Última execução da retenção (agendador ou sob demanda). */
 export interface ExecucaoRetencao { em: number; porNome: string; resultado: ResultadoRetencao }

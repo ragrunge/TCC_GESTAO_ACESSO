@@ -25,6 +25,12 @@ function linhasDoResultado(r: ResultadoRetencao): [string, string][] {
   }
   if (r.arquivosOrfaosRemovidos !== undefined) l.push(['Arquivos órfãos removidos do armazenamento', String(r.arquivosOrfaosRemovidos)]);
   if (r.registrosSemArquivo) l.push(['Registros de documento sem arquivo (ver log)', String(r.registrosSemArquivo)]);
+  if (r.veiculosEliminados !== undefined) l.push(['Veículos desativados há mais de 3 anos apagados', String(r.veiculosEliminados)]);
+  if (r.operadoresAnonimizados !== undefined) l.push(['Operadores desativados há mais de 3 anos anonimizados', String(r.operadoresAnonimizados)]);
+  if (r.sessoesLimpas !== undefined) l.push(['Sessões com IP e navegador apagados (mais de 90 dias)', String(r.sessoesLimpas)]);
+  if (r.anonimizacoesReaplicadas) l.push(['Anonimizações refeitas depois de restore', String(r.anonimizacoesReaplicadas)]);
+  if (r.reaplicadasComVinculoValido?.length) l.push(['Refeitas com vínculo ainda válido (conferir)', String(r.reaplicadasComVinculoValido.length)]);
+  if (r.registroExterno === 'falhou') l.push(['Registro das anonimizações fora do banco', 'falhou (tenta de novo amanhã)']);
   return l;
 }
 
@@ -67,7 +73,8 @@ export function RetencaoLgpd() {
       <div className="flex flex-col gap-3">
         <p className="text-[14px] text-[#33424B]">
           O agendador da API aplica a retenção uma vez por dia: anonimiza quem passou de 3 anos sem acesso ou sem vínculo, descarta
-          eventos e registros da trilha com mais de 3 anos e elimina arquivos vencidos. Eventos só saem até um selo da cadeia no ponto
+          eventos e registros da trilha com mais de 3 anos, apaga veículos e anonimiza operadores desativados há mais de 3 anos,
+          apaga IP e navegador de sessões com mais de 90 dias e elimina arquivos vencidos. Eventos só saem até um selo da cadeia no ponto
           de corte. Rodar de novo é seguro.
         </p>
         {confirmando && (

@@ -89,7 +89,7 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
           {anonimizando && (
             <div className="flex flex-col gap-3 rounded-[10px] border-2 border-[#B42318] bg-[#FEF3F2] p-4 text-[#912018]">
               <p className="font-semibold">Anonimizar {f.pessoa.nome}? Nome, CPF, telefone, empresa e serviço serão removidos, e a trilha de alterações dessa pessoa será redigida. Não há como desfazer.</p>
-              <p className="text-[14px]">Ficam retidos os eventos de acesso (só pelo id) até completar 3 anos, por exercício regular de direitos. Pessoa com vínculo válido não pode ser anonimizada.</p>
+              <p className="text-[14px]">O texto livre ligado a ela é substituído e o nome completo é trocado por “[anonimizado]” em encomendas, ocorrências e na trilha. Ficam retidos os eventos de acesso até completar 3 anos, por exercício regular de direitos, inclusive o texto livre deles (que faz parte do selo de integridade). Pessoa com vínculo válido não pode ser anonimizada.</p>
               {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
               <div className="flex flex-wrap gap-[10px]"><Button variante="perigo" onClick={() => void anonimizar()}>Confirmar anonimização</Button><Button onClick={() => setAnonimizando(false)}>Cancelar</Button></div>
             </div>
@@ -141,6 +141,7 @@ function EditarCadastro({ pessoa, onCancelar, onSalvo }: { pessoa: Pessoa; onCan
   const [cpf, setCpf] = useState('');
   const [empresa, setEmpresa] = useState(pessoa.empresa ?? '');
   const [servico, setServico] = useState(pessoa.servico ?? '');
+  const [deixouDeSerMenor, setDeixouDeSerMenor] = useState(false);
   const [erro, setErro] = useState('');
   async function salvar(e: FormEvent) {
     e.preventDefault();
@@ -150,6 +151,7 @@ function EditarCadastro({ pessoa, onCancelar, onSalvo }: { pessoa: Pessoa; onCan
         // Telefone em branco não é enviado (importado sem telefone pode corrigir só o nome)
         id: pessoa.id, nome, ...(telefone.trim() ? { telefone } : {}), ...(cpf.trim() ? { documento: cpf } : {}),
         ...(pessoa.categoria === 'prestador' ? { empresa, servico } : {}),
+        ...(pessoa.menorIdade && deixouDeSerMenor ? { menorIdade: false } : {}),
       });
       onSalvo();
     } catch (err) { setErro(mensagemErro(err)); }
@@ -161,6 +163,12 @@ function EditarCadastro({ pessoa, onCancelar, onSalvo }: { pessoa: Pessoa; onCan
         <input className="input font-mono" inputMode="numeric" placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(e.target.value)} />
       </Field>
       <Field label="Telefone"><input className="input" inputMode="tel" value={telefone} onChange={(e) => setTelefone(e.target.value)} /></Field>
+      {pessoa.menorIdade && (
+        <label className="sm:col-span-2 flex cursor-pointer items-start gap-3 rounded-lg border border-[#B9C3CA] p-3">
+          <input type="checkbox" className="mt-1" checked={deixouDeSerMenor} onChange={(e) => setDeixouDeSerMenor(e.target.checked)} />
+          <span><span className="font-medium">Deixou de ser menor de idade</span><span className="block text-[13px] text-[#56616B]">A partir daqui CPF e telefone passam a ser obrigatórios.</span></span>
+        </label>
+      )}
       {pessoa.categoria === 'prestador' && (
         <>
           <Field label="Empresa"><input className="input" value={empresa} onChange={(e) => setEmpresa(e.target.value)} /></Field>

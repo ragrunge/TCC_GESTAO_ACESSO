@@ -27,6 +27,31 @@ test.describe('6. Vínculo', () => {
     await expect(page.getByRole('list', { name: 'Fila' }).getByRole('button', { name: /Larissa Gomes/ })).toBeVisible();
   });
 
+  test('dependente menor de idade sem CPF e sem telefone: cadastro aceito e vínculo de dependente sem "cadastro incompleto" (LGPD art. 14)', async ({ page }) => {
+    await page.goto('/cadastro');
+    await page.getByRole('button', { name: 'Nova pessoa' }).click();
+    const nova = page.getByRole('dialog', { name: 'Nova pessoa' });
+    await nova.getByLabel('Nome completo').fill('Yuri Menor Dependente');
+    await nova.getByLabel('Dependente menor de idade').check();
+    await expect(nova.getByLabel('Telefone (opcional para menor)')).toBeVisible();
+    await nova.getByRole('button', { name: 'Cadastrar' }).click();
+    await expect(toast(page, 'Yuri Menor Dependente cadastrado(a).')).toBeVisible();
+
+    await page.goto('/unidades/C-14');
+    await page.getByRole('button', { name: 'Solicitar vínculo' }).click();
+    const modal = page.getByRole('dialog', { name: 'Solicitar vínculo' });
+    await modal.getByLabel('Pessoa', { exact: true }).fill('Yuri Menor');
+    await modal.getByRole('button', { name: /Yuri Menor Dependente/ }).click();
+    await modal.getByRole('combobox', { name: 'Tipo de vínculo' }).selectOption({ label: 'Dependente' });
+    await modal.getByRole('button', { name: 'Solicitar vínculo' }).click();
+    await expect(toast(page, /Vínculo solicitado/)).toBeVisible();
+
+    await page.goto('/vinculos');
+    await page.getByRole('list', { name: 'Fila' }).getByRole('button', { name: /Yuri Menor Dependente/ }).click();
+    await expect(page.getByRole('heading', { name: /Yuri Menor Dependente/ })).toBeVisible();
+    await expect(page.getByText(/Cadastro incompleto/)).toHaveCount(0);
+  });
+
   test('aprovar pessoa sem CPF/telefone completo é barrado por "cadastro incompleto"', async ({ page }) => {
     // 1) Cadastra pessoa sem CPF (a administração pode cadastrar visitante sem CPF)
     await page.goto('/cadastro');
