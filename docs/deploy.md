@@ -798,3 +798,114 @@ login (o comportamento antigo). Desfazer a migração exige antes apagar essas l
 **Trilha:** a partir deste deploy, `auth.login_falha` e `auth.bloqueio` não gravam o login digitado (login existente:
 só o ator; inexistente: `usuario_nome = '(login inexistente)'`). As linhas antigas continuam com o texto digitado
 (dígitos mascarados): a trilha é append-only e elas só saem com a retenção da trilha.
+
+## 16. SaaS: provisionar um condomínio novo (CLI `provisionar-condominio`)
+
+Desenho e regras em `docs/05_arquitetura_saas.md` (SAAS-10, "Provisionamento"); código em
+`apps/api/src/saas/provisionar.ts` e `apps/api/src/cli/provisionar-condominio.ts`.
+
+### 16.1 Deploy desta versão (uma vez; MANUAL: o `deploy-vps.sh` sai com código 2)
+
+Muda `apps/api/Dockerfile` (a imagem da API passa a levar `drizzle/`, lido pela CLI), os dois compose (serviço
+`provisionar-cli`, perfil `provisionar`), `db/bootstrap/10_plataforma.sh` (`app_provisionador` vira membro de
+`app_migrator` só com SET) e `.env.producao.example`. Migrações novas, só *expand*: `drizzle/0010_configuracao.sql`
+(tabela `configuracao`, vazia no piloto: nada muda para ele) e `drizzle-plataforma/0002_cadastro_modulos.sql`
+(`condominio.cidade`, `uf`, `modulos`; o piloto fica com todos os módulos).
+
+```bash
+cd /opt/tcc-portaria
+sudo systemctl start tcc-portaria-backup.service                         # 1. backup antes
+TAG_ANTERIOR="$(sed -n 's/^API_TAG=//p' .env)"; echo "$TAG_ANTERIOR"      #    anotar para o rollback
+git fetch && git checkout --detach origin/main                            # 2. código e imagens
+sed -i "s|^API_TAG=.*|API_TAG=$(git rev-parse --short HEAD)|" .env
+docker compose build && docker compose up -d --wait                       # 3. migrate (0010 + plataforma 0002) e API
+docker compose exec -T db sh /docker-entrypoint-initdb.d/10_plataforma.sh # 4. membership SET-only (idempotente)
+pw() { openssl rand -base64 32 | tr -d '/+=\n'; }                         # 5. senha do provisionador, gerada aqui
+grep -q '^APP_PROVISIONADOR_PASSWORD=.' .env || { sed -i '/^APP_PROVISIONADOR_PASSWORD=$/d' .env; printf 'APP_PROVISIONADOR_PASSWORD=%s\n' "$(pw)" >> .env; }
+printf "ALTER ROLE app_provisionador LOGIN PASSWORD '%s';\n" "$(sed -n 's/^APP_PROVISIONADOR_PASSWORD=//p' .env)" \
+  | docker compose exec -T db psql -q -v ON_ERROR_STOP=1 -U postgres -d postgres   #    por stdin, sem eco
+install -m 755 -o root -g root scripts/deploy/deploy-vps.sh /usr/local/sbin/tcc-portaria-deploy   # 6. se mudou
+```
+
+Conferir:
+
+- `docker compose logs migrate | grep migrar-bancos` termina em `ok (plataforma + 1 condomínio(s))`;
+- `docker compose exec -T db psql -U postgres -tAc "select a.inherit_option, a.set_option, r.rolcanlogin, r.rolcreatedb from pg_auth_members a join pg_roles r on r.oid = a.member where a.roleid = 'app_migrator'::regrole and r.rolname = 'app_provisionador'"`
+  imprime `f|t|t|t` (sem herdar, com SET, com login, CREATEDB);
+- a matriz de CONNECT da seção 12.3 continua `f|f|t|f` (o provisionador **não** entra no `portaria`);
+- portaria do piloto: login, "Verificar integridade" e o rótulo "Bloco" nas unidades como antes.
+
+**Rollback:** imagem anterior (`API_TAG=$TAG_ANTERIOR`, `docker compose up -d --wait`). As duas migrações ficam: a
+imagem anterior não lê `configuracao` nem as colunas novas. Para tirar o login do provisionador:
+`ALTER ROLE app_provisionador NOLOGIN` (mesma via stdin).
+
+### 16.2 Criar um condomínio em produção
+
+1. Preparar a entrada **na VPS** (tem o nome do síndico: dado pessoal, fora do clone e fora do git), com `umask 077`.
+   Exemplo com dados fictícios:
+
+   ```bash
+   umask 077; mkdir -p /root/provisionamento
+   cat > /root/provisionamento/<slug>.json <<'JSON'
+   { "codigo": "<slug>", "nome": "<nome exibido>", "cidade": "<cidade>", "uf": "SP", "plano": "padrao",
+     "estrutura": { "agrupamento": "Torre", "blocos": ["1", "2", "3"], "andares": [0, 1, 2, 3], "finais": [1, 2, 3, 4], "ausentes": ["01"] },
+     "areasComuns": ["Salão de festas", "Piscina"],
+     "sindico": { "nome": "<nome do síndico>", "login": "<login>" } }
+   JSON
+   ```
+
+   `codigo`: o que a portaria digita no login (3 a 31, `a-z0-9-`, começa por letra). `estrutura`: mesma regra do
+   `ESTRUTURA_PADRAO` (número = andar × 10 + final; `ausentes` "01" vale para todos os blocos, "A-01" só para um).
+   `areasComuns` é opcional (padrão: a lista do piloto). Exceções da grade entram depois pelo CRUD ou pela planilha.
+
+2. Rodar (backup antes, como em toda escrita):
+
+   ```bash
+   cd /opt/tcc-portaria
+   sudo systemctl start tcc-portaria-backup.service
+   docker compose --profile provisionar run --rm -T provisionar-cli < /root/provisionamento/<slug>.json
+   ```
+
+   O `-T` é obrigatório (o JSON vem pelo stdin). Saída: um JSON (`"situacao": "provisionado"`, `banco`, `unidades`,
+   `modulos`, impressões das duas chaves) e, **uma vez, só no terminal**, o bloco "SENHA TEMPORÁRIA DO SÍNDICO" com o
+   código do condomínio, o login e a validade (72 h; troca obrigatória no primeiro login). Não redirecionar o stderr
+   para arquivo. O serviço roda com `logging: none` (o `docker logs` não guarda a senha) e `--rm`. Entregar a senha ao síndico por canal fora do sistema (pergunta 8 do doc de arquitetura).
+
+3. Conferir e limpar:
+
+   - `docker compose exec -T db psql -U postgres -d plataforma -tAc "select status, banco from condominio where codigo = '<slug>'"` → `ativo|portaria_xxxxxxxx`;
+   - em até 1 min (cache do resolvedor), o login com o código `<slug>` funciona no front; o cabeçalho mostra o nome;
+   - o próximo `deploy`/`up` migra o banco novo junto (`migrar-bancos: portaria_xxxxxxxx`), e o próximo backup grava
+     `condominio-portaria_xxxxxxxx-<carimbo>.dump.age` (os dois só olham `ativo`/`suspenso`/`encerrado`);
+   - `shred -u /root/provisionamento/<slug>.json` depois que o síndico entrar (até lá serve para retomar ou para
+     `--nova-senha-sindico`).
+
+Rodar de novo com a mesma entrada responde `ja_provisionado` e não mexe em nada (nem gera senha). Entrada diferente
+para um código existente (outro nome, cidade, UF ou plano) é recusada.
+
+### 16.3 Falha no meio, retomada e rollback
+
+A CLI só marca `ativo` depois da verificação final; até lá o condomínio fica `provisionando`, e a API, o laço de
+migração e o backup o ignoram. Qualquer falha (rede, migração, verificação) sai com código 1 e a mensagem.
+
+- **Retomar:** corrigir a causa e rodar o mesmo comando com o **mesmo** JSON. Cada passo confere o que já existe: o
+  banco já criado é reaproveitado (precisa ter dono `app_migrator`), migrações aplicam só o que falta, configuração e
+  unidades precisam bater com a entrada, e a senha do síndico é **regerada** (a anterior nunca foi mostrada).
+  Resposta: `"situacao": "retomado"`.
+- **Desfazer** (desistir de um provisionamento que ficou `provisionando`): como superusuário, nesta ordem.
+  Nada disso existe para um condomínio `ativo` (lá é fim de contrato, SAAS-11/F7). A plataforma não tem linha de
+  `plataforma_audit` dele (ela só é gravada na ativação), então as duas linhas saem sem furar a trilha.
+
+  ```bash
+  docker compose exec -T db psql -v ON_ERROR_STOP=1 -U postgres -d plataforma -tAc \
+    "select id, banco from condominio where codigo = '<slug>' and status = 'provisionando'"      # anotar id e banco
+  docker compose exec -T db psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'DROP DATABASE IF EXISTS "<banco>" WITH (FORCE)'
+  docker compose exec -T db psql -v ON_ERROR_STOP=1 -U postgres -d plataforma \
+    -c "delete from condominio_chave where condominio_id = '<id>'" \
+    -c "delete from condominio where id = '<id>' and status = 'provisionando'"
+  ```
+
+  Apagar as chaves é o *crypto-shredding* (SAAS-04): nada foi cifrado com elas além do que o `DROP` já levou.
+- **Senha temporária vencida antes do primeiro login** (condomínio já `ativo`): o mesmo comando com
+  `node dist/cli/provisionar-condominio.js --nova-senha-sindico` no fim (depois de `provisionar-cli`). Só funciona
+  enquanto o síndico nunca entrou; depois disso a senha é dele.

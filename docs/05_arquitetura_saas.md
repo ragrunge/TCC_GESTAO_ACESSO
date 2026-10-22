@@ -5,6 +5,10 @@
 > (código e migrações, sem deploy). Nada muda em produção sem os passos manuais de `docs/deploy.md`, seção 12.
 > **F2 (2026-10-22):** implementada no código (API multi-banco, sem deploy); o que entrou, o que divergiu e o que ficou
 > para depois está em §5.1. Deploy manual: `docs/deploy.md`, seção 13.
+> **v0.3 (2026-10-22):** decisões novas do usuário: "Master vê tudo" com registro na trilha do condomínio (SAAS-09
+> reescrita; a versão anterior fica marcada como substituída), módulos por condomínio (SAAS-19) e a referência de UX do
+> app do Master (§6.2). Provisionamento de condomínio novo implementado (CLI `provisionar-condominio`, SAAS-10 e §5.2;
+> passo a passo em `docs/deploy.md`, seção 16).
 > Complementa `01_requisitos.md` (v0.3) e `02_especificacao_tecnica.md` (v0.1); não os altera.
 > O condomínio real do estudo de caso é chamado aqui de **condomínio-piloto**.
 
@@ -18,11 +22,11 @@ estrutura de unidades no código e um banco. Transformá-lo em SaaS para vários
 |---|---|---|---|
 | SAAS-01 | Isolamento | Banco único + `condominio_id` + RLS | **Diverge: um banco Postgres por condomínio** no mesmo cluster, mais um banco de plataforma. RLS fica documentado como alternativa (apêndice A) |
 | SAAS-02 | Trilha por condomínio | Cadeia, selo, âncora, retenção por tenant | Mantida. Com banco por condomínio, a cadeia do piloto **não é tocada** |
-| SAAS-03 | Master e LGPD | Operador, sem dado pessoal, break-glass | Mantida, com reforço: o Master usa outro role de banco, que **não tem CONNECT** nos bancos de condomínio |
+| SAAS-03 | Master e LGPD | Operador, sem dado pessoal, break-glass | **Mudou em 2026-10-22 (SAAS-09):** o Master vê os dados sem aprovação do síndico; todo acesso a dado pessoal fica na trilha do condomínio e numa tela do síndico. O pool da plataforma continua **sem CONNECT** nos bancos de condomínio |
 | SAAS-04 | Chaves por condomínio | HMAC e KEK por tenant, envelope | Mantida. Ressalva: a chave HMAC do CPF **não é rotacionável** (o CPF não é guardado) |
 | SAAS-05 | Login | Global vs por condomínio | **Por condomínio**, com "código do condomínio" na tela de login. Subdomínio fica para quando houver domínio próprio |
 | SAAS-06 | Estrutura de unidades | Cadastrável por condomínio | Mantida. `ESTRUTURA_PADRAO` vira só gerador do onboarding |
-| SAAS-07 a 18 | Master fora do RBAC, sessão e origem separadas com TOTP, onboarding, fim de contrato, backup/restore, jobs, limites, observabilidade, migração em N bancos, infraestrutura, fuso | — | Seção 3 |
+| SAAS-07 a 19 | Master fora do RBAC, sessão e origem separadas com TOTP, onboarding, fim de contrato, backup/restore, jobs, limites, observabilidade, migração em N bancos, infraestrutura, fuso, módulos por condomínio | — | Seção 3 |
 
 Calendário: a recomendação era entregar o TCC antes; **o usuário decidiu fazer o SaaS agora, junto do TCC** (seção 10,
 pergunta 1), com as salvaguardas registradas lá.
@@ -123,8 +127,16 @@ premissa P1.
   onboarding (recomendado: CLI, nunca a API; ver SAAS-10).
 - Ninguém tem `BYPASSRLS` (não há RLS neste modelo, mas o atributo continua desligado, que é o padrão).
 
-**Consequência.** "O Master não vê dado pessoal" passa a ser garantido pelo banco, não só pelo código: o pool que
-atende as rotas do Master não consegue abrir conexão no banco de um condomínio.
+**Consequência.** O pool que atende as rotas do Master não consegue abrir conexão no banco de um condomínio.
+(Na v0.2 isso garantia pelo banco que "o Master não vê dado pessoal". Desde 2026-10-22 o Master vê, por um ponto
+único que lê pelo pool `app_rw` do condomínio e grava a trilha dele antes de responder: SAAS-09. O isolamento de roles
+continua valendo para todo o resto do código da plataforma.)
+- `app_provisionador` (implementado em 2026-10-22, SAAS-10): `CREATEDB`, `NOLOGIN` até o deploy da seção 16, e membro
+  de `app_migrator` **só com SET** (`WITH INHERIT FALSE, SET TRUE`, Postgres 16+). O SET é o que o Postgres exige para
+  `CREATE DATABASE ... OWNER app_migrator`; sem INHERIT ele não ganha o CONNECT nem os objetos do `app_migrator` ao
+  logar (não entra no `portaria`, na `plataforma` nem no banco que acabou de criar). Ressalva honesta: com a senha dele,
+  `SET ROLE app_migrator` a partir do banco `postgres` permite o que o dono pode fora de um banco, inclusive
+  `DROP DATABASE` de um condomínio: o mesmo alcance da senha do `app_migrator`, que mora no mesmo `.env` (R14).
 
 ### SAAS-03 — Contexto do condomínio na requisição
 
@@ -244,44 +256,107 @@ plataforma apontando para usuários em N bancos).
 **Alternativa descartada.** Mesma SPA com rota `/plataforma`: mais simples, mas a sessão do Master ficaria no mesmo
 pote de cookies da portaria, e um XSS em qualquer tela de condomínio poderia agir como Master.
 
-### SAAS-09 — Master e LGPD; acesso de suporte (break-glass)
+### SAAS-09 — Master e LGPD: acesso direto e auditado ("Master vê tudo")
+
+> **Decisão do usuário em 2026-10-22.** Substitui o acesso de suporte com aprovação do síndico (break-glass) da v0.2,
+> que fica abaixo, marcado como substituído. O usuário foi informado da mitigação e não objetou.
 
 **Contexto.** O condomínio é o controlador; o SaaS, operador (P4). O operador trata dado só por instrução do
-controlador (art. 39).
+controlador (art. 39). A instrução passa a vir do contrato, não de uma aprovação caso a caso.
 
 **Decisão.**
-- O Master gerencia: condomínios (cadastro, plano, status), usuário síndico inicial, chaves (rotação), saúde e métricas
-  **agregadas sem dado pessoal** (contagem de eventos por dia, tamanho do banco, último selo, falhas de job).
-- Dados que a plataforma trata como **controladora** (relação comercial): razão social, CNPJ, contato do responsável
-  pelo contrato, faturamento. Ficam no banco `plataforma`, com base legal de execução de contrato (art. 7º, V).
-- **Acesso de suporte**, quando for preciso ver dado do condomínio:
-  1. Master abre o pedido com motivo (mínimo 15 caracteres, mesmo critério de `JUST` em `schema.ts:25`) e prazo
-     (máximo 4 h).
-  2. O síndico aprova na tela dele. O pedido e a aprovação são gravados **no banco do condomínio** (tabela
-     `acesso_suporte`) e no `audit_log` dele: a trilha é do controlador.
-  3. A API cria no banco do condomínio uma sessão para um usuário técnico de origem `suporte`, com papel `auditor`
-     (somente leitura, `rbac.ts`), entregue ao front do condomínio por código de uso único (60 s, hash no banco) que o
-     navegador do Master troca por cookie. O Master nunca recebe senha de ninguém.
-  4. Toda requisição dessa sessão vira linha no `audit_log` (`suporte.requisicao`: rota, método, status; sem corpo).
-  5. Expira sozinho; o síndico encerra a qualquer momento.
-  - **Emergência sem síndico disponível** (ex.: síndico bloqueado): pergunta 4. Recomendação: aprovação por outro
-    usuário `sindico` ativo ou, sem nenhum, só com ciência registrada e e-mail imediato ao contato do contrato, prazo
-    de 1 h, marcado como "sem aprovação" no relatório.
-- Escrita pelo suporte (corrigir cadastro a pedido): fora da primeira versão. O síndico faz, com o suporte olhando.
+- O Master gerencia: condomínios (cadastro, plano, status, módulos), usuário síndico inicial, chaves (rotação), saúde
+  e métricas agregadas. Dados que a plataforma trata como **controladora** (razão social, CNPJ, contato do contrato,
+  faturamento) ficam no banco `plataforma`, com base legal de execução de contrato (art. 7º, V). Sem mudança.
+- **O Master pode ver os dados de qualquer condomínio sem aprovação do síndico.** Leitura só, na primeira versão;
+  escrita em dado de condomínio continua com o síndico (exceção operacional: nova senha temporária do síndico pela
+  CLI, também registrada na trilha do condomínio).
+- **Mitigação adotada:**
+  1. Todo acesso do Master a dado pessoal de um condomínio grava uma linha no `audit_log` **daquele condomínio** (a
+     trilha é do controlador): `usuario_id` e `usuario_papel` nulos (o Master não é usuário do condomínio, SAAS-07),
+     `usuario_nome = 'plataforma/<master>'` (o e-mail do `master_usuario`), `acao = 'plataforma.ler'` (ou
+     `plataforma.exportar` em download), `entidade` e `registro_id` do recurso, `depois = { rota, metodo, status,
+     master_usuario_id }`, sem corpo de resposta. E uma linha em `plataforma_audit` (sem dado de morador).
+  2. **Antes de devolver o dado e na mesma requisição.** Falhou a gravação da trilha: 503 e o dado não sai.
+  3. **Ponto único.** As rotas do Master sobre dado de condomínio ficam em `/api/v1/plataforma/condominios/:id/...`;
+     um `AcessoPlataformaService` resolve a subárvore durável do condomínio (como os jobs, `contextoDoJob`), grava a
+     trilha e só então chama os serviços existentes (que leem pelo pool `app_rw` daquele banco). Teste de arquitetura:
+     só esse serviço obtém subárvore de condomínio a partir de `/plataforma/*`.
+  4. O síndico vê esses registros na tela **"Acessos da plataforma"** (filtro do `audit_log` por `plataforma.*`:
+     quando, quem, o quê), sem poder apagar (append-only). Item do relatório mensal ao conselho.
+- **Não muda:** sessão do Master em origem separada com TOTP (SAAS-08), Master fora do RBAC de condomínio (SAAS-07),
+  `app_plataforma` sem CONNECT nos bancos de condomínio (SAAS-02), métricas em `condominio_metrica` (SAAS-15).
+- **Sai do plano:** tabelas `acesso_suporte` e `suporte_codigo`, coluna `usuario_sistema.origem`,
+  `sessao.acesso_suporte_id`, rota `POST /auth/suporte`, aprovação na tela do síndico e a pergunta 4 (seção 10).
 
-**Por que usuário técnico com papel `auditor` em vez de papel novo.** Reaproveita sessão, RBAC, `audit_log` e as
-checagens existentes (`evento_operador_papel_ck` já proíbe `auditor` de registrar evento, `schema.ts:472`). Um papel
-novo mexeria no enum, na matriz e nas telas.
+**LGPD.**
+- O acesso do Master é tratamento pelo **operador** e precisa estar previsto no **contrato com cada condomínio**:
+  finalidades (suporte, operação, obrigação legal), que o acesso não depende de aprovação caso a caso, que todo acesso
+  fica registrado na trilha do condomínio e visível ao síndico, quem na empresa tem papel `master` (lista nominal), e o
+  prazo de guarda desses registros (o da trilha). Sem essa cláusula, o acesso não tem instrução do controlador.
+- Necessidade (art. 6º, III): poder ver não autoriza olhar sem motivo. Regra interna: acesso só com chamado ou
+  incidente; acesso sem chamado é tratado como incidente interno. A trilha visível ao síndico é o controle externo.
+- Conta do Master comprometida passa a alcançar o dado pessoal de **todos** os condomínios (R7): TOTP obrigatório,
+  origem separada, poucos usuários `master`, revisão dos acessos por condomínio (relatório na F5).
+- Se um cliente exigir aprovação prévia: o desenho anterior volta como opção por condomínio, sem mudar o resto.
 
-### SAAS-10 — Onboarding de condomínio
+**Versão anterior (v0.2) — SUBSTITUÍDA em 2026-10-22:**
 
-1. Master cadastra o condomínio (nome, código, plano, contato do contrato) → status `provisionando`.
-2. CLI `provisionar-condominio <codigo>` na VPS (role `app_provisionador`): `CREATE DATABASE`, `GRANT CONNECT` a
-   `app_rw`, migrações, geração e embrulho das chaves, `configuracao`, estrutura de unidades (SAAS-06), áreas e pontos
-   de acesso, usuário síndico com senha temporária (validade de 72 h já existente) registrado no `audit_log` com ator
-   nulo e nome `Plataforma (onboarding)`, no mesmo padrão de `NOME_AGENDADOR` (`selo.module.ts:54`).
-3. A cabeça da cadeia nasce na gênese pela migração `0001`. Status `ativo`.
-4. A senha temporária vai ao síndico por canal fora do sistema (pergunta 8).
+> **Contexto.** O condomínio é o controlador; o SaaS, operador (P4). O operador trata dado só por instrução do
+> controlador (art. 39).
+>
+> **Decisão.**
+> - O Master gerencia: condomínios (cadastro, plano, status), usuário síndico inicial, chaves (rotação), saúde e métricas
+>   **agregadas sem dado pessoal** (contagem de eventos por dia, tamanho do banco, último selo, falhas de job).
+> - Dados que a plataforma trata como **controladora** (relação comercial): razão social, CNPJ, contato do responsável
+>   pelo contrato, faturamento. Ficam no banco `plataforma`, com base legal de execução de contrato (art. 7º, V).
+> - **Acesso de suporte**, quando for preciso ver dado do condomínio:
+>   1. Master abre o pedido com motivo (mínimo 15 caracteres, mesmo critério de `JUST` em `schema.ts:25`) e prazo
+>      (máximo 4 h).
+>   2. O síndico aprova na tela dele. O pedido e a aprovação são gravados **no banco do condomínio** (tabela
+>      `acesso_suporte`) e no `audit_log` dele: a trilha é do controlador.
+>   3. A API cria no banco do condomínio uma sessão para um usuário técnico de origem `suporte`, com papel `auditor`
+>      (somente leitura, `rbac.ts`), entregue ao front do condomínio por código de uso único (60 s, hash no banco) que o
+>      navegador do Master troca por cookie. O Master nunca recebe senha de ninguém.
+>   4. Toda requisição dessa sessão vira linha no `audit_log` (`suporte.requisicao`: rota, método, status; sem corpo).
+>   5. Expira sozinho; o síndico encerra a qualquer momento.
+>   - **Emergência sem síndico disponível** (ex.: síndico bloqueado): pergunta 4. Recomendação: aprovação por outro
+>     usuário `sindico` ativo ou, sem nenhum, só com ciência registrada e e-mail imediato ao contato do contrato, prazo
+>     de 1 h, marcado como "sem aprovação" no relatório.
+> - Escrita pelo suporte (corrigir cadastro a pedido): fora da primeira versão. O síndico faz, com o suporte olhando.
+>
+> **Por que usuário técnico com papel `auditor` em vez de papel novo.** Reaproveita sessão, RBAC, `audit_log` e as
+> checagens existentes (`evento_operador_papel_ck` já proíbe `auditor` de registrar evento, `schema.ts:472`). Um papel
+> novo mexeria no enum, na matriz e nas telas.
+
+### SAAS-10 — Onboarding de condomínio (provisionamento)
+
+**Implementado em 2026-10-22** (CLI; a tela do Master é da F5): `apps/api/src/saas/provisionar.ts` e
+`apps/api/src/cli/provisionar-condominio.ts`; passo a passo em `docs/deploy.md`, seção 16; estado em §5.2.
+
+1. Entrada: JSON pelo stdin (código, nome, cidade/UF, plano, estrutura de unidades, áreas comuns, nome e login do
+   síndico). Validada inteira antes de tocar em banco (inclusive `gerarUnidades`).
+2. Plataforma (`app_plataforma`): linha em `condominio` com status `provisionando`, banco `portaria_<8 aleatórios>`,
+   módulos padrão (SAAS-19) e as duas chaves (HMAC do CPF e KEK, 32 bytes aleatórios cada) embrulhadas pela mestra,
+   numa transação.
+3. Cluster (`app_provisionador`, banco `postgres`): `CREATE DATABASE ... OWNER app_migrator TEMPLATE template0` e,
+   como dono (SET ROLE), `REVOKE ALL ... FROM PUBLIC` e `GRANT CONNECT` a `app_migrator` e `app_rw`: os GRANTs do
+   piloto.
+4. Migrações do condomínio (`app_migrator`), a mesma pasta do laço de deploy. A cabeça da cadeia nasce na gênese.
+5. Dados (`app_rw`, uma transação): `configuracao` (agrupamento), unidades, "Portaria social", áreas comuns e o
+   síndico com senha temporária (72 h, troca obrigatória), com `audit_log` de ator nulo e nome
+   `Plataforma (provisionamento)`.
+6. Verificação (migrações todas, unidades, configuração, síndico, cabeça da cadeia, matriz de CONNECT) e só então
+   `provisionando → ativo` + `plataforma_audit` `condominio.provisionar`.
+7. A senha temporária aparece **uma vez**, só no stderr do terminal; o stdout leva ids, banco e impressões das chaves.
+   Entrega ao síndico fora do sistema (pergunta 8).
+
+**Retomável:** falhou no meio, o condomínio fica `provisionando` (a API não o atende; migração e backup o ignoram) e
+rodar de novo com a mesma entrada continua: cada passo confere o que existe (banco com dono `app_migrator`, estrutura
+igual à da entrada) e a senha do síndico é regerada (a anterior nunca foi mostrada). Já `ativo` com a mesma entrada:
+`ja_provisionado`, nada muda. `--nova-senha-sindico` gera outra temporária para o síndico que ainda não entrou.
+**Rollback** de um provisionamento abandonado (`DROP DATABASE`, apagar as duas chaves e a linha `provisionando`):
+`docs/deploy.md` §16.3. Ativo não tem rollback: é fim de contrato (SAAS-11).
 
 A API não cria banco: `CREATEDB` num processo exposto à internet amplia o estrago de uma invasão. Onboarding é raro e
 pode ser manual nas primeiras dezenas.
@@ -366,6 +441,42 @@ roda selo, âncoras e retenção na subárvore dele (SAAS-03).
 (`agendador.ts:24`, `comum/datas.ts`); a coluna só garante que o schema não bloqueia. Liberar outro fuso é trocar o
 CHECK e o cálculo de dia, e reverificar o selo diário.
 
+### SAAS-19 — Módulos por condomínio (decisão de 2026-10-22)
+
+**Contexto.** O produto concorrente que o cliente usa mostra "Licenças" e, por condomínio, "Configurações → módulos".
+
+**Decisão.**
+- Coluna `condominio.modulos text[]` no banco `plataforma` (migração `drizzle-plataforma/0002`), com CHECK de
+  pertencimento à lista e default com **todos os módulos ligados**. Lista única em `@portaria/domain/modulos`
+  (`MODULOS`), repetida literalmente em `schema-plataforma.ts` e na migração (a imagem `migrate` não leva o domain);
+  `test/saas-provisionar.test.ts` confere as três.
+- Módulos, a partir das features existentes:
+
+  | Módulo | Rotas da API | Telas |
+  |---|---|---|
+  | `encomendas` | `/encomendas/*` | Encomendas |
+  | `ocorrencias` | `/ocorrencias/*` (com anexos) | Ocorrências |
+  | `autorizacoes_previas` | `/autorizacoes-previas/*` | Autorizações prévias (portaria) |
+  | `importacao` | `/importacoes/*` | Importação de planilha |
+  | `veiculos` | `/veiculos/*` | Veículos |
+  | `funcionarios` | `/funcionarios/*` | Funcionários e escala |
+  | `relatorios` | `/relatorios/*` | Relatórios |
+
+- **Núcleo, nunca desligável:** autenticação, usuários, unidades e catálogo, pessoas, vínculos, eventos de acesso,
+  presentes e turnos, restrições (a portaria confere restrição em toda entrada, RF-16), trilha e selo, LGPD (obrigação
+  legal do controlador).
+- `text[]` com CHECK, não `jsonb`: o banco recusa nome errado. Módulo novo exige migração da plataforma, que decide
+  quem o recebe (por padrão, nasce desligado nos condomínios existentes: decisão comercial).
+- **Recusa de rota (desenho; implementação na F5, junto da tela de ligar/desligar):** decorator `@Modulo('<nome>')`
+  no controller e `ModuloGuard` global durável, depois da `SessaoGuard` e da `PapelGuard`. Lê os módulos do condomínio
+  da requisição (o resolvedor passa a carregar `modulos` no cache da tabela `condominio`, renovado a cada 1 min:
+  desligar vale em até 1 min, sem reiniciar) e responde **403 `MODULO_DESLIGADO`** ("Este módulo não está contratado
+  para este condomínio."). 403 e não 404: não revela nada que o usuário do condomínio não saiba. `/auth/me` e
+  `/catalogo` passam a levar `modulos` para o front esconder menu e atalhos. Teste de arquitetura: todo controller tem
+  `@Modulo` ou está na lista do núcleo. Jobs não olham módulo (selo e retenção continuam). Desligar não apaga dado:
+  religar devolve tudo, e o dado segue sujeito à retenção e aos direitos do titular.
+- **Hoje:** a coluna existe e o provisionamento a preenche; **nada é bloqueado** (todos ligados em todos).
+
 ---
 
 ## 4. Modelo de dados
@@ -383,6 +494,9 @@ CREATE TABLE condominio (
   ancora_id     uuid NOT NULL DEFAULT gen_random_uuid(), -- folha da âncora pública (§4.3), não revela o código
   criado_em     timestamptz(3) NOT NULL DEFAULT now(),
   encerrado_em  timestamptz(3),
+  cidade        text,                          -- 2026-10-22 (plataforma/0002): nulos só no piloto
+  uf            text,                          -- CHECK: sigla de UF; (cidade IS NULL) = (uf IS NULL)
+  modulos       text[] NOT NULL DEFAULT ARRAY['encomendas', ...], -- SAAS-19; CHECK modulos <@ lista
   CONSTRAINT condominio_codigo_uq UNIQUE (codigo),
   CONSTRAINT condominio_banco_uq  UNIQUE (banco),
   CONSTRAINT condominio_codigo_ck CHECK (codigo ~ '^[a-z][a-z0-9-]{2,30}$'),
@@ -478,7 +592,14 @@ GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO app_plataforma;
 
 ### 4.2 Bancos de condomínio (migração `0007`, só *expand*)
 
-Nenhuma tabela existente perde coluna, unicidade ou FK. Mudanças:
+> **Atualização de 2026-10-22.** A numeração andou: `0007` virou a migração de LGPD/retenção. Desta tabela, só
+> `configuracao` entrou (`drizzle/0010_configuracao.sql`, com o provisionamento), sem `nome_exibicao` (o nome fica na
+> plataforma, de onde o front já o lê) e com GRANT `SELECT, INSERT` ao `app_rw` (sem UPDATE até a tela). O piloto fica
+> sem a linha e a API usa o agrupamento padrão. As linhas de `acesso_suporte`, `suporte_codigo`,
+> `usuario_sistema.origem` e `sessao.acesso_suporte_id` **saíram do plano** com a nova SAAS-09. Fica para a F4:
+> `selo_cadeia.ancora_publica_em`.
+
+Nenhuma tabela existente perde coluna, unicidade ou FK. Mudanças (plano original):
 
 | Objeto | Mudança | Motivo |
 |---|---|---|
@@ -527,9 +648,9 @@ fase tem rollback por *redeploy* da imagem anterior.
 | F0 | **Linha de base.** Exportação verificável completa da cadeia do piloto + cabeça (`seq`, `hash`) + contagem por tabela + `verificar-ancoras` contra o branch `ancoras`, guardados fora da VPS. Backup age testado com restore num banco descartável. Testes de caracterização do que vai mudar (login, sessão, selo público, agendador) | — | Não | P |
 | F1 | Banco `plataforma`, roles `app_plataforma`/`app_provisionador`, tabelas da §4.1. Piloto registrado com `banco = 'portaria'`. Chaves atuais importadas embrulhadas pela chave mestra (versão 1). **API inalterada** | `DROP DATABASE plataforma`; remover roles | Não | M |
 | F2 | API multi-banco: `ResolvedorCondominio`, durable providers, `PLATAFORMA_DB`, chaves vindas da plataforma (fallback para o ambiente desligado ao fim da fase), cookie `v2.` com aceitação do formato antigo para o piloto, login com código (opcional para o piloto), agendador por condomínio, laço de migração e de backup. Produção continua com um condomínio | Imagem anterior: o schema do piloto não mudou, as sessões antigas continuam válidas | Reinício da API (segundos; RNF-05 cobre com formulário) | G |
-| F3 | Migração `0007` (§4.2) em `portaria` | Migração reversa (só `DROP` de colunas e tabelas novas, vazias) | Não (tabelas pequenas, `ADD COLUMN` com default constante não reescreve linha) | P |
+| F3 | Migração `0007` (§4.2) em `portaria` (2026-10-22: `configuracao` entrou na `0010`; o suporte saiu, SAAS-09) | Migração reversa (só `DROP` de colunas e tabelas novas, vazias) | Não (tabelas pequenas, `ADD COLUMN` com default constante não reescreve linha) | P |
 | F4 | Âncora agregada (§4.3): selos públicos v2, workflow novo, prova de inclusão, congelamento do `selos.jsonl` | Reativar o endpoint v1 (o código fica até o fim da fase) | Não | M |
-| F5 | Plataforma: API `/plataforma/*`, front separado na Vercel, TOTP, onboarding (CLI), acesso de suporte, métricas | Desligar o projeto Vercel e as rotas (flag) | Não | G |
+| F5 | Plataforma: API `/plataforma/*`, front separado na Vercel, TOTP, onboarding (CLI: **feito em 2026-10-22**, §5.2), acesso do Master auditado (SAAS-09), módulos (SAAS-19), métricas | Desligar o projeto Vercel e as rotas (flag) | Não | G |
 | F6 | **Condomínio de teste** em produção (`demo`, dados fictícios do seed) para smoke de isolamento: sessão de um não abre o outro, jobs dos dois rodam, backup e restore de um só | Excluir `demo` (SAAS-11) | Não | P |
 | F7 | Fim de contrato: exportação completa, exclusão com duas pessoas, rotação de chave | — | Não | M |
 | F8 | Primeiro cliente real (depois das mitigações M1 a M9 da seção 10, do contrato de operador e da revisão de segurança) | — | — | — |
@@ -568,7 +689,7 @@ migração (`apps/api/scripts/migrar-bancos.mjs`) e de backup por banco, `condom
 
 **Ficou para depois:** portão de versão por banco na subida (503 só para o condomínio defasado, SAAS-16); AAD da DEK
 com o condomínio (§6.1, só DEKs novas); limite global por IP e taxa por
-condomínio (SAAS-14); `ESTRUTURA` por condomínio (SAAS-06, com a `0007` da F3); tar de anexos por condomínio
+condomínio (SAAS-14); ~~`ESTRUTURA` por condomínio~~ (feito no provisionamento, §5.2); tar de anexos por condomínio
 (SAAS-12); sessão de plataforma × rota de condomínio (§6.1 item 6, primeira parte: F5).
 
 **Código do condomínio no front (§6.2, 2026-10-22):** campo "Código do condomínio" no login (opcional, rótulo
@@ -604,6 +725,43 @@ uma divergência indica bug, não efeito esperado.
 dependem do resolvedor); F4 antes do segundo condomínio (senão o endpoint v1 publicaria volume de dois clientes); F7 e
 SAAS-17 antes de F8.
 
+### 5.2 Provisionamento de condomínio novo (2026-10-22, código; deploy em `docs/deploy.md` §16)
+
+O doc punha o onboarding na F5 (CLI) com a `configuracao` na F3. Foi feito agora o que um segundo condomínio precisa
+para existir, sem a tela do Master: SAAS-10 (passos e retomada), `configuracao` (§4.2) e `condominio.cidade/uf/modulos`.
+
+**Entrou:**
+- Migrações: `drizzle/0010_configuracao.sql` (condomínio) e `drizzle-plataforma/0002_cadastro_modulos.sql`
+  (plataforma), só *expand*, aplicadas pelo laço de deploy em todos os bancos.
+- Estrutura por condomínio: as unidades já vinham do banco; o que era fixo no código era só o agrupamento
+  ("Bloco"/"Torre"). O `ResolvedorCondominio` lê a `configuracao` do banco do condomínio na 1ª resolução (falha não
+  fica em cache) e o provider `ESTRUTURA` virou durável, por condomínio (`database.module.ts`). Sem a linha (piloto):
+  `ESTRUTURA_PADRAO.agrupamento`, como antes. `ESTRUTURA_PADRAO` continua só no seed e no `recriar-estrutura` do piloto.
+- `app_provisionador` com LOGIN (senha por stdin, como a do `app_plataforma`) e membro de `app_migrator` só com SET
+  (bootstrap `10_plataforma.sh`; ressalva em SAAS-02 e R14).
+- Compose: serviço `provisionar-cli` (perfil `provisionar`, imagem da API, rede interna, raiz só leitura, 192 MiB).
+  A imagem da API passa a levar `drizzle/` (só SQL), lida pela CLI.
+- Laço de migração e backup: **conferido** que pegam o condomínio novo assim que ele fica `ativo`
+  (`migrar-bancos.mjs`: `ativo`/`suspenso`/`encerrado`; `backup-portaria.sh`: o mesmo filtro), e que ignoram
+  `provisionando`. Anexos: a pasta `<raiz>/<condominio_id>/` nasce no primeiro anexo (`mkdir` recursivo do cofre).
+- A API passa a atender o condomínio novo sem reiniciar: código desconhecido recarrega o cache em até 5 s; status
+  novo de um código já em cache, em até 1 min.
+- Testes: `test/saas-provisionar.test.ts` (PGlite: fluxo, login com o código, troca de senha, estrutura própria,
+  isolamento contra o piloto, idempotência, retomada, recusas), `test/postgres-real/saas-provisionar.test.ts`
+  (roles reais: CREATE DATABASE pelo provisionador, CONNECT, login pela API, isolamento, retomada) e o smoke da CLI
+  compilada no `testes-postgres.yml`.
+
+**Onde divergiu ou o doc deixava margem:**
+- "Master cadastra → CLI provisiona" virou um passo só: a CLI cadastra a linha da plataforma (não há tela do Master).
+- `condominio_contrato` (razão social, CNPJ, contato) **não** é preenchido pela CLI: é cadastro comercial da F5.
+- O audit de início fica só na trilha do condomínio; `plataforma_audit` ganha a linha na ativação. Assim um
+  provisionamento abandonado sai inteiro da plataforma (as linhas dele não ficam presas à trilha append-only).
+- Senha do síndico regerada em toda retomada (a anterior nunca foi entregue) e `--nova-senha-sindico` para a
+  temporária que venceu sem uso: o desenho não previa o caso de 72 h passarem antes do primeiro login.
+
+**Ficou para depois:** tela do Master (cadastro, contrato, módulos, UX em §6.2); `ModuloGuard` (SAAS-19); UPDATE da
+`configuracao` por tela; `recriar-estrutura` por condomínio com JSON (SAAS-06); acesso do Master auditado (SAAS-09).
+
 ---
 
 ## 6. Impacto
@@ -613,11 +771,12 @@ SAAS-17 antes de F8.
 - `database.module.ts`: `DB` vira provider durable resolvido por condomínio; novo `PLATAFORMA_DB`; registro de pools
   com teto global e fechamento por ociosidade.
 - Novo módulo `plataforma` (controllers `/plataforma/*`, guarda `@Plataforma`, sessão do Master, TOTP, condomínios,
-  acesso de suporte, métricas) e CLI `provisionar-condominio`, `excluir-condominio`, `rotacionar-chave`.
-- `auth`: cookie `v2.<condominio_id>.<token>`; login com código; `SessaoService.validar` no banco escolhido; rota
-  `POST /auth/suporte` (troca do código de uso único); usuário `origem = 'suporte'` recusado no login por senha.
+  acesso do Master auditado com `AcessoPlataformaService` (SAAS-09), módulos com `ModuloGuard` (SAAS-19), métricas) e
+  CLI `provisionar-condominio` (**feita**, §5.2), `excluir-condominio`, `rotacionar-chave`.
+- `auth`: cookie `v2.<condominio_id>.<token>`; login com código; `SessaoService.validar` no banco escolhido. (A rota
+  `POST /auth/suporte` e o usuário `origem = 'suporte'` saíram com a SAAS-09 de 2026-10-22.)
 - `config`: `PORTARIA_HMAC_CPF_KEY` e `PORTARIA_KEK` saem do ambiente da API ao fim da F2; entra
-  `PORTARIA_CHAVE_MESTRA` (+ versão) e `DATABASE_URL_PLATAFORMA`. `ESTRUTURA` sai (vem de `configuracao`).
+  `PORTARIA_CHAVE_MESTRA` (+ versão) e `DATABASE_URL_PLATAFORMA`. `ESTRUTURA` vem de `configuracao` (feito, §5.2).
 - `documentos/cofre.ts`: KEK vem do condomínio; diretório `<dir>/<condominio_id>/`; AAD inclui o condomínio
   (`portaria:dek:<condominio_id>:<id>:v<versao>`) **só nas DEKs novas**, com versão de formato para ler as antigas.
 - `jobs`: laço por condomínio, trava por condomínio, paralelismo limitado.
@@ -645,9 +804,22 @@ permissão de role ficam no `test:pg`.
 
 - Login: campo "Código do condomínio", lembrado como preferência; cabeçalho `X-Condominio` só no login. **Feito (F2, §5.1).**
 - Layout: nome do condomínio no cabeçalho (**feito**, de login/`/auth/me`, não de `configuracao`); rótulos de agrupamento já vêm da API (`/catalogo`).
-- Tela do síndico: aprovar/encerrar acesso de suporte; aviso visível em todas as telas durante sessão de suporte.
-- Rota `/suporte?codigo=` para a troca do código.
+- ~~Tela do síndico: aprovar/encerrar acesso de suporte; rota `/suporte?codigo=`~~ (saíram com a SAAS-09 de
+  2026-10-22). No lugar: tela **"Acessos da plataforma"** para o síndico (e o auditor), lista do `audit_log` com
+  `acao` `plataforma.*`: quando, quem (`plataforma/<master>`), recurso e rota; filtro por período; sem ação de apagar.
+- Menu e atalhos escondem módulo desligado (SAAS-19), a partir de `modulos` em `/auth/me`.
 - **App novo** `apps/plataforma` (Vite, mesmas bibliotecas, mesmo CSP), projeto Vercel separado.
+
+**App do Master: referência de UX (F5, decisão de 2026-10-22; não implementar antes da F5).** Inspirado no produto
+concorrente que o cliente usa:
+- Tela inicial **"Licenças"**: um card por condomínio com nome, tipo (residencial/comercial/misto: coluna nova na
+  plataforma na F5), número de moradores (contagem agregada vinda de `condominio_metrica`, não do banco do condomínio
+  em tempo real), cidade/UF e situação (`ativo`, `suspenso`, ...). Busca por nome ou código; filtro por situação.
+- Por condomínio, abas: **Unidades** (estrutura e contagens), **Dados cadastrais** (cadastro da plataforma e
+  `condominio_contrato`), **Relatórios** (os do condomínio, pelo ponto único auditado da SAAS-09) e **Módulos**
+  (ligar/desligar, SAAS-19, com registro em `plataforma_audit`).
+- Toda tela que mostra dado pessoal do condomínio passa pela SAAS-09 (linha na trilha do condomínio) e mostra ao
+  Master o aviso "este acesso fica registrado e visível ao síndico".
 
 ### 6.3 Deploy e CI
 
@@ -669,19 +841,21 @@ permissão de role ficam no `test:pg`.
 cliente. Fora do escopo da v0.4: usuário em vários condomínios, subdomínio, fuso diferente de Brasília, escrita pelo
 suporte.
 
-**Seção 3 (atores):** novos atores "Administrador da plataforma (Master)" e "Suporte da plataforma", ambos do operador,
-sem acesso a dado pessoal de condomínio fora do acesso de suporte.
+**Seção 3 (atores):** novos atores "Administrador da plataforma (Master)" e "Suporte da plataforma", ambos do operador.
+Desde 2026-10-22 o Master lê dado de condomínio sem aprovação, com registro na trilha do condomínio (SAAS-09).
 
 **Seção 4 (requisitos funcionais), IDs novos:**
 - RF-39 Cadastrar condomínio (Master), com plano e status.
 - RF-40 Configurar estrutura de blocos e unidades no onboarding (substitui a estrutura fixa citada em RF-01).
-- RF-41 Solicitar, aprovar, encerrar e auditar acesso de suporte.
+- RF-41 ~~Solicitar, aprovar, encerrar e auditar acesso de suporte~~ (2026-10-22) Registrar todo acesso do Master a
+  dado do condomínio na trilha do condomínio e mostrá-lo ao síndico ("Acessos da plataforma").
+- RF-44 Ligar e desligar módulos por condomínio (SAAS-19).
 - RF-42 Exportar todos os dados do condomínio e excluí-los no fim do contrato.
 - RF-43 Painel de saúde da plataforma com métricas agregadas sem dado pessoal.
 
 **Seção 5 (regras de negócio):**
-- RN-12 O Master só acessa dado de condomínio por acesso de suporte aprovado, com prazo e registro na trilha do
-  condomínio.
+- RN-12 (2026-10-22) O Master acessa dado de condomínio sem aprovação caso a caso, só leitura, e todo acesso a dado
+  pessoal fica na trilha do condomínio, visível ao síndico (SAAS-09). Substitui "só por acesso de suporte aprovado".
 - RN-13 Login e cadastro são por condomínio: o mesmo login ou CPF em dois condomínios são registros independentes, sem
   correlação.
 
@@ -704,15 +878,17 @@ sem acesso a dado pessoal de condomínio fora do acesso de suporte.
 - Incidente: o operador comunica o controlador no prazo do contrato; o controlador comunica a ANPD e os titulares
   (art. 48; prazo do regulamento de comunicação de incidente da ANPD a validar juridicamente).
 - Fim do contrato: devolução ao controlador e eliminação pelo operador (art. 16), com o prazo de backups declarado.
-- Acesso de suporte: finalidade, prazo máximo, aprovação do síndico e registro.
+- Acesso do Master (SAAS-09, 2026-10-22): o Master é o **operador** acessando dado do controlador. O contrato com cada
+  condomínio precisa prever o acesso sem aprovação caso a caso, as finalidades, a lista de quem tem papel `master`, o
+  registro na trilha do condomínio e a tela do síndico. Sem essa cláusula o acesso não tem instrução do controlador.
 - Chave de busca do CPF por condomínio: impede correlacionar a mesma pessoa entre clientes.
 
 **Seção 8 (implantação):** onboarding de condomínio (SAAS-10) antes da etapa de treinamento.
 
 **Seção 11 (riscos):** riscos da seção 9 deste documento.
 
-**Seção 12 (casos de uso):** UC33 Cadastrar condomínio, UC34 Solicitar acesso de suporte, UC35 Aprovar acesso de
-suporte, UC36 Encerrar contrato.
+**Seção 12 (casos de uso):** UC33 Cadastrar (provisionar) condomínio, UC34 Consultar dado de condomínio como Master
+(auditado), UC35 Consultar acessos da plataforma (síndico), UC36 Encerrar contrato, UC37 Ligar/desligar módulo.
 
 **Seção 14:** entrada da v0.4 com as decisões SAAS-01 a SAAS-18.
 
@@ -755,12 +931,15 @@ Nada disso exige mudança agora, exceto não criar unicidade ou trigger que impe
 | R4 | Esgotamento de conexões com muitos condomínios | Pool pequeno com timeout; teto global; revisitar SAAS-01 acima de ~100 |
 | R5 | Perda da chave mestra = perda de todos os anexos e da busca por CPF de todos os condomínios | Cópia da chave mestra fora da VPS, em cofre, com procedimento de recuperação testado (pergunta 6) |
 | R6 | Vazamento da chave mestra + dump = força bruta de CPF | Mestra fora do backup; acesso restrito; rotação da mestra é barata |
-| R7 | Master comprometido | Origem separada, TOTP, role sem CONNECT nos condomínios, acesso de suporte com aprovação do síndico |
+| R7 | Master comprometido: desde 2026-10-22 alcança o dado pessoal de **todos** os condomínios (SAAS-09) | Origem separada, TOTP, poucos usuários `master`, ponto único que grava a trilha de cada condomínio antes de responder, tela do síndico, revisão de acessos. A aprovação do síndico saiu |
 | R8 | API comprometida = todos os condomínios | Inerente a um processo (P3). Reduz o alcance: `app_rw` sem DELETE, trilha append-only, âncora fora do servidor |
 | R9 | VPS compartilhada com sistema de terceiros, mantida com vários clientes (decisão de 2026-10-22) | Mitigações M1 a M9 (seção 10); gatilhos de saída para VPS dedicada (M9) |
 | R10 | Âncora controlada pelo operador não protege o cliente contra o operador | E-mail ao síndico obrigatório; raiz pública em repositório com proteção de branch |
 | R11 | Mudança grande perto da entrega acadêmica (decidido fazer agora) | Tag da versão avaliada antes da F2, F0 e testes de caracterização antes de mudar, rollback por fase (seção 10, pergunta 1) |
 | R12 | Repositório público com código de produto comercial (decidido manter) | Mitigações P1 a P6 (seção 10, pergunta 2) |
+| R13 | Master olha dado sem necessidade (art. 6º, III) ou sem cláusula contratual (art. 39) | Cláusula no contrato de cada condomínio antes da F8; acesso só com chamado; registro visível ao controlador |
+| R14 | Senha do `app_provisionador` vazada: com `SET ROLE app_migrator` no banco `postgres`, pode `DROP DATABASE` de condomínio | Mesmo alcance da senha do `app_migrator`, que já está no mesmo `.env`; LOGIN só enquanto houver provisionamento a fazer (`ALTER ROLE ... NOLOGIN` entre um cliente e outro, se o ritmo for baixo); backup diário |
+| R15 | Provisionamento interrompido deixa banco e chaves de um condomínio que não existe para a API | Status `provisionando` ignorado por API, migração e backup; retomada idempotente; rollback em `docs/deploy.md` §16.3 |
 
 ---
 
@@ -825,12 +1004,20 @@ obrigatórias (condição de F6 e F8; as marcadas "já" existem para o piloto):
 - **M9.** Gatilhos de saída para VPS dedicada, revistos a cada cliente novo: um sistema degradar o outro (OOM, CPU,
   disco), passar de 10 condomínios ativos, ou um contrato exigir.
 
+**Decisões de 2026-10-22 (segunda leva):**
+- **"Master vê tudo"** (SAAS-09 reescrita): o Master vê os dados dos condomínios sem aprovação do síndico. Mitigação
+  adotada, informada ao usuário, sem objeção: registro de todo acesso a dado pessoal na trilha do condomínio, com ator
+  `plataforma/<master>`, e tela "Acessos da plataforma" para o síndico. Riscos R7 e R13; cláusula contratual
+  obrigatória (seção 7).
+- **Módulos por condomínio** (SAAS-19): coluna na plataforma desde já, todos ligados por padrão; tela e bloqueio na F5.
+- **UX do app do Master** (§6.2): lista "Licenças" em cards, busca, filtro por situação, abas por condomínio.
+
 ### 10.2 Em aberto
 
 2b. **Propriedade do código e licença** (sobra da pergunta 2): quem é dono do código e sob qual licença, antes do
     primeiro contrato.
-4. **Acesso de suporte sem síndico disponível:** aceitar "ciência sem aprovação" com prazo de 1 h, ou exigir sempre
-   aprovação de um usuário `sindico`?
+4. ~~**Acesso de suporte sem síndico disponível**~~ — sem objeto desde 2026-10-22: o Master acessa sem aprovação,
+   com registro (SAAS-09).
 6. **Guarda da chave mestra:** onde fica a cópia fora da VPS (gerenciador de senhas da empresa, cofre de nuvem, papel
    em envelope lacrado) e quem tem acesso? (A F1 já cria a chave: até a resposta, vale o cofre do responsável, como a
    KEK.)
