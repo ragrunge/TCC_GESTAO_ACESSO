@@ -12,13 +12,14 @@ import type {
   VinculoUnidade,
 } from '@portaria/domain/types';
 import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
+import { codigoCondominioValido, normalizarCodigoCondominio } from '@portaria/domain/condominio';
 import { brt, toInputDate } from '@portaria/domain/time';
 import { AGRUPAMENTOS } from '@portaria/domain/units';
 import type {
   Api, AutorizacaoView, Autorizador, Catalogo, ConferenciaAncora, EstadoSelos, ExecucaoRetencao, ResultadoAnonimizacao, ResultadoRetencao, ResultadoSelar,
   SeloCadeia, EncomendaView, FichaPessoa, FiltroEncomendas, FiltroOcorrencias, OcorrenciaView, ResumoEncomendas, FiltroAlteracoesPagina, FiltroEventos, FiltroEventosPagina, FiltroRelatorio, FuncionarioView,
   LinhaPlanilha, Pagina, PacoteExportacao, PessoaBusca, PessoaLista, RelatorioImportacao, RelatorioResumo, RestricaoView, ResultadoBuscaGlobal,
-  ResultadoImportacao, ResultadoRestricao, ResumoTurno, UnidadeDetalhe, UnidadeResumo, UsuarioComSenhaTemporaria, UsuarioSessao, VinculoView,
+  ResultadoImportacao, ResultadoRestricao, ResumoTurno, UnidadeDetalhe, UnidadeResumo, UsuarioComSenhaTemporaria, UsuarioSessao, VinculoView, CondominioSessao,
 } from '../types';
 import { ApiError } from '../types';
 import { criarCliente } from './cliente';
@@ -180,11 +181,24 @@ function pacoteDe(corpo: unknown): PacoteExportacao {
   return p;
 }
 
-/** `{ usuario, sessao }` de login/me e `{ usuario }` de trocar-senha (dentro de `data`) -> o usuário. */
-function usuarioDe(corpo: unknown): UsuarioSessao {
-  const u = dados<{ usuario?: UsuarioSessao } | null>(corpo)?.usuario;
+/** `{ codigo, nome }` do condomínio da sessão; qualquer outra forma (ou código fora do formato) vira null. */
+function condominioDe(c: unknown): CondominioSessao | null {
+  if (!c || typeof c !== 'object') return null;
+  const { codigo, nome } = c as { codigo?: unknown; nome?: unknown };
+  if (typeof codigo !== 'string' || !codigoCondominioValido(codigo) || typeof nome !== 'string' || !nome.trim()) return null;
+  return { codigo, nome };
+}
+
+/**
+ * `{ usuario, condominio?, sessao }` de login/me e `{ usuario }` de trocar-senha (dentro de `data`) -> o usuário.
+ * O condomínio só é lido de login/me (`comCondominio`): trocar-senha não o devolve e não pode apagá-lo do estado.
+ */
+function usuarioDe(corpo: unknown, comCondominio = false): UsuarioSessao {
+  const d = dados<{ usuario?: UsuarioSessao; condominio?: unknown } | null>(corpo);
+  const u = d?.usuario;
   if (!u || typeof u.id !== 'string') throw respostaInvalida();
-  return { ...u, deveTrocarSenha: u.deveTrocarSenha === true };
+  const { condominio: _ignorado, ...usuario } = u;
+  return { ...usuario, deveTrocarSenha: u.deveTrocarSenha === true, ...(comCondominio ? { condominio: condominioDe(d?.condominio) } : {}) };
 }
 
 function comSenhaTemporaria(corpo: unknown): UsuarioComSenhaTemporaria {
@@ -229,8 +243,11 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
     aoEventoSessao: (cb) => cliente.aoEvento(cb),
     auth: {
       async login(i) {
-        const { data } = await http.post('/auth/login', { login: i.login, senha: i.senha });
-        const u = usuarioDe(data);
+        // X-Condominio SÓ aqui (SAAS-03): nas demais rotas o condomínio vem do prefixo do cookie, e um cabeçalho
+        // enviado junto teria precedência sobre ele. Vazio: sem cabeçalho (piloto, durante a transição).
+        const codigo = normalizarCodigoCondominio(i.condominio ?? '');
+        const { data } = await http.post('/auth/login', { login: i.login, senha: i.senha }, codigo ? { headers: { 'X-Condominio': codigo } } : undefined);
+        const u = usuarioDe(data, true);
         cliente.sessaoAtiva();
         return u;
       },
@@ -245,7 +262,7 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
       async me() {
         try {
           const { data } = await http.get('/auth/me');
-          const u = usuarioDe(data);
+          const u = usuarioDe(data, true);
           cliente.sessaoAtiva();
           return u;
         } catch (e) {

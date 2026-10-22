@@ -21,6 +21,11 @@ export interface ChavesCondominio {
 export interface CondominioResolvido {
   id: string;
   codigo: string;
+  /**
+   * Nome exibido (cabeçalho do front, via /auth/me). Lido na 1ª resolução do condomínio: renomear vale depois de
+   * reiniciar a API, como a rotação de chave (resolvedor.ts).
+   */
+  nome: string;
   /** Nome do banco Postgres (`portaria` no piloto). */
   banco: string;
   /** O piloto é o banco `portaria` de antes do SaaS: mantém a pasta de anexos e o endpoint público v1. */

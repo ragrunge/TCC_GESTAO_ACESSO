@@ -2,7 +2,7 @@
 // em nome da parte de condomínio. Traduz código do login ou id do cookie em `CondominioResolvido` (banco + chaves
 // desembrulhadas) e confere tudo no boot.
 //
-// - Cache em memória da tabela `condominio` (só id, código, banco, status: colunas não pessoais). Renovado a cada
+// - Cache em memória da tabela `condominio` (só id, código, nome, banco, status: colunas não pessoais). Renovado a cada
 //   RENOVAR_MS (status novo, como `suspenso`, vale em até 1 min) e, num código ou id desconhecido, no máximo uma vez a
 //   cada RECARGA_MIN_MS: código inventado em rajada não vira uma consulta à plataforma por requisição.
 // - Plataforma fora do ar na renovação: fica com o cache anterior (o log registra). Sem cache, nada é resolvido e as
@@ -18,6 +18,7 @@
 //   4. a KEK de cada condomínio abre a DEK de um documento existente dele, se houver (prova que a KEK é a que cifrou).
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
+import { CODIGO_CONDOMINIO as CODIGO } from '@portaria/domain/condominio';
 import { log } from '../comum/log';
 import { CONFIG, type Config } from '../config/config';
 import { REGISTRO_BANCOS, type RegistroBancos } from '../database/registro-bancos';
@@ -31,10 +32,9 @@ import * as sp from './schema-plataforma';
 
 export const RENOVAR_MS = 60_000;
 export const RECARGA_MIN_MS = 5_000;
-const CODIGO = /^[a-z][a-z0-9-]{2,30}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-interface Linha { id: string; codigo: string; banco: string; status: string }
+interface Linha { id: string; codigo: string; nome: string; banco: string; status: string }
 
 export interface Resolucao {
   condominio: CondominioResolvido;
@@ -91,7 +91,7 @@ export class ResolvedorCondominio implements OnModuleInit {
   private recarregar(): Promise<void> {
     this.recarga ??= (async () => {
       try {
-        const linhas = await this.db.select({ id: sp.condominio.id, codigo: sp.condominio.codigo, banco: sp.condominio.banco, status: sp.condominio.status })
+        const linhas = await this.db.select({ id: sp.condominio.id, codigo: sp.condominio.codigo, nome: sp.condominio.nome, banco: sp.condominio.banco, status: sp.condominio.status })
           .from(sp.condominio);
         this.porId = new Map(linhas.map((l) => [l.id, l]));
         this.porCodigo = new Map(linhas.map((l) => [l.codigo, l.id]));
@@ -192,7 +192,7 @@ export class ResolvedorCondominio implements OnModuleInit {
     const hmac = ativa('hmac_cpf');
     const kek = ativa('kek_documentos');
     if (kek.claro.length !== 32) throw new ErroChave(`condomínio ${l.codigo}: KEK com tamanho diferente de 32 bytes`);
-    return { id: l.id, codigo: l.codigo, banco: l.banco, piloto: l.banco === BANCO_PILOTO, chaves: { hmacCpf: hmac.claro, kek: kek.claro, kekVersao: kek.versao } };
+    return { id: l.id, codigo: l.codigo, nome: l.nome, banco: l.banco, piloto: l.banco === BANCO_PILOTO, chaves: { hmacCpf: hmac.claro, kek: kek.claro, kekVersao: kek.versao } };
   }
 
   private async conferirNoBoot() {

@@ -567,15 +567,30 @@ migração (`apps/api/scripts/migrar-bancos.mjs`) e de backup por banco, `condom
   `encerrado`; `provisionando` fica para a CLI de onboarding (F5).
 
 **Ficou para depois:** portão de versão por banco na subida (503 só para o condomínio defasado, SAAS-16); AAD da DEK
-com o condomínio (§6.1, só DEKs novas); campo de código no login do front (§6.2); limite global por IP e taxa por
+com o condomínio (§6.1, só DEKs novas); limite global por IP e taxa por
 condomínio (SAAS-14); `ESTRUTURA` por condomínio (SAAS-06, com a `0007` da F3); tar de anexos por condomínio
 (SAAS-12); sessão de plataforma × rota de condomínio (§6.1 item 6, primeira parte: F5).
+
+**Código do condomínio no front (§6.2, 2026-10-22):** campo "Código do condomínio" no login (opcional, rótulo
+visível, `autocomplete=off`, trim + minúsculas, formato validado com a mesma regra da API, agora em
+`@portaria/domain/condominio` e importada pelo `resolvedor.ts` e pelo `registrar-piloto.ts`). `X-Condominio` só no
+`POST /auth/login` (nas outras rotas o middleware dá precedência ao cabeçalho sobre o prefixo do cookie, então enviá-lo
+fora do login só poderia atrapalhar). Vazio: sem cabeçalho (piloto). Erro continua único ("Usuário ou senha
+inválidos."); o front só recusa formato, nunca existência. Preferência: o código **devolvido pela API** depois de um
+login com sucesso vai para o `localStorage` (só ele); assim um erro de digitação nunca é lembrado e quem ainda entra sem
+código passa a ter o do piloto pré-preenchido, o que prepara o desligamento da flag. Nenhum código fixo no bundle.
+Contrato: `POST /auth/login` e `GET /auth/me` ganharam `condominio: { codigo, nome }` (aditivo; o OpenAPI documenta o
+`data` como envelope genérico, então não muda); o `nome` entra no cache do resolvedor e no `CondominioResolvido`, lido na
+1ª resolução (renomear vale após reiniciar a API). O layout mostra esse nome no cabeçalho, com o texto antigo de
+reserva. O servidor de e2e registra o piloto com o código `parque`, como na produção. Testes: `apps/web/src/test/
+login-condominio.test.tsx`, `apps/web/e2e/27-api-codigo-condominio.spec.ts` e o caso novo em `test/saas-isolamento.test.ts`.
 
 **Checklist do fim da transição** (`SAAS_PILOTO_PADRAO=false`):
 - o leitor de âncoras (`ancora-selo.yml`) chama `/auditoria/selos/publico` sem `X-Condominio`: com a flag desligada
   isso vira 404 e a coleta para. Antes de desligar, o workflow passa a mandar o código do piloto (ou a F4 já trocou o
   endpoint pelo agregado);
-- o front manda o código no login (§6.2); sem isso, ninguém entra;
+- o front manda o código no login (§6.2, feito): quem nunca entrou com o código neste navegador precisa digitá-lo;
+  conferir antes que as portarias já têm o campo preenchido (basta um login com sucesso depois do deploy do front);
 - rollback para uma imagem anterior à F2 desloga todo mundo que tem cookie `v2.` (a imagem velha não reconhece o
   formato): planejar a janela como "todos entram de novo".
 
@@ -628,8 +643,8 @@ permissão de role ficam no `test:pg`.
 
 ### 6.2 Front (`apps/web`)
 
-- Login: campo "Código do condomínio", lembrado como preferência; cabeçalho `X-Condominio` só no login.
-- Layout: nome do condomínio (de `configuracao`) no cabeçalho; rótulos de agrupamento já vêm da API (`/catalogo`).
+- Login: campo "Código do condomínio", lembrado como preferência; cabeçalho `X-Condominio` só no login. **Feito (F2, §5.1).**
+- Layout: nome do condomínio no cabeçalho (**feito**, de login/`/auth/me`, não de `configuracao`); rótulos de agrupamento já vêm da API (`/catalogo`).
 - Tela do síndico: aprovar/encerrar acesso de suporte; aviso visível em todas as telas durante sessão de suporte.
 - Rota `/suporte?codigo=` para a troca do código.
 - **App novo** `apps/plataforma` (Vite, mesmas bibliotecas, mesmo CSP), projeto Vercel separado.

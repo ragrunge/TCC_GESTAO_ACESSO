@@ -11,7 +11,8 @@ interface AuthCtx {
   usuario: UsuarioSessao | null;
   pronto: boolean;
   // 2FA fica para a fase de segurança (pós-MVP): login é só usuário + senha.
-  entrar: (login: string, senha: string) => Promise<UsuarioSessao>;
+  /** `condominio`: código já normalizado; vazio = sem `X-Condominio` (piloto, na transição). */
+  entrar: (login: string, senha: string, condominio?: string) => Promise<UsuarioSessao>;
   sair: () => Promise<void>;
   trocarSenha: (i: TrocarSenhaInput) => Promise<UsuarioSessao>;
 }
@@ -53,8 +54,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }), [api, qc]);
 
-  const entrar = useCallback(async (login: string, senha: string) => {
-    const u = await api.auth.login({ login, senha });
+  const entrar = useCallback(async (login: string, senha: string, condominio?: string) => {
+    const u = await api.auth.login({ login, senha, condominio });
     qc.removeQueries();
     setUsuario(u);
     return u;
@@ -73,7 +74,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const trocarSenha = useCallback(async (i: TrocarSenhaInput) => {
     const u = await api.auth.trocarSenha(i);
-    setUsuario(u);
+    // trocar-senha não devolve o condomínio: mantém o que login/me trouxeram.
+    setUsuario((atual) => ({ condominio: atual?.condominio, ...u }));
     return u;
   }, [api]);
 

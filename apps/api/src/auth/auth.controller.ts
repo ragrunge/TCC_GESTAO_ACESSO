@@ -12,6 +12,10 @@ import { Autenticado, Ctx, ipDe, Publico } from './decorators';
 import { LoginSemCondominio } from './login-sem-condominio';
 import { SENHA_MAX } from './senha.service';
 import type { Contexto } from './tipos';
+import type { CondominioResolvido } from '../saas/condominio';
+
+/** O condomínio da sessão para o front (cabeçalho e preferência do código): só código e nome, nunca id nem banco. */
+const condominioPublico = (c: CondominioResolvido | null | undefined) => (c ? { codigo: c.codigo, nome: c.nome } : null);
 
 const LoginDto = z.strictObject({
   login: z.string().trim().min(1, 'Informe o login.').max(200),
@@ -59,7 +63,7 @@ export class AuthController {
     }
     if (!r.ok || !condominio) throw erroApi(401, 'CREDENCIAIS_INVALIDAS', MENSAGEM_CREDENCIAIS);
     gravarCookieSessao(res, this.config, condominio.id, r.token, r.expiraEm);
-    return { usuario: r.usuario, sessao: { expiraEm: r.expiraEm.toISOString(), inatividadeMin: this.config.sessao.inatividadeMin } };
+    return { usuario: r.usuario, condominio: condominioPublico(condominio), sessao: { expiraEm: r.expiraEm.toISOString(), inatividadeMin: this.config.sessao.inatividadeMin } };
   }
 
   @Post('logout')
@@ -74,7 +78,7 @@ export class AuthController {
   @Autenticado({ permiteTrocaPendente: true })
   async me(@Ctx() ctx: Contexto, @Req() req: Request) {
     const usuario = await this.auth.me(ctx);
-    return { usuario, sessao: { expiraEm: req.auth!.expiraEm.toISOString(), inatividadeMin: this.config.sessao.inatividadeMin } };
+    return { usuario, condominio: condominioPublico(req.condominio), sessao: { expiraEm: req.auth!.expiraEm.toISOString(), inatividadeMin: this.config.sessao.inatividadeMin } };
   }
 
   @Post('trocar-senha')

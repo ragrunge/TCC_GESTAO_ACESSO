@@ -700,11 +700,11 @@ quando listado).
 
 | Método | Rota | Papéis | Descrição |
 |---|---|---|---|
-| POST | /auth/login | público (rate limit) | Login e senha (na fase de segurança, retorna se TOTP é exigido) |
+| POST | /auth/login | público (rate limit) | Login e senha; cabeçalho `X-Condominio: <código>` escolhe o condomínio (SaaS, `05_arquitetura_saas.md` SAAS-05; sem ele, o piloto durante a transição). Devolve `{ usuario, condominio: { codigo, nome }, sessao }`. Código inexistente: a mesma resposta de credencial inválida (na fase de segurança, retorna se TOTP é exigido) |
 | POST | /auth/totp/verificar | público com pré-sessão | Segundo fator (fase de segurança, fora do MVP) |
 | POST | /auth/logout | todos | Revoga a sessão no banco e limpa o cookie (204) |
 | POST | /auth/reautenticar | todos | Desbloqueio de tela da portaria (não implementado) |
-| GET | /auth/me | todos | Usuário, papel, `deveTrocarSenha` e expiração da sessão |
+| GET | /auth/me | todos | Usuário, papel, `deveTrocarSenha`, expiração da sessão e `condominio: { codigo, nome }` (o da sessão; nunca id nem banco) |
 | POST | /auth/trocar-senha | todos | `{ senhaAtual, novaSenha }`; 12+ caracteres, fora da lista comum, sem conter o login; revoga as outras sessões |
 | POST | /auth/totp/ativar | todos | Cadastro do TOTP (fase de segurança, fora do MVP) |
 | GET | /usuarios | SI, AD | Lista (sem hash) |

@@ -4,6 +4,14 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
+    "./condominio": {
+      "require": {
+        "types": "./dist/cjs/condominio.d.ts",
+        "default": "./dist/cjs/condominio.js"
+      },
+      "types": "./src/condominio.ts",
+      "default": "./src/condominio.ts"
+    },
     "./cpf": {
       "require": {
         "types": "./dist/cjs/cpf.d.ts",

@@ -9,6 +9,7 @@
 // o que gravou e comparar com o ambiente (ida e volta). O resultado leva só ids, versões e impressões digitais.
 import { and, eq } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
+import { CODIGO_CONDOMINIO as CODIGO } from '@portaria/domain/condominio';
 import {
   type ChaveMestra, desembrulhar, embrulhar, ErroChave, type IdChave, impressaoDigital, mesmaChave,
 } from './chave-mestra';
@@ -18,7 +19,6 @@ export type DbPlataforma = PgDatabase<PgQueryResultHKT, typeof sp>;
 
 /** O banco do piloto. Fixo: é o banco que existe hoje em produção. */
 export const BANCO_PILOTO = 'portaria';
-const CODIGO = /^[a-z][a-z0-9-]{2,30}$/;
 
 export interface EntradaPiloto {
   codigo: string;

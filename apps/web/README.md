@@ -157,3 +157,9 @@ numéricas: a torre N virou a N-ésima letra (T4-32 -> D-32), e os números que 
 - Restrição (RF-16) é checada **antes** da validação do autorizador, e a API grava o evento `negado` antes de responder 422.
 - Pessoa tem `categoria` fixa (necessária para a regra da Escala); a spec deriva o papel do contexto.
 - Usuários: login é só usuário + senha para todos os papéis; 2FA fica para a fase de segurança (pós-MVP).
+- Código do condomínio (SaaS, `docs/05_arquitetura_saas.md` SAAS-05): campo opcional no login, normalizado (trim +
+  minúsculas) e validado no formato do slug (`@portaria/domain/condominio`, o mesmo da API). Vai no cabeçalho
+  `X-Condominio` **só** no `POST /auth/login`; vazio = sem cabeçalho (piloto, enquanto a API estiver na transição). Depois
+  de um login com sucesso, o código que a API devolve fica no `localStorage` como preferência de UI
+  (`auth/preferenciaCondominio.ts`: só o código, nada de sessão). O cabeçalho do layout mostra o nome do condomínio vindo
+  de login/`/auth/me`.

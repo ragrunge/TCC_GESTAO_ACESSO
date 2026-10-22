@@ -21,7 +21,11 @@ export class ApiError extends Error {
 export const ehApiError = (e: unknown): e is ApiError => e instanceof ApiError;
 
 // ----- Entradas -------------------------------------------------------------------------------
-export interface LoginInput { login: string; senha: string }
+/**
+ * `condominio`: código do condomínio (SAAS-05), já normalizado. Vazio ou ausente: não envia `X-Condominio` e a API
+ * resolve para o piloto enquanto durar a transição (SAAS_PILOTO_PADRAO).
+ */
+export interface LoginInput { login: string; senha: string; condominio?: string }
 export interface TrocarSenhaInput { senhaAtual: string; novaSenha: string }
 
 export interface NovaPessoaInput {
@@ -146,7 +150,11 @@ export interface LinhaPlanilha { linha: number; bloco: string; unidade: string; 
 
 // ----- Saídas ---------------------------------------------------------------------------------
 /** Usuário da sessão: o de sistema + a marca de troca obrigatória (senha temporária). */
-export interface UsuarioSessao extends UsuarioSistema { deveTrocarSenha: boolean }
+/** Condomínio da sessão, como login e /auth/me devolvem: só o código (preferência do login) e o nome (cabeçalho). */
+export interface CondominioSessao { codigo: string; nome: string }
+
+/** `condominio` ausente ou null: API anterior à F2 do SaaS (o layout cai no nome fixo). */
+export interface UsuarioSessao extends UsuarioSistema { deveTrocarSenha: boolean; condominio?: CondominioSessao | null }
 
 /**
  * Criação e redefinição devolvem a senha temporária UMA vez. Quem recebe mostra e descarta: não vai para estado

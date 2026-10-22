@@ -32,7 +32,7 @@ import { configurarApp, PREFIXO_GLOBAL } from '../../src/plataforma';
 import { configDeTeste } from '../helpers/app';
 import { CHAVE_HMAC_TESTE, PASTA_MIGRACOES } from '../helpers/banco';
 import { novoBancoPlataforma } from '../helpers/plataforma';
-import { CODIGO_PILOTO, comSaas, KEK_TESTE, registrarCondominio, RegistroDeTeste } from '../helpers/saas';
+import { comSaas, KEK_TESTE, registrarCondominio, RegistroDeTeste } from '../helpers/saas';
 import { semearDadosE2e, USUARIOS_E2E } from './dados';
 
 /** Senha de todos os usuários do e2e (fictícia, só deste modo). O playwright.config.ts manda a mesma em E2E_SENHA. */
@@ -77,6 +77,9 @@ async function bancoMigrado() {
   return client;
 }
 
+/** Código do piloto no servidor de e2e: o mesmo slug da produção, para o e2e do front digitar o que a portaria digita. */
+export const CODIGO_PILOTO_E2E = 'parque';
+
 export interface OpcoesServidorE2e {
   /** 0 = porta livre qualquer (testes). */
   porta: number;
@@ -111,7 +114,7 @@ export async function iniciarServidorE2e(o: OpcoesServidorE2e) {
 
   // Banco plataforma (SaaS, F2) com o piloto: o banco `portaria` do registro é o Proxy acima.
   const plataforma = await novoBancoPlataforma();
-  await registrarCondominio(plataforma.db, { codigo: CODIGO_PILOTO, banco: 'portaria', hmac: CHAVE_HMAC_TESTE, kek: KEK_TESTE });
+  await registrarCondominio(plataforma.db, { codigo: CODIGO_PILOTO_E2E, banco: 'portaria', hmac: CHAVE_HMAC_TESTE, kek: KEK_TESTE });
   const mod = await comSaas(Test.createTestingModule({ imports: [AppModule] }), {
     plataforma: plataforma.db, registro: new RegistroDeTeste(new Map([['portaria', db]])), fecharPlataforma: () => plataforma.client.close(),
   })

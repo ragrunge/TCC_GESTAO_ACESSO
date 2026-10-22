@@ -9,14 +9,27 @@ import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { mensagemErro } from '../../app/useAsync';
 import { useTituloPagina } from '../../app/titulo';
+import { codigoCondominioValido, normalizarCodigoCondominio } from '@portaria/domain/condominio';
+import { lembrarCodigo, lerCodigoLembrado } from '../../auth/preferenciaCondominio';
+
+const ERRO_FORMATO_CODIGO = 'Use de 3 a 31 caracteres: letras, números e hífen, começando por letra.';
 
 export function LoginPage() {
   const { usuario, pronto, entrar } = useAuth();
+  // Código do condomínio (SAAS-05): pré-preenchido com o lembrado neste navegador, sem valor fixo no bundle. Vazio
+  // entra no piloto enquanto a API estiver na transição; a resposta do login traz o código certo, que fica lembrado.
+  const [codigo, setCodigo] = useState(lerCodigoLembrado);
+  const [erroCodigo, setErroCodigo] = useState<string | null>(null);
   const [login, setLogin] = useState('');
   const [senha, setSenha] = useState('');
   // Sem `variables`: login e senha vêm do estado do formulário, então a senha não fica guardada no cache de
   // mutations; gcTime 0 descarta o resultado assim que a tela sai.
-  const entrada = useMutation({ mutationFn: () => entrar(login, senha), gcTime: 0 });
+  const entrada = useMutation({
+    mutationFn: () => entrar(login, senha, normalizarCodigoCondominio(codigo)),
+    // Só depois de entrar: código com erro de digitação nunca é lembrado. Preferência = o código canônico da API.
+    onSuccess: (u) => lembrarCodigo(u.condominio?.codigo ?? normalizarCodigoCondominio(codigo)),
+    gcTime: 0,
+  });
   const erroEntrada = entrada.error;
   const bloqueado = erroEntrada instanceof ApiError && erroEntrada.status === 429;
   // Só sai com a senha certa (a API não revela o motivo a quem não a conhece): a saída é pedir nova senha à administração.
@@ -29,6 +42,14 @@ export function LoginPage() {
   function enviar(e: FormEvent) {
     e.preventDefault();
     if (entrada.isPending) return;
+    // Só o formato (o mesmo da API). Se o código existe, só a API sabe, e responde como credencial inválida.
+    const c = normalizarCodigoCondominio(codigo);
+    setCodigo(c);
+    if (c && !codigoCondominioValido(c)) {
+      setErroCodigo(ERRO_FORMATO_CODIGO);
+      return;
+    }
+    setErroCodigo(null);
     entrada.mutate();
   }
 
@@ -53,6 +74,10 @@ export function LoginPage() {
         <div className="flex w-full max-w-[400px] flex-col gap-5">
           <form onSubmit={enviar} className="flex flex-col gap-4" noValidate>
             <h1 className="mb-1 text-[28px] font-semibold">Entrar</h1>
+            <Field label="Código do condomínio" erro={erroCodigo} dica="Informado pela administração. Fica lembrado neste navegador.">
+              <input className="input !h-[46px] !px-[14px]" value={codigo} onChange={(e) => { setCodigo(e.target.value); setErroCodigo(null); }}
+                autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={64} aria-invalid={erroCodigo ? true : undefined} />
+            </Field>
             <Field label="Usuário"><input className="input !h-[46px] !px-[14px]" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username" required /></Field>
             <Field label="Senha">
               <input className="input !h-[46px] !px-[14px]" type="password" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="current-password" required />

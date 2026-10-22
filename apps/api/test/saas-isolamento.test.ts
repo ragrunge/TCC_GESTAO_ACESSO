@@ -26,7 +26,7 @@ import { semearDadosE2e, USUARIOS_E2E } from './e2e/dados';
 import { type ApiDeTeste, configDeTeste, cookieDe, novaApi, novoIp, SENHA, trilha } from './helpers/app';
 import { CHAVE_HMAC_TESTE, novoBanco, SENHA_FALSA } from './helpers/banco';
 import { novoBancoPlataforma } from './helpers/plataforma';
-import { DEMO, KEK_TESTE, MESTRA_TESTE, registrarCondominio, RegistroDeTeste } from './helpers/saas';
+import { CODIGO_PILOTO, DEMO, KEK_TESTE, MESTRA_TESTE, registrarCondominio, RegistroDeTeste } from './helpers/saas';
 
 const V1 = '/api/v1';
 const COOKIE = '__Host-portaria_sessao';
@@ -142,6 +142,20 @@ describe('§6.1 item 2: sessão de um condomínio não abre outro', () => {
     expect((await me(demo['joao.lima']!)).status).toBe(200);
     expect(valor(piloto['joao.lima']!).split('.')[1]).toBe(api.pilotoId);
     expect(valor(demo['joao.lima']!).split('.')[1]).toBe(api.demo!.id);
+  });
+
+  it('login e /auth/me devolvem código e nome do condomínio da sessão (nunca id nem banco)', async () => {
+    const pilotoMe = await me(piloto['joao.lima']!);
+    const demoMe = await me(demo['joao.lima']!);
+    expect(pilotoMe.body.data.condominio).toEqual({ codigo: CODIGO_PILOTO, nome: 'Condomínio de teste' });
+    expect(demoMe.body.data.condominio).toEqual({ codigo: DEMO.codigo, nome: `Condomínio ${DEMO.codigo}` });
+    const login = await api.http().post(`${V1}/auth/login`).set('X-Forwarded-For', novoIp()).set('X-Condominio', DEMO.codigo)
+      .send({ login: 'joao.lima', senha: SENHA });
+    expect(login.status).toBe(200);
+    expect(login.body.data.condominio).toEqual({ codigo: DEMO.codigo, nome: `Condomínio ${DEMO.codigo}` });
+    // Sem código (transição): o piloto, e o front aprende o código dele pela resposta.
+    const semCodigo = await api.http().post(`${V1}/auth/login`).set('X-Forwarded-For', novoIp()).send({ login: 'joao.lima', senha: SENHA });
+    expect(semCodigo.body.data.condominio).toEqual({ codigo: CODIGO_PILOTO, nome: 'Condomínio de teste' });
   });
 
   it('prefixo trocado (A -> B e B -> A): 401; o token não existe no outro banco', async () => {
@@ -391,7 +405,7 @@ describe('transição e status do condomínio', () => {
 
 describe('boot: conferência das chaves (transição da F2)', () => {
   const vazio = { hmacCpf: null, kek: null, kekVersao: null };
-  const piloto = { id: 'x', codigo: 'piloto', banco: 'portaria', piloto: true, chaves: { hmacCpf: CHAVE_HMAC_TESTE, kek: KEK_TESTE, kekVersao: 1 } };
+  const piloto = { id: 'x', codigo: 'piloto', nome: 'Condomínio de teste', banco: 'portaria', piloto: true, chaves: { hmacCpf: CHAVE_HMAC_TESTE, kek: KEK_TESTE, kekVersao: 1 } };
 
   it('chaves do ambiente iguais às da plataforma: confere; ausentes: nada a conferir; diferentes: recusa', () => {
     expect(conferirChavesDoAmbiente(vazio, piloto)).toEqual([]);
