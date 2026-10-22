@@ -5,7 +5,9 @@
 # O que sai, cifrado com a chave PÚBLICA age (a privada NUNCA fica no servidor: quem toma a VPS não lê os backups):
 #   diario/portaria-<carimbo>.dump.age     pg_dump -Fc do banco `portaria` (dados, schema, owners e GRANTs)
 #   diario/arquivos-<carimbo>.tar.age      volumes `documentos` (anexos, já cifrados pela KEK) e `ancoras` (cópia local)
-#   diario/<carimbo>.sha256                sha256 dos dois .age (conferir depois da cópia externa)
+#   diario/plataforma-<carimbo>.dump.age   pg_dump -Fc do banco `plataforma` do SaaS (só se ele existir; as chaves dos
+#                                          condomínios vão embrulhadas pela chave mestra, que NÃO entra no backup)
+#   diario/<carimbo>.sha256                sha256 dos .age do conjunto (conferir depois da cópia externa)
 # Rotação: os últimos BACKUP_DIARIOS (30) conjuntos diários e, do primeiro backup de cada mês, BACKUP_MENSAIS (12)
 # conjuntos em mensal/.
 #
@@ -52,8 +54,9 @@ MES="${CARIMBO:0:6}"
 D="$BACKUP_DIR/diario"
 DUMP="$D/portaria-$CARIMBO.dump.age"
 ARQ="$D/arquivos-$CARIMBO.tar.age"
+PLAT="$D/plataforma-$CARIMBO.dump.age"
 SUM="$D/$CARIMBO.sha256"
-trap 'rm -f "$DUMP.parcial" "$ARQ.parcial"' EXIT
+trap 'rm -f "$DUMP.parcial" "$ARQ.parcial" "$PLAT.parcial"' EXIT
 
 cd "$PORTARIA_DIR"
 
@@ -70,16 +73,24 @@ log "volumes documentos + ancoras -> $ARQ"
 docker compose run --rm --no-deps -T --entrypoint tar api -C /var/lib/portaria -cf - documentos ancoras \
   | age --encrypt -R "$RECIPIENTES" -o "$ARQ.parcial"
 
-# O conjunto só aparece com os dois arquivos completos: falha no meio não deixa dump sem anexos (nem o contrário).
-for f in "$DUMP.parcial" "$ARQ.parcial"; do [ -s "$f" ] || falha "arquivo vazio: $f"; done
-mv "$DUMP.parcial" "$DUMP"
-mv "$ARQ.parcial" "$ARQ"
+# 2b) Banco `plataforma` (SaaS, F1 em diante), se existir. Sem ele (antes da F1), o conjunto segue só com os dois.
+CONJUNTO=("$DUMP" "$ARQ")
+if [ "$(docker compose exec -T db psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname = 'plataforma'")" = 1 ]; then
+  log "pg_dump plataforma -> $PLAT"
+  docker compose exec -T db pg_dump -U postgres -d plataforma -Fc --no-password \
+    | age --encrypt -R "$RECIPIENTES" -o "$PLAT.parcial"
+  CONJUNTO+=("$PLAT")
+fi
 
-( cd "$D" && sha256sum "$(basename "$DUMP")" "$(basename "$ARQ")" > "$SUM" )
+# O conjunto só aparece com todos os arquivos completos: falha no meio não deixa dump sem anexos (nem o contrário).
+for f in "${CONJUNTO[@]}"; do [ -s "$f.parcial" ] || falha "arquivo vazio: $f.parcial"; done
+for f in "${CONJUNTO[@]}"; do mv "$f.parcial" "$f"; done
+
+( cd "$D" && for f in "${CONJUNTO[@]}"; do basename "$f"; done | xargs sha256sum > "$SUM" )
 
 # 3) Mensal: o primeiro backup bem-sucedido de cada mês ganha uma cópia (hard link: não ocupa espaço em dobro).
 if ! ls "$BACKUP_DIR/mensal/portaria-$MES"*.dump.age >/dev/null 2>&1; then
-  for f in "$DUMP" "$ARQ" "$SUM"; do ln "$f" "$BACKUP_DIR/mensal/$(basename "$f")"; done
+  for f in "${CONJUNTO[@]}" "$SUM"; do ln "$f" "$BACKUP_DIR/mensal/$(basename "$f")"; done
   log "cópia mensal de $MES"
 fi
 
@@ -91,7 +102,8 @@ rotacionar() {
     [ -e "$f" ] || continue
     f="${f##*/}"; f="${f#portaria-}"; printf '%s\n' "${f%.dump.age}"
   done | sort -r | tail -n +"$((manter + 1))" | while read -r carimbo; do
-    rm -f "$pasta/portaria-$carimbo.dump.age" "$pasta/arquivos-$carimbo.tar.age" "$pasta/$carimbo.sha256"
+    rm -f "$pasta/portaria-$carimbo.dump.age" "$pasta/arquivos-$carimbo.tar.age" "$pasta/plataforma-$carimbo.dump.age" \
+      "$pasta/$carimbo.sha256"
     log "rotação: removido $(basename "$pasta")/$carimbo"
   done
 }

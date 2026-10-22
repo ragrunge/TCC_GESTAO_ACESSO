@@ -392,7 +392,8 @@ Operação:
 ## 8. Backup (RNF-10)
 
 `db/backup/backup-portaria.sh`: `pg_dump -Fc` + volumes `documentos` e `ancoras`, cifrados com a chave **pública** age,
-num conjunto atômico (`portaria-<carimbo>.dump.age`, `arquivos-<carimbo>.tar.age`, `<carimbo>.sha256`), com rotação de
+num conjunto atômico (`portaria-<carimbo>.dump.age`, `arquivos-<carimbo>.tar.age`, `<carimbo>.sha256` e, depois da F1 do
+SaaS, `plataforma-<carimbo>.dump.age`), com rotação de
 30 diários e 12 mensais em `/var/backups/tcc-portaria` (fora dos volumes do Docker). Testado localmente: três execuções
 seguidas com rotação, recusa de arquivo com chave privada e restore completo (seção 9).
 
