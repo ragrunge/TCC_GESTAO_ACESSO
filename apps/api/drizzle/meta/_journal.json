@@ -57,6 +57,13 @@
       "when": 1792702684258,
       "tag": "0007_lgpd_titular_retencao",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792704701322,
+      "tag": "0008_login_limite_par",
+      "breakpoints": true
     }
   ]
 }

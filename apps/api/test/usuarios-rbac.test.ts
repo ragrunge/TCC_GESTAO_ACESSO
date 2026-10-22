@@ -159,7 +159,8 @@ describe('usuários: gestão, síndico protegido, sessões revogadas', () => {
 
   it('redefinir senha: derruba as sessões do alvo, exige troca e desbloqueia o login', async () => {
     const alvo = await api.como('porteiro');
-    for (let i = 0; i < PADROES_LOGIN.maxFalhasLogin; i++) await api.http().post('/api/v1/auth/login').set('X-Forwarded-For', `198.51.100.${i}`).send({ login: LOGINS.porteiro, senha: 'x' });
+    // Bloqueio por par login+IP (spec §5.1): o mesmo IP da guarita errando a senha.
+    for (let i = 0; i < PADROES_LOGIN.maxFalhasLogin; i++) await api.http().post('/api/v1/auth/login').set('X-Forwarded-For', '198.51.100.99').send({ login: LOGINS.porteiro, senha: 'x' });
     expect((await api.http().post('/api/v1/auth/login').set('X-Forwarded-For', '198.51.100.99').send({ login: LOGINS.porteiro, senha: SENHA })).status).toBe(429);
 
     const { cookie } = await api.como('administracao');
@@ -167,7 +168,7 @@ describe('usuários: gestão, síndico protegido, sessões revogadas', () => {
     expect(r.status).toBe(200);
     expect(r.body.data.usuario.deveTrocarSenha).toBe(true);
     expect((await api.http().get('/api/v1/auth/me').set('Cookie', alvo.cookie)).status).toBe(401);
-    const nova = await api.entrar(LOGINS.porteiro, r.body.data.senhaTemporaria);
+    const nova = await api.entrar(LOGINS.porteiro, r.body.data.senhaTemporaria, '198.51.100.99'); // o par foi zerado
     expect(nova.corpo.usuario.deveTrocarSenha).toBe(true);
   });
 

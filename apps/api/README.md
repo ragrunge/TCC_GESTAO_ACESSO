@@ -204,7 +204,7 @@ loga só SQLSTATE e constraint (a mensagem do `DrizzleQueryError` traz SQL e par
 | `SESSAO_ABSOLUTA_MIN`, `SESSAO_INATIVIDADE_MIN` | 720, 30 | minutos |
 | `PORTARIA_HMAC_CPF_KEY` | base64, 32+ bytes | também origem (HKDF) da chave do `login_limite` |
 | `SEED_SENHA_DEV` | 12+ caracteres | só o seed usa. Em produção não fica no serviço: vai só no `docker compose run` do seed (docs/deploy.md §3) |
-| `LOGIN_MAX_FALHAS_LOGIN`, `LOGIN_MAX_FALHAS_IP` | 10 (3 a 50), 30 (3 a 500) | falhas na janela que bloqueiam; vazio = padrão (spec §14, nº 27) |
+| `LOGIN_MAX_FALHAS_LOGIN`, `LOGIN_MAX_FALHAS_IP` | 10 (3 a 50), 30 (3 a 500) | falhas na janela que bloqueiam o par login+IP e o IP (o login sozinho só atrasa); vazio = padrão (spec §14, nº 27) |
 | `LOGIN_JANELA_MIN`, `LOGIN_BLOQUEIO_MIN` | 15, 15 | minutos; vazio = padrão |
 | `IMPORTACAO_PRAZO_LEGADO_DIAS` | 90 (1 a 730) | prazo para regularizar o legado da planilha (RN-09), definido em assembleia; vazio = padrão (spec §14, nº 30) |
 | `ANCORA_DESTINOS` | `github`, `email` (vírgula) | destinos externos da âncora (spec §4.6). `github` liga `GET /auditoria/selos/publico` para o GitHub Actions. Vazio = `email` se `ANCORA_EMAILS` estiver preenchida. Produção exige ao menos um (o compose de produção usa `github`) |
@@ -245,7 +245,7 @@ cookie Strict viaja).
   obrigatória). Falta um comando que crie só o síndico, com login e nome informados.
 - Rehash de senha quando os parâmetros do argon2 mudarem (hoje o hash antigo continua valendo com os parâmetros dele).
 - Ajustar os parâmetros do argon2 por medição na VPS (alvo de ~250 ms; no Mac de dev, ~120 ms).
-- `login_limite` cresce uma linha por login ou IP distinto e não tem limpeza (app_rw não tem DELETE); um job de manutenção
+- `login_limite` cresce uma linha por login, IP ou par login+IP distinto e não tem limpeza (app_rw não tem DELETE); um job de manutenção
   como app_migrator resolve quando o volume importar.
 - `test:pg` sobrescreve a senha do `app_rw` no cluster (ver db/README.md).
 - Serviços `web` e `minio` da spec §12.2 não foram incluídos (o `mailpit`, de dev, recebe a âncora do selo).

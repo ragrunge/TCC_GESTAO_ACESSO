@@ -1,8 +1,9 @@
 // Login sem condomínio resolvido (código do condomínio inexistente, fora de ativo/suspenso, ou transição desligada).
 // Não há banco onde contar a tentativa, mas a resposta tem de ser INDISTINGUÍVEL da de um condomínio existente com
 // login inexistente (senão o código do login vira oráculo de "quem é cliente", SAAS-05): mesmo argon2 (fictício), mesmo
-// atraso crescente pelo número de falhas do LOGIN, mesmo bloqueio (429 com Retry-After) ao passar do máximo por login
-// ou por IP, com os mesmos parâmetros (config.login). Por isso o contador abaixo é o algoritmo de
+// atraso crescente pelo número de falhas do LOGIN, mesmo bloqueio (429 com Retry-After) ao passar do máximo pelo par
+// login+IP ou pelo IP (o login sozinho nunca bloqueia), com os mesmos parâmetros (config.login). Por isso o contador
+// abaixo é o algoritmo de
 // limite-login.service.ts (reservar / estaBloqueada / bloquearSeAtingiu) em memória, por processo.
 //
 // Memória: no máximo MAX_CHAVES chaves; cheio, descarta as de janela vencida e sem bloqueio; ainda cheio, recomeça do
@@ -11,7 +12,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { setTimeout as esperar } from 'node:timers/promises';
 import { RELOGIO, type Relogio } from '../comum/relogio';
 import { CONFIG, type Config } from '../config/config';
-import { normalizarLogin } from './limite-login.service';
+import { normalizarLogin, TETO_FALHAS } from './limite-login.service';
 import { SenhaService } from './senha.service';
 
 /** A espera do atraso crescente, num ponto só (os testes a observam para comparar os dois caminhos). */
@@ -29,7 +30,7 @@ export function atrasoDaFalha(c: Config['login'], falhas: number): number {
 }
 
 interface Contador { falhas: number; janelaInicio: number; bloqueadoAte: number | null }
-type Tipo = 'login' | 'ip';
+type Tipo = 'login' | 'ip' | 'login_ip';
 
 const MAX_CHAVES = 20_000;
 
@@ -46,7 +47,8 @@ export class LoginSemCondominio {
     @Inject(EsperaLogin) private readonly espera: EsperaLogin,
   ) {}
 
-  private maximo(t: Tipo) { return t === 'login' ? this.config.login.maxFalhasLogin : this.config.login.maxFalhasIp; }
+  /** O mesmo de LimiteLoginService.maximo: `login` sozinho nunca bloqueia. */
+  private maximo(t: Tipo) { return t === 'login_ip' ? this.config.login.maxFalhasLogin : t === 'ip' ? this.config.login.maxFalhasIp : Infinity; }
   private bloqueioMs() { return this.config.login.bloqueioMin * 60_000; }
 
   private abrirEspaco(agora: number) {
@@ -69,18 +71,23 @@ export class LoginSemCondominio {
     } else if (c.bloqueadoAte !== null || c.janelaInicio <= agora - janela) {
       c.falhas = 1; c.janelaInicio = agora; c.bloqueadoAte = null;
     } else {
-      c.falhas++;
+      c.falhas = Math.min(c.falhas + 1, TETO_FALHAS);
     }
     return c;
   }
 
   private bloqueada(t: Tipo, c: Contador, agora: number) {
+    if (t === 'login') return false;
     return (c.bloqueadoAte !== null && c.bloqueadoAte > agora) || c.falhas > this.maximo(t);
   }
 
   async tentar(login: string, senha: string, ip: string | null): Promise<ResultadoSemCondominio> {
     const agora = this.relogio.agora().getTime();
-    const reservas: [Tipo, Contador][] = [['login', this.reservar(`login:${normalizarLogin(login)}`, agora)]];
+    const l = normalizarLogin(login);
+    const reservas: [Tipo, Contador][] = [
+      ['login', this.reservar(`login:${l}`, agora)],
+      ['login_ip', this.reservar(`login_ip:${JSON.stringify([l, ip ?? ''])}`, agora)],
+    ];
     if (ip) reservas.push(['ip', this.reservar(`ip:${ip}`, agora)]);
     if (reservas.some(([t, c]) => this.bloqueada(t, c, agora))) {
       const fins = reservas.map(([, c]) => c.bloqueadoAte).filter((x): x is number => x !== null && x > agora);
@@ -88,7 +95,7 @@ export class LoginSemCondominio {
     }
     await this.senhas.verificarFicticio(senha);
     for (const [t, c] of reservas) {
-      if (c.falhas >= this.maximo(t) && (c.bloqueadoAte === null || c.bloqueadoAte <= agora)) c.bloqueadoAte = agora + this.bloqueioMs();
+      if (t !== 'login' && c.falhas >= this.maximo(t) && (c.bloqueadoAte === null || c.bloqueadoAte <= agora)) c.bloqueadoAte = agora + this.bloqueioMs();
     }
     await this.espera.esperar(atrasoDaFalha(this.config.login, reservas[0]![1].falhas));
     return { motivo: 'credenciais' };

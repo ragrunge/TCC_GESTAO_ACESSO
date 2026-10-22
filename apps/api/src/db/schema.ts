@@ -141,7 +141,8 @@ export const sessao = pgTable('sessao', {
 
 // ----- Limite de tentativas de login (spec §5.1): contador por chave, persistente ------------------------------
 // Uma linha por (tipo, chave), atualizada por UPSERT atômico: vale entre réplicas e não cresce por tentativa.
-// `chave` é HMAC (subchave derivada de PORTARIA_HMAC_CPF_KEY) do login normalizado ou do IP: o login digitado pode ser um CPF.
+// `chave` é HMAC (subchave derivada de PORTARIA_HMAC_CPF_KEY) do login normalizado, do IP ou do par login+IP (0008): o
+// login digitado pode ser um CPF. Só `ip` e `login_ip` bloqueiam; `login` sozinho só gradua o atraso (limite-login.service.ts).
 export const loginLimite = pgTable('login_limite', {
   tipo: text('tipo').notNull(),
   chave: text('chave').notNull(),
@@ -151,7 +152,7 @@ export const loginLimite = pgTable('login_limite', {
   atualizadoEm: instante('atualizado_em').notNull().defaultNow(),
 }, (t) => [
   primaryKey({ name: 'login_limite_pk', columns: [t.tipo, t.chave] }),
-  check('login_limite_tipo_ck', sql`tipo IN ('login', 'ip')`),
+  check('login_limite_tipo_ck', sql`tipo IN ('login', 'ip', 'login_ip')`),
   check('login_limite_chave_ck', sql`chave ~ '^[0-9a-f]{64}$'`),
   check('login_limite_falhas_ck', sql`falhas >= 0`),
 ]);

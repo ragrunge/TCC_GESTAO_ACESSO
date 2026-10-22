@@ -167,7 +167,7 @@ export class UsuariosService {
         .set({ senhaHash, deveTrocarSenha: true, senhaTemporariaExpiraEm, senhaAlteradaEm: agora, atualizadoEm: agora })
         .where(eq(usuarioSistema.id, id)).returning(colunasGestao);
       await this.sessoes.revogarDoUsuario(tx, id, 'redefinicao_senha', agora);
-      await this.limite.zerar(tx, this.limite.chave('login', alvo.login), agora); // desbloqueia o login do alvo
+      await this.limite.zerarLogin(tx, alvo.login, agora); // desbloqueia o alvo em todos os IPs
       return d!;
     });
     return { usuario, senhaTemporaria };

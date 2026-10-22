@@ -250,6 +250,17 @@ describe('§6.1 item 3: login com código de A e senha de B', () => {
   });
 });
 
+describe('login sem condomínio: o mesmo limite por par login+IP', () => {
+  it('muitos IPs no mesmo login nunca dão 429; o mesmo IP dá, como no condomínio existente', async () => {
+    const tentar = (ip: string) => api.http().post(`${V1}/auth/login`).set('X-Forwarded-For', ip).set('X-Condominio', 'nao-existe')
+      .send({ login: 'alvo.fixo', senha: 'x' });
+    for (let i = 0; i < api.config.login.maxFalhasLogin + 3; i++) expect((await tentar(novoIp())).status).toBe(401);
+    const ip = novoIp();
+    for (let i = 0; i < api.config.login.maxFalhasLogin; i++) expect((await tentar(ip)).status).toBe(401);
+    expect((await tentar(ip)).status).toBe(429);
+  });
+});
+
 describe('§6.1 itens 4 e 5: chaves por condomínio', () => {
   it('o mesmo CPF gera documento_busca diferente em cada condomínio', async () => {
     const busca = async (db: typeof api.db) => (await db.select({ b: s.pessoa.documentoBusca }).from(s.pessoa).where(eq(s.pessoa.nome, 'Ana Ribeiro')))[0]!.b;

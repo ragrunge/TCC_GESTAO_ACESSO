@@ -71,16 +71,17 @@ describe('senha temporária: validade de 72 h', () => {
     expect(await sessoesDe(c.usuario.id)).toBe(1); // nenhuma sessão nova
     const falha = (await trilha(api, 'auth.login_falha')).at(-1)!;
     expect(falha).toMatchObject({ usuarioId: c.usuario.id, entidade: 'sessao' });
-    expect(falha.depois).toMatchObject({ login: 'marina.couto', motivo: 'senha_temporaria_expirada' });
+    expect(falha.depois).toEqual({ motivo: 'senha_temporaria_expirada' }); // sem o texto digitado
   });
 
   it('conta no limite de login: 10 tentativas com a vencida bloqueiam; a redefinição desbloqueia e renova o prazo', async () => {
     const c = await criar('marina.couto');
     api.relogio.avancarMin(MIN_72H);
+    const ip = novoIp();
     for (let i = 0; i < PADROES_LOGIN.maxFalhasLogin; i++) {
-      expect((await login('marina.couto', c.senhaTemporaria)).body.code).toBe('SENHA_TEMPORARIA_EXPIRADA');
+      expect((await login('marina.couto', c.senhaTemporaria, ip)).body.code).toBe('SENHA_TEMPORARIA_EXPIRADA');
     }
-    const bloqueado = await login('marina.couto', c.senhaTemporaria);
+    const bloqueado = await login('marina.couto', c.senhaTemporaria, ip);
     expect(bloqueado.status).toBe(429);
     expect(bloqueado.body.code).toBe('LOGIN_BLOQUEADO');
 
@@ -89,8 +90,8 @@ describe('senha temporária: validade de 72 h', () => {
     expect(red.status).toBe(200);
     expect(red.body.data.usuario).toMatchObject({ deveTrocarSenha: true, senhaTemporariaExpiraEm: agora + SENHA_TEMPORARIA_VALIDADE_MS });
     expect((await prazoNoBanco(c.usuario.id))?.getTime()).toBe(agora + SENHA_TEMPORARIA_VALIDADE_MS);
-    expect((await login('marina.couto', c.senhaTemporaria)).body.code).toBe('CREDENCIAIS_INVALIDAS'); // a antiga morreu
-    expect((await login('marina.couto', red.body.data.senhaTemporaria)).status).toBe(200);
+    expect((await login('marina.couto', c.senhaTemporaria, ip)).body.code).toBe('CREDENCIAIS_INVALIDAS'); // a antiga morreu
+    expect((await login('marina.couto', red.body.data.senhaTemporaria, ip)).status).toBe(200); // o par foi desbloqueado
   });
 
   it('a troca de senha zera o prazo (NULL) e a conta deixa de vencer', async () => {

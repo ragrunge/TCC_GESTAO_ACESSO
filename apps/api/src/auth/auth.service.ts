@@ -56,6 +56,8 @@ export type ResultadoLogin =
 /** Mensagem ÚNICA para usuário inexistente, inativo e senha errada (spec §5.1). */
 export const MENSAGEM_CREDENCIAIS = 'Usuário ou senha inválidos.';
 /** Só sai com a senha CERTA: quem não a conhece recebe MENSAGEM_CREDENCIAIS, como em qualquer senha errada. */
+/** usuario_nome da trilha quando o login digitado não existe (o texto digitado não é gravado). */
+export const LOGIN_INEXISTENTE = '(login inexistente)';
 export const MENSAGEM_TEMPORARIA_EXPIRADA = 'Senha temporária vencida. Peça a redefinição à administração.';
 
 @Injectable()
@@ -83,21 +85,29 @@ export class AuthService {
    */
   async login(loginDigitado: string, senha: string, ip: string | null, userAgent: string | undefined, opcoes: { suspenso?: boolean } = {}): Promise<ResultadoLogin> {
     const agora = this.relogio.agora();
+    // Bloqueiam: o par login+IP e o IP. O login sozinho só gradua o atraso (sem bloqueio dirigido; limite-login.service.ts).
     const chLogin = this.limite.chave('login', loginDigitado);
+    const chPar = this.limite.chavePar(loginDigitado, ip);
     const chIp = ip ? this.limite.chave('ip', ip) : null;
     const rLogin = await this.limite.reservar(chLogin, agora);
+    const rPar = await this.limite.reservar(chPar, agora);
     const rIp = chIp ? await this.limite.reservar(chIp, agora) : null;
 
     const [u] = await this.db.select({ ...colunasGestao, senhaHash: usuarioSistema.senhaHash }).from(usuarioSistema)
       .where(sql`lower(${usuarioSistema.login}) = ${normalizarLogin(loginDigitado)}`).limit(1);
     const ator: Ator | null = u ? { id: u.id, nome: u.nome, papel: u.papel } : null;
+    // O texto digitado NUNCA vai para a trilha (append-only, guardada para sempre): quem erra o campo e digita a senha
+    // no lugar do login a deixaria legível, e qualquer anônimo gravaria texto arbitrário. Login existente: o ator
+    // (usuario_id, nome e papel do cadastro). Inexistente: só um rótulo fixo, sem identificador derivado do texto (um
+    // HMAC permitiria, com a chave vazada, testar offline um dicionário de senhas digitadas por engano). A correlação
+    // de tentativas fica pelo IP e pelo instante, que já estão na linha.
     const falha = (motivo: string) => this.auditoria.registrar(this.db, {
-      ator, nomeInformado: loginDigitado, acao: 'auth.login_falha', entidade: 'sessao', ip, depois: { login: loginDigitado.trim(), motivo },
+      ator, nomeInformado: LOGIN_INEXISTENTE, acao: 'auth.login_falha', entidade: 'sessao', ip, depois: { motivo },
     });
 
-    if (this.limite.estaBloqueada(rLogin, agora) || (rIp && this.limite.estaBloqueada(rIp, agora))) {
+    if (this.limite.estaBloqueada(rPar, agora) || (rIp && this.limite.estaBloqueada(rIp, agora))) {
       await falha('bloqueado'); // sem verificar a senha: bloqueado não gasta argon2
-      return { ok: false, motivo: 'bloqueado', ate: this.fimDoBloqueio([rLogin, rIp], agora) };
+      return { ok: false, motivo: 'bloqueado', ate: this.fimDoBloqueio([rPar, rIp], agora) };
     }
 
     let ok = false;
@@ -112,12 +122,12 @@ export class AuthService {
     const suspenso = ok && !vencida && !!opcoes.suspenso;
     if (!ok || vencida || suspenso) {
       await falha(vencida ? 'senha_temporaria_expirada' : suspenso ? 'condominio_suspenso' : !u ? 'login_inexistente' : !u.ativo ? 'usuario_inativo' : 'senha_incorreta');
-      for (const r of [rLogin, rIp]) {
+      for (const r of [rPar, rIp]) {
         if (!r) continue;
         const ate = await this.limite.bloquearSeAtingiu(r, agora);
         if (ate) {
           await this.auditoria.registrar(this.db, {
-            ator: r.chave.tipo === 'login' ? ator : null, nomeInformado: r.chave.tipo === 'login' ? loginDigitado : '(ip)',
+            ator: r.chave.tipo === 'login_ip' ? ator : null, nomeInformado: r.chave.tipo === 'login_ip' ? LOGIN_INEXISTENTE : '(ip)',
             acao: 'auth.bloqueio', entidade: 'login_limite', ip, depois: { tipo: r.chave.tipo, falhas: r.falhas, bloqueado_ate: ate },
           });
         }
@@ -135,7 +145,7 @@ export class AuthService {
       });
       return s;
     });
-    await this.limite.sucesso(chLogin, chIp, agora);
+    await this.limite.sucesso(chLogin, chPar, chIp, agora);
     return { ok: true, token: criada.token, expiraEm: criada.expiraEm, usuario: paraPublico({ ...user, ultimoAcesso: agora }) };
   }
 
@@ -159,9 +169,10 @@ export class AuthService {
     const problemas = problemasDaSenha(novaSenha, { login: ctx.ator.login });
     if (problemas.length) throw erroApi(422, 'SENHA_FRACA', problemas[0]!, problemas.map((m) => ({ field: 'novaSenha', message: m })));
     const agora = this.relogio.agora();
-    // A senha atual é um segredo sendo adivinhado (sessão roubada): conta no mesmo limite do login.
-    const chLogin = this.limite.chave('login', ctx.ator.login);
-    const r = await this.limite.reservar(chLogin, agora);
+    // A senha atual é um segredo sendo adivinhado (sessão roubada): conta no limite do par login+IP da sessão, o mesmo
+    // do login. Não no contador só do login: esse não bloqueia, e qualquer anônimo o enche.
+    const chPar = this.limite.chavePar(ctx.ator.login, ctx.ip);
+    const r = await this.limite.reservar(chPar, agora);
     if (this.limite.estaBloqueada(r, agora)) throw erroApi(429, 'LOGIN_BLOQUEADO', 'Muitas tentativas. Aguarde e tente novamente.');
 
     const [u] = await this.db.select({ senhaHash: usuarioSistema.senhaHash }).from(usuarioSistema).where(eq(usuarioSistema.id, ctx.ator.id));
@@ -172,7 +183,7 @@ export class AuthService {
       const ate = await this.limite.bloquearSeAtingiu(r, agora);
       if (ate) {
         await this.auditoria.registrar(this.db, {
-          ator: ctx.ator, acao: 'auth.bloqueio', entidade: 'login_limite', ip: ctx.ip, depois: { tipo: 'login', falhas: r.falhas, bloqueado_ate: ate },
+          ator: ctx.ator, acao: 'auth.bloqueio', entidade: 'login_limite', ip: ctx.ip, depois: { tipo: 'login_ip', falhas: r.falhas, bloqueado_ate: ate },
         });
       }
       throw erroApi(422, 'SENHA_ATUAL_INCORRETA', 'A senha atual não confere.');
@@ -185,7 +196,7 @@ export class AuthService {
         .set({ senhaHash: novoHash, deveTrocarSenha: false, senhaTemporariaExpiraEm: null, senhaAlteradaEm: agora, atualizadoEm: agora })
         .where(eq(usuarioSistema.id, ctx.ator.id)).returning(colunasPublicas);
       const revogadas = await this.sessoes.revogarDoUsuario(tx, ctx.ator.id, 'troca_senha', agora, ctx.sessaoId);
-      await this.limite.zerar(tx, chLogin, agora);
+      await this.limite.zerarLogin(tx, ctx.ator.login, agora);
       await this.auditoria.registrar(tx, {
         ator: ctx.ator, acao: 'auth.trocar_senha', entidade: 'usuario_sistema', registroId: ctx.ator.id, ip: ctx.ip,
         antes: { deve_trocar_senha: ctx.ator.deveTrocarSenha }, depois: { deve_trocar_senha: false, sessoes_revogadas: revogadas },
