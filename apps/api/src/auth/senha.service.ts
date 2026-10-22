@@ -41,6 +41,13 @@ export function problemasDaSenha(senha: string, contexto: { login?: string } = {
 // (0/o, 1/l). 32 símbolos = 5 bits cada; 16 símbolos = 80 bits, de sobra para senha de uso único com limite de login.
 const ALFABETO = 'abcdefghijkmnpqrstuvwxyz23456789';
 
+/** Blocos de 4 separados por hífen (ex.: k7mq-x3rt-w9az-c2hp). Também usada pela CLI de provisionamento (síndico). */
+export function gerarSenhaTemporaria(tamanho = 16): string {
+  let s = '';
+  for (let i = 0; i < tamanho; i++) s += (i && i % 4 === 0 ? '-' : '') + ALFABETO[randomInt(ALFABETO.length)];
+  return s;
+}
+
 @Injectable()
 export class SenhaService {
   private emUso = 0;
@@ -100,8 +107,6 @@ export class SenhaService {
 
   /** Blocos de 4 separados por hífen (ex.: k7mq-x3rt-w9az-c2hp). O hífen faz parte da senha: digita-se o que se vê. */
   gerarTemporaria(tamanho = 16): string {
-    let s = '';
-    for (let i = 0; i < tamanho; i++) s += (i && i % 4 === 0 ? '-' : '') + ALFABETO[randomInt(ALFABETO.length)];
-    return s;
+    return gerarSenhaTemporaria(tamanho);
   }
 }
