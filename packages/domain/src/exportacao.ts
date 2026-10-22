@@ -21,6 +21,8 @@ export interface EntradaExportacao {
   /** Exportação de um único evento (RF-32: evento isolado). */
   isolado: boolean;
   geradoPor: string;
+  /** Nome do condomínio da sessão (vai só no manifesto, fora do hash). */
+  condominio?: string | null;
   /** Instante de geração já formatado. */
   geradoEm: string;
   /** Carimbo AAAAMMDD-HHMM (horário de São Paulo) para o nome do arquivo. */
@@ -56,7 +58,7 @@ export async function montarExportacaoJsonl(i: EntradaExportacao): Promise<Pacot
   const consecutivos = evs.every((e, k) => k === 0 || e.seq === evs[k - 1].seq + 1);
   const manifesto = {
     tipo: 'manifesto', formato: 'portaria-parque/trilha-jsonl', versao: 2, formatoHash: FORMATO_HASH, sistema: 'Portaria Parque',
-    condominio: 'Condomínio Exemplo', geradoPor: i.geradoPor, geradoEm: i.geradoEm,
+    condominio: i.condominio ?? null, geradoPor: i.geradoPor, geradoEm: i.geradoEm,
     quantidade: evs.length, filtros: i.filtros, modo: i.isolado ? 'evento_isolado' : 'trilha', consecutivos,
     algoritmo: ALGORITMO_EXPORTACAO,
     ordemCampos: ['v', ...CAMPOS_CANONICOS_V1], chavesCorrecao: CHAVES_CORRECAO_V1,

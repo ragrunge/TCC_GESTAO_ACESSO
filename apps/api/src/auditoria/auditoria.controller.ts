@@ -18,6 +18,7 @@ import { paraExportacao } from '../db/cadeia';
 import { areaComum, auditLog, eventoAcesso, eventoAcessoCadeia, pessoa, seloCadeia, unidade, usuarioSistema } from '../db/schema';
 import { AcessoModule, FiltrosCorpo } from '../eventos/acesso.module';
 import { EventosService } from '../eventos/eventos.service';
+import { CONDOMINIO, type CondominioResolvido } from '../saas/condominio';
 import { AuditoriaService } from './auditoria.service';
 
 /** Lote da verificação: a cadeia inteira não cabe na memória do container (384 MiB em produção). */
@@ -50,6 +51,7 @@ export class AuditoriaRotasService {
     @Inject(RELOGIO) private readonly relogio: Relogio,
     @Inject(EventosService) private readonly eventos: EventosService,
     @Inject(AuditoriaService) private readonly auditoria: AuditoriaService,
+    @Inject(CONDOMINIO) private readonly condominio: CondominioResolvido | null,
   ) {}
 
   /**
@@ -127,7 +129,7 @@ export class AuditoriaRotasService {
         pessoa: ps.get(e.pessoa_id!) ?? null, unidade: e.unidade_destino_id ? uns.get(e.unidade_destino_id) ?? null : null,
         areaComum: e.area_comum_id ? ars.get(e.area_comum_id) ?? null : null, operador: us.get(e.operador_id!) ?? null,
       }),
-      geradoPor: ctx.ator.nome, geradoEm: isoSP(n), carimbo: carimboSP(n),
+      geradoPor: ctx.ator.nome, condominio: this.condominio?.nome ?? null, geradoEm: isoSP(n), carimbo: carimboSP(n),
       observacao: 'Arquivo de hashes para verificação, gerado pela API a partir do banco. Não há assinatura digital nem âncora externa neste arquivo.',
     });
     await this.auditoria.registrar(this.db, {

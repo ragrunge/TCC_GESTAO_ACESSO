@@ -109,6 +109,7 @@ describe('exportação verificável (POST /auditoria/exportacoes) e trilha de al
     const { manifesto, eventos, resumo } = lerExportacaoJsonl(p.conteudo);
     expect(manifesto).toMatchObject({ formato: 'portaria-parque/trilha-jsonl', versao: 2, formatoHash: 1, modo: 'trilha', consecutivos: true, quantidade: 8,
       geradoPor: 'Luíza Campos', ancora: { seq: 0 } });
+    expect(typeof manifesto.condominio === 'string' && manifesto.condominio.length > 0).toBe(true); // nome do condomínio da sessão, não texto fixo
     expect(String(manifesto.geradoEm)).not.toContain('simulado');
     expect(await verificarCadeia(eventos, manifesto.ancora)).toMatchObject({ valido: true, verificados: 8 });
     expect(resumo).toMatchObject({ quantidade: 8, ultimoSeq: 8 });

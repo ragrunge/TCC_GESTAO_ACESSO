@@ -102,7 +102,7 @@ export async function gerarLinhaDeBase(db: Db, selosJsonl: string, relogio: Relo
   });
 
   // Mesma verificação da tela de auditoria. O serviço só usa o banco nesse método.
-  const integridade = await new AuditoriaRotasService(db, relogio, null as never, null as never).verificarIntegridade();
+  const integridade = await new AuditoriaRotasService(db, relogio, null as never, null as never, null).verificarIntegridade();
   const a = await conferirAncoras(pacote.conteudo, selosJsonl);
 
   const hashes = new Map<number, string>(eventos.map((e) => [e.seq, e.hash]));
