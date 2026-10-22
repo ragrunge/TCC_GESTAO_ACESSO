@@ -11,6 +11,7 @@ import * as s from '../src/db/schema';
 import { seedPessoasDev } from '../src/db/seed-pessoas-dev';
 import { type ApiDeTeste, novaApi, type PapelTeste, trilha } from './helpers/app';
 import { CHAVE_HMAC_TESTE } from './helpers/banco';
+import { KEK_TESTE } from './helpers/saas';
 
 const V1 = '/api/v1';
 const PAPEIS: PapelTeste[] = ['sindico', 'administracao', 'porteiro', 'auditor'];
@@ -343,7 +344,7 @@ describe('ocorrências: anexos cifrados (RNF-03, spec §9.2)', () => {
     expect(linha).toMatchObject({ tipo: 'anexo_ocorrencia', caminhoStorage: `${d.id}.bin`, chaveVersao: 1, mime: 'image/png' });
     expect(linha!.sha256Conteudo).toBe(createHash('sha256').update(PNG).digest('hex'));
     expect(Buffer.from(linha!.dekCifrada).length).toBe(12 + 32 + 16); // nonce + DEK cifrada + tag
-    expect(Buffer.from(linha!.dekCifrada).includes(api.config.documentos.kek)).toBe(false);
+    expect(Buffer.from(linha!.dekCifrada).includes(KEK_TESTE)).toBe(false);
     const t = (await trilha(api, 'ocorrencia.anexar')).at(-1)!;
     expect(JSON.stringify(t.depois)).not.toMatch(/passwd|dek_cifrada|CONTEUDO-EM-CLARO|foto\.png/);
   });

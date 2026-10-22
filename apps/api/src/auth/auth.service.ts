@@ -1,13 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { senhaTemporariaVencida } from '@portaria/domain/rules';
 import { eq, sql } from 'drizzle-orm';
-import { setTimeout as esperar } from 'node:timers/promises';
 import { AuditoriaService, type Ator } from '../auditoria/auditoria.service';
 import { erroApi } from '../comum/erros';
 import { RELOGIO, type Relogio } from '../comum/relogio';
 import { DB, type Db } from '../database/database.module';
 import { usuarioSistema } from '../db/schema';
 import { LimiteLoginService, normalizarLogin, type Reserva } from './limite-login.service';
+import { EsperaLogin } from './login-sem-condominio';
 import { problemasDaSenha, SenhaService } from './senha.service';
 import { SessaoService } from './sessao.service';
 import type { Contexto } from './tipos';
@@ -50,7 +50,7 @@ export const temporariaVencida = (u: { deveTrocarSenha: boolean; senhaTemporaria
 
 export type ResultadoLogin =
   | { ok: true; token: string; expiraEm: Date; usuario: UsuarioPublico }
-  | { ok: false; motivo: 'credenciais' | 'senha_temporaria_expirada' }
+  | { ok: false; motivo: 'credenciais' | 'senha_temporaria_expirada' | 'condominio_suspenso' }
   | { ok: false; motivo: 'bloqueado'; ate: Date };
 
 /** Mensagem ÚNICA para usuário inexistente, inativo e senha errada (spec §5.1). */
@@ -67,6 +67,7 @@ export class AuthService {
     @Inject(SessaoService) private readonly sessoes: SessaoService,
     @Inject(LimiteLoginService) private readonly limite: LimiteLoginService,
     @Inject(AuditoriaService) private readonly auditoria: AuditoriaService,
+    @Inject(EsperaLogin) private readonly espera: EsperaLogin,
   ) {}
 
   private fimDoBloqueio(rs: (Reserva | null)[], agora: Date): Date {
@@ -75,7 +76,12 @@ export class AuthService {
     return new Date(fins.length ? Math.max(...fins) : agora.getTime() + this.limite.bloqueioMs());
   }
 
-  async login(loginDigitado: string, senha: string, ip: string | null, userAgent: string | undefined): Promise<ResultadoLogin> {
+  /**
+   * `suspenso` (SaaS, SAAS-11): o condomínio está suspenso. Só é revelado a quem acerta a senha (antes disso, o caminho
+   * é o de qualquer login inválido); e mesmo com a senha certa conta como falha, como a temporária vencida: não cria
+   * sessão, grava auth.login_falha e pode bloquear. Assim a recusa fica sob o mesmo limite de tentativas.
+   */
+  async login(loginDigitado: string, senha: string, ip: string | null, userAgent: string | undefined, opcoes: { suspenso?: boolean } = {}): Promise<ResultadoLogin> {
     const agora = this.relogio.agora();
     const chLogin = this.limite.chave('login', loginDigitado);
     const chIp = ip ? this.limite.chave('ip', ip) : null;
@@ -103,8 +109,9 @@ export class AuthService {
     // NÃO chama limite.sucesso): não autenticou, e um "sucesso" aqui zeraria o contador do login e aliviaria o do IP
     // para quem tem uma senha vencida em mãos. Não cria sessão.
     const vencida = ok && temporariaVencida(u!, agora);
-    if (!ok || vencida) {
-      await falha(vencida ? 'senha_temporaria_expirada' : !u ? 'login_inexistente' : !u.ativo ? 'usuario_inativo' : 'senha_incorreta');
+    const suspenso = ok && !vencida && !!opcoes.suspenso;
+    if (!ok || vencida || suspenso) {
+      await falha(vencida ? 'senha_temporaria_expirada' : suspenso ? 'condominio_suspenso' : !u ? 'login_inexistente' : !u.ativo ? 'usuario_inativo' : 'senha_incorreta');
       for (const r of [rLogin, rIp]) {
         if (!r) continue;
         const ate = await this.limite.bloquearSeAtingiu(r, agora);
@@ -115,8 +122,8 @@ export class AuthService {
           });
         }
       }
-      await esperar(this.limite.atraso(rLogin.falhas));
-      return { ok: false, motivo: vencida ? 'senha_temporaria_expirada' : 'credenciais' };
+      await this.espera.esperar(this.limite.atraso(rLogin.falhas));
+      return { ok: false, motivo: vencida ? 'senha_temporaria_expirada' : suspenso ? 'condominio_suspenso' : 'credenciais' };
     }
 
     const user = u!;

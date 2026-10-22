@@ -102,7 +102,7 @@ describe('pessoas: cadastro (RF-02)', () => {
     const r = await novaPessoa('administracao', { documento: '529.982.247-25' });
     expect([r.status, r.body.code]).toEqual([409, 'PESSOA_DUPLICADA']);
     // Corrida: a checagem prévia não vê a outra inserção; o índice único barra e a API traduz o 23505.
-    const svc = api.app.get(PessoasService);
+    const svc = await api.servico<PessoasService>(PessoasService);
     const original = svc.valoresNovaPessoa.bind(svc);
     // Dentro da transação: usar o executor dela (o PGlite tem uma conexão só; consulta fora dela esperaria para sempre).
     const espiao = vi.spyOn(svc, 'valoresNovaPessoa').mockImplementation(async (exec, i, agora) => {

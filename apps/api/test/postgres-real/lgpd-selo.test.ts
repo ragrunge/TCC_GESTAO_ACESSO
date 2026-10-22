@@ -18,7 +18,7 @@ import { AppModule } from '../../src/app.module';
 import { diaBrt } from '../../src/comum/datas';
 import { RELOGIO } from '../../src/comum/relogio';
 import { CONFIG } from '../../src/config/config';
-import { DB, PG_POOL } from '../../src/database/database.module';
+import type { Db } from '../../src/database/database.module';
 import * as s from '../../src/db/schema';
 import { seedEstrutura } from '../../src/db/seed';
 import { seedPessoasDev } from '../../src/db/seed-pessoas-dev';
@@ -28,6 +28,7 @@ import { ENVIO_ANCORA } from '../../src/selo/ancora';
 import { conferirAncoras } from '../../src/selo/conferir-ancoras';
 import { SeloService } from '../../src/selo/selo.module';
 import { AncoraDeTeste, configDeTeste, cookieDe, SENHA } from '../helpers/app';
+import { comSaas, plataformaComPiloto, registroDePool, servicoDe } from '../helpers/saas';
 import { CHAVE_HMAC_TESTE, PASTA_MIGRACOES } from '../helpers/banco';
 
 const URL_ADMIN = process.env.PG_TEST_URL;
@@ -52,6 +53,7 @@ describe.skipIf(!URL_ADMIN)('LGPD e selo sobre PostgreSQL real (app_rw com LOGIN
   const relogio = { agora: () => new Date(Date.now() + deslocamentoMs) };
   const cookies: Record<string, string> = {};
   const ids: Record<string, string> = {};
+  let pilotoId = ''; // a trava de job é por condomínio (SaaS, F2): portaria:job:<nome>:<condominio_id>
 
   beforeAll(async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -98,9 +100,12 @@ describe.skipIf(!URL_ADMIN)('LGPD e selo sobre PostgreSQL real (app_rw com LOGIN
 
     const pool = new pg.Pool({ connectionString: urlPara(URL_ADMIN!, NOME_DB, 'app_rw', senhaRw), max: 10 });
     pool.on('error', () => undefined);
-    const mod = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PG_POOL).useValue(pool)
-      .overrideProvider(DB).useValue(drizzle(pool, { schema: s }))
+    // SaaS (F2): o banco de teste é o `portaria` do registro; a plataforma (PGlite) só tem o piloto.
+    const plat = await plataformaComPiloto();
+    pilotoId = plat.pilotoId;
+    const mod = await comSaas(Test.createTestingModule({ imports: [AppModule] }), {
+      plataforma: plat.db, registro: registroDePool(pool, drizzle(pool, { schema: s }) as unknown as Db), fecharPlataforma: () => plat.client.close(),
+    })
       .overrideProvider(CONFIG).useValue(config)
       .overrideProvider(ENVIO_ANCORA).useValue(ancora)
       .overrideProvider(RELOGIO).useValue(relogio)
@@ -150,20 +155,20 @@ describe.skipIf(!URL_ADMIN)('LGPD e selo sobre PostgreSQL real (app_rw com LOGIN
   });
 
   it('trava de job entre conexões: com a trava tomada por outra sessão, 409; solta, roda', async () => {
-    await su.query(`SELECT pg_advisory_lock(hashtextextended('portaria:job:retencao', 0))`);
+    await su.query('SELECT pg_advisory_lock(hashtextextended($1, 0))', [`portaria:job:retencao:${pilotoId}`]);
     try {
       const r = await post('sindico', '/lgpd/retencao');
       expect(r.status).toBe(409);
       expect(r.body.code).toBe('RETENCAO_EM_ANDAMENTO');
     } finally {
-      await su.query(`SELECT pg_advisory_unlock(hashtextextended('portaria:job:retencao', 0))`);
+      await su.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [`portaria:job:retencao:${pilotoId}`]);
     }
     expect((await post('sindico', '/lgpd/retencao')).status).toBe(200);
   });
 
   it('superusuário reescreve um evento e RECALCULA a cadeia inteira: o selo denuncia; se ele também reescreve o selo, só a âncora externa (arquivo do GitHub e e-mail) denuncia', async () => {
     // Selo diário de hoje (o que o GitHub coleta) e a coleta do workflow: endpoint público -> script -> selos.jsonl
-    expect((await app.get(SeloService).selarDia(diaBrt(new Date())))?.novo).toBe(true);
+    expect((await (await servicoDe<SeloService>(app, SeloService)).selarDia(diaBrt(new Date())))?.novo).toBe(true);
     const dir = mkdtempSync(join(tmpdir(), 'ancoras-pg-'));
     const f = { resposta: join(dir, 'resposta.json'), arquivo: join(dir, 'selos.jsonl'), relatorio: join(dir, 'divergencia.md') };
     const coletar = async () => {

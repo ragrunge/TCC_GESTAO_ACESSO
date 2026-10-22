@@ -11,7 +11,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { fmtData, fmtHora } from '@portaria/domain/time';
 import { codigoUnidade, leiturasDoCodigo } from '@portaria/domain/units';
 import { and, asc, desc, eq, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
-import { CONFIG, type Config } from '../config/config';
+import { chavesDe, CONDOMINIO, type CondominioResolvido } from '../saas/condominio';
 import { diaBrt } from '../comum/datas';
 import { RELOGIO, type Relogio } from '../comum/relogio';
 import { DB, type Db } from '../database/database.module';
@@ -60,7 +60,7 @@ export class BuscaService {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(RELOGIO) private readonly relogio: Relogio,
-    @Inject(CONFIG) private readonly config: Config,
+    @Inject(CONDOMINIO) private readonly condominio: CondominioResolvido | null,
   ) {}
 
   /** Nome normalizado no SQL. Calculado por linha (sem índice): com milhares de pessoas a varredura custa milissegundos. */
@@ -82,7 +82,7 @@ export class BuscaService {
 
     const criterios: SQL[] = [sql`${nome} LIKE ${padrao}`];
     if (digitos.length === 11) {
-      criterios.push(eq(pessoa.documentoBusca, documentoBusca(digitos, this.config.hmacCpfKey)));
+      criterios.push(eq(pessoa.documentoBusca, documentoBusca(digitos, chavesDe(this.condominio).hmacCpf)));
     } else if (digitos.length >= 3) {
       criterios.push(sql`regexp_replace(coalesce(${pessoa.documentoMascarado}, ''), '[^0-9]', '', 'g') LIKE ${`%${digitos}%`}`);
     }

@@ -78,10 +78,18 @@ describe('config do ambiente (falha no boot em vez de default silencioso)', () =
     expect(c.importacao).toEqual({ prazoLegadoDias: 90 });
     expect(carregarConfig({ ...base, IMPORTACAO_PRAZO_LEGADO_DIAS: '' }).importacao.prazoLegadoDias).toBe(90);
     expect(carregarConfig({ ...base, IMPORTACAO_PRAZO_LEGADO_DIAS: '120' }).importacao.prazoLegadoDias).toBe(120);
-    // Anexos cifrados (spec §9.2): KEK de 32 bytes, versão e pasta (padrão: o volume do compose)
-    expect(c.documentos).toMatchObject({ kekVersao: 1, dir: '/var/lib/portaria/documentos' });
-    expect(c.documentos.kek.length).toBe(32);
+    // Anexos cifrados (spec §9.2): só a pasta (padrão: o volume do compose). A KEK vem da plataforma (SaaS, F2).
+    expect(c.documentos).toEqual({ dir: '/var/lib/portaria/documentos' });
     expect(carregarConfig({ ...base, PORTARIA_DOCUMENTOS_DIR: '/tmp/x' }).documentos.dir).toBe('/tmp/x');
+    // SaaS (F2): transição ligada por padrão; as chaves antigas do ambiente ficam só para a conferência do boot.
+    expect(c.saas.pilotoPadrao).toBe(true);
+    expect(carregarConfig({ ...base, SAAS_PILOTO_PADRAO: 'false' }).saas.pilotoPadrao).toBe(false);
+    expect(c.saas.chavesAmbiente.kekVersao).toBe(1);
+    expect(c.saas.chavesAmbiente.kek!.equals(Buffer.alloc(32, 2))).toBe(true);
+    expect(c.saas.chavesAmbiente.hmacCpf!.equals(Buffer.alloc(32, 1))).toBe(true);
+    // Sem as chaves antigas (fim da transição): sobe, sem nada a conferir. Fallback para o ambiente não existe.
+    const { PORTARIA_HMAC_CPF_KEY: _h, PORTARIA_KEK: _k, PORTARIA_KEK_VERSAO: _v, ...semChaves } = base;
+    expect(carregarConfig(semChaves).saas.chavesAmbiente).toEqual({ hmacCpf: null, kek: null, kekVersao: null });
   });
   it.each([
     [{ COOKIE_SECURE: '1' }, /COOKIE_SECURE/],
@@ -101,7 +109,7 @@ describe('config do ambiente (falha no boot em vez de default silencioso)', () =
     [{ IMPORTACAO_PRAZO_LEGADO_DIAS: '0' }, /IMPORTACAO_PRAZO_LEGADO_DIAS/],
     [{ IMPORTACAO_PRAZO_LEGADO_DIAS: '1000' }, /IMPORTACAO_PRAZO_LEGADO_DIAS/],
     [{ IMPORTACAO_PRAZO_LEGADO_DIAS: 'noventa' }, /IMPORTACAO_PRAZO_LEGADO_DIAS/],
-    [{ PORTARIA_KEK: '' }, /PORTARIA_KEK não definida/],
+    [{ SAAS_PILOTO_PADRAO: 'sim' }, /SAAS_PILOTO_PADRAO/],
     [{ PORTARIA_KEK: Buffer.alloc(16, 1).toString('base64') }, /exatamente 32 bytes/],
     [{ PORTARIA_KEK: Buffer.alloc(48, 1).toString('base64') }, /exatamente 32 bytes/],
     [{ PORTARIA_KEK_VERSAO: '' }, /PORTARIA_KEK_VERSAO/],

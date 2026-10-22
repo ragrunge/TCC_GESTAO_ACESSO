@@ -13,13 +13,17 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { type Config, CONFIG, nomeCookie, PADROES_LOGIN } from '../../src/config/config';
 import { RELOGIO } from '../../src/comum/relogio';
-import { DB, PG_POOL } from '../../src/database/database.module';
+import type { Db } from '../../src/database/database.module';
 import * as s from '../../src/db/schema';
 import { seedEstrutura } from '../../src/db/seed';
 import { seedUsuariosDev, USUARIOS_DEV } from '../../src/db/seed-usuarios';
 import { configurarApp } from '../../src/plataforma';
 import { ENVIO_ANCORA, type EnvioAncora, type ResumoSelo, SemDestinoAncora } from '../../src/selo/ancora';
+import type { CondominioResolvido } from '../../src/saas/condominio';
+import { ResolvedorCondominio } from '../../src/saas/resolvedor';
 import { CHAVE_HMAC_TESTE, PASTA_MIGRACOES } from './banco';
+import { novoBancoPlataforma } from './plataforma';
+import { CODIGO_PILOTO, comSaas, DEMO, KEK_TESTE, registrarCondominio, RegistroDeTeste, servicoDe } from './saas';
 
 export const SENHA = 'senha-de-teste-bem-longa';
 export const LOGINS = { sindico: 'roberto.faria', administracao: 'paula.nogueira', porteiro: 'joao.lima', auditor: 'luiza.campos' } as const;
@@ -43,10 +47,11 @@ export function configDeTeste(extra: Partial<Config> = {}): Config {
     login: { ...PADROES_LOGIN, atrasoBaseMs: 0 },
     // Parâmetros baixos SÓ no teste (velocidade); produção usa PADROES_ARGON2 (spec §5.1).
     argon2: { memoriaKib: 1024, iteracoes: 1, paralelismo: 1, concorrencia: 2, filaMax: 50 },
-    hmacCpfKey: CHAVE_HMAC_TESTE,
     importacao: { prazoLegadoDias: 90 },
     // Pasta temporária por API de teste (novaApi): o conteúdo cifrado fica nela e o teste confere que não há texto claro.
-    documentos: { kek: Buffer.alloc(32, 9), kekVersao: 1, dir: join(tmpdir(), `portaria-docs-${process.pid}-${++dirSeq}`) },
+    documentos: { dir: join(tmpdir(), `portaria-docs-${process.pid}-${++dirSeq}`) },
+    // Transição ligada (como a produção na F2) e sem chaves antigas no ambiente: nada a conferir no boot.
+    saas: { pilotoPadrao: true, chavesAmbiente: { hmacCpf: null, kek: null, kekVersao: null } },
     // Sem destino de âncora e sem agendador: os testes chamam as rotinas sob demanda (e trocam o envio por um falso).
     ancora: { github: false, emails: [], remetente: 'portaria@localhost', smtp: null, arquivo: null },
     jobs: { agendador: false, intervaloMin: 10, horaRetencaoBrt: 3 },
@@ -73,20 +78,48 @@ export class AncoraDeTeste implements EnvioAncora {
   }
 }
 
-export async function novaApi(extra: Partial<Config> = {}, opcoes: { ancora?: EnvioAncora } = {}) {
+/** Banco de condomínio de teste: PGlite com as migrações reais, a estrutura e os 4 usuários do seed (mesma senha). */
+async function bancoDeCondominio(senhaHash: string) {
   const client = new PGlite();
   await client.exec('CREATE ROLE app_migrator NOLOGIN; CREATE ROLE app_rw NOLOGIN;');
   const db = drizzle(client, { schema: s });
   await migrate(db, { migrationsFolder: PASTA_MIGRACOES });
   await seedEstrutura(db);
+  await seedUsuariosDev(db, { senhaHash, deveTrocarSenha: false });
+  return { client, db };
+}
+
+export interface OpcoesApi {
+  ancora?: EnvioAncora;
+  /** Sobe também o condomínio `demo` (outro PGlite, chaves próprias, os MESMOS logins): testes de isolamento. */
+  demo?: boolean;
+  /** Status do piloto na plataforma (padrão ativo). */
+  statusPiloto?: 'ativo' | 'suspenso' | 'encerrado';
+}
+
+export async function novaApi(extra: Partial<Config> = {}, opcoes: OpcoesApi = {}) {
   const config = configDeTeste(extra);
   const senhaHash = await hash(SENHA, { memoryCost: config.argon2.memoriaKib, timeCost: 1, parallelism: 1 });
-  await seedUsuariosDev(db, { senhaHash, deveTrocarSenha: false });
+  const { client, db } = await bancoDeCondominio(senhaHash);
   const relogio = new RelogioDeTeste();
 
-  let construtor = Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(PG_POOL).useValue({ end: async () => undefined })
-    .overrideProvider(DB).useValue(db)
+  // Plataforma com o piloto (banco `portaria`, as chaves de teste de sempre) e, se pedido, o `demo`.
+  const plataforma = await novoBancoPlataforma();
+  const pilotoId = await registrarCondominio(plataforma.db, {
+    codigo: CODIGO_PILOTO, banco: 'portaria', hmac: CHAVE_HMAC_TESTE, kek: KEK_TESTE, status: opcoes.statusPiloto,
+  });
+  const bancos = new Map<string, Db>([['portaria', db as unknown as Db]]);
+  let demo: (Awaited<ReturnType<typeof bancoDeCondominio>> & { id: string }) | null = null;
+  if (opcoes.demo) {
+    const b = await bancoDeCondominio(senhaHash);
+    demo = { ...b, id: await registrarCondominio(plataforma.db, { codigo: DEMO.codigo, banco: DEMO.banco, hmac: DEMO.hmac, kek: DEMO.kek }) };
+    bancos.set(DEMO.banco, b.db as unknown as Db);
+  }
+  const registro = new RegistroDeTeste(bancos, async () => { await demo?.client.close(); });
+
+  let construtor = comSaas(Test.createTestingModule({ imports: [AppModule] }), {
+    plataforma: plataforma.db, registro, fecharPlataforma: () => plataforma.client.close(),
+  })
     .overrideProvider(CONFIG).useValue(config)
     .overrideProvider(RELOGIO).useValue(relogio);
   if (opcoes.ancora) construtor = construtor.overrideProvider(ENVIO_ANCORA).useValue(opcoes.ancora);
@@ -109,7 +142,19 @@ export async function novaApi(extra: Partial<Config> = {}, opcoes: { ancora?: En
   }
   const como = (papel: PapelTeste) => entrar(LOGINS[papel]);
 
-  return { app: app as INestApplication, client, db, config, relogio, usuarios, http, entrar, como, USUARIOS_DEV };
+  const resolvedor = app.get(ResolvedorCondominio);
+  const condominio = async (id: string): Promise<CondominioResolvido> => {
+    const r = await resolvedor.porIdDoCookie(id);
+    if (!r) throw new Error('teste: condomínio não resolvido');
+    return r.condominio;
+  };
+  /** Serviço durável na subárvore do condomínio (padrão: o piloto), como o agendador o obtém. */
+  const servico = async <T>(token: unknown, id = pilotoId): Promise<T> => servicoDe<T>(app, token, await condominio(id));
+
+  return {
+    app: app as INestApplication, client, db, config, relogio, usuarios, http, entrar, como, USUARIOS_DEV,
+    plataforma, pilotoId, demo, servico, condominio,
+  };
 }
 
 export type ApiDeTeste = Awaited<ReturnType<typeof novaApi>>;

@@ -27,7 +27,8 @@ import { CONFIG, type Config } from '../config/config';
 import { DB, type Db } from '../database/database.module';
 import { eventoAcesso, eventoAcessoCadeia, seloCadeia } from '../db/schema';
 import { TravaJobs } from '../jobs/trava';
-import { ENVIO_ANCORA, type EnvioAncora, EnvioAncoraReal, SemDestinoAncora } from './ancora';
+import { CONDOMINIO, type CondominioResolvido } from '../saas/condominio';
+import { AncoraSemDestino, ENVIO_ANCORA, type EnvioAncora, EnvioAncoraReal, SemDestinoAncora } from './ancora';
 import { CACHE_PUBLICO_MS, FORMATO_SELOS_PUBLICOS, LimiteTaxaPublico, SELOS_PUBLICOS_MAX, type SelosPublicos } from './publico';
 
 type LinhaSelo = typeof seloCadeia.$inferSelect;
@@ -249,6 +250,7 @@ export class SeloController {
     @Inject(SeloService) private readonly s: SeloService,
     @Inject(LimiteTaxaPublico) private readonly limite: LimiteTaxaPublico,
     @Inject(CONFIG) private readonly config: Config,
+    @Inject(CONDOMINIO) private readonly condominio: CondominioResolvido | null,
   ) {}
 
   /** Público, sem parâmetro (ver ./publico.ts). Só existe com o destino `github` ligado; desligado, 404. */
@@ -260,7 +262,9 @@ export class SeloController {
       res.setHeader('Retry-After', String(r.retryAfterSeg));
       throw erroApi(429, 'LIMITE_EXCEDIDO', 'Muitas consultas aos selos públicos. Tente de novo em instantes.');
     }
-    if (!this.config.ancora.github) throw erroApi(404, 'NAO_ENCONTRADO', 'Recurso não encontrado.');
+    // SaaS (F2): só o piloto publica (formato v1, por condomínio). Para vários condomínios, o v1 revelaria o volume de
+    // cada cliente: a âncora agregada (§4.3) é a fase F4, que vem antes do segundo condomínio real.
+    if (!this.config.ancora.github || !this.condominio?.piloto) throw erroApi(404, 'NAO_ENCONTRADO', 'Recurso não encontrado.');
     const corpo = await this.s.selosPublicos();
     // Só o sucesso sai com cache público. Não usar @Header: o Nest aplica antes do handler, e um 429/404 sairia
     // com max-age (resposta de erro com validade explícita pode ser guardada por cache intermediário).
@@ -286,7 +290,13 @@ export class SeloController {
 @Module({
   controllers: [SeloController],
   providers: [
-    SeloService, TravaJobs, { provide: ENVIO_ANCORA, useClass: EnvioAncoraReal },
+    SeloService, TravaJobs, EnvioAncoraReal,
+    // Âncora por condomínio (F2): o piloto usa os destinos configurados; os demais ficam sem destino (selo pendente)
+    // até a âncora agregada da F4. Sem isso, o selo de outro condomínio iria para o e-mail e o arquivo do piloto.
+    {
+      provide: ENVIO_ANCORA, inject: [CONDOMINIO, EnvioAncoraReal],
+      useFactory: (c: CondominioResolvido | null, real: EnvioAncoraReal): EnvioAncora => (c?.piloto ? real : new AncoraSemDestino()),
+    },
     // Factory: um limite por instância da aplicação (useValue seria um objeto só, dividido entre apps de teste).
     { provide: LimiteTaxaPublico, useFactory: () => new LimiteTaxaPublico() },
   ],

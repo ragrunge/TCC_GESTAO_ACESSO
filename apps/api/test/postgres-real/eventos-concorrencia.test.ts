@@ -14,7 +14,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../../src/app.module';
 import { CONFIG } from '../../src/config/config';
-import { DB, PG_POOL } from '../../src/database/database.module';
+import type { Db } from '../../src/database/database.module';
 import { documentoBusca, mascararCpf } from '../../src/db/cpf';
 import * as s from '../../src/db/schema';
 import { seedEstrutura } from '../../src/db/seed';
@@ -22,6 +22,7 @@ import { cpfComDv, seedPessoasDev } from '../../src/db/seed-pessoas-dev';
 import { seedUsuariosDev } from '../../src/db/seed-usuarios';
 import { configurarApp } from '../../src/plataforma';
 import { configDeTeste, cookieDe, SENHA } from '../helpers/app';
+import { comSaas, plataformaComPiloto, registroDePool } from '../helpers/saas';
 import { CHAVE_HMAC_TESTE, PASTA_MIGRACOES } from '../helpers/banco';
 
 const URL_ADMIN = process.env.PG_TEST_URL;
@@ -96,9 +97,11 @@ describe.skipIf(!URL_ADMIN)('API sobre PostgreSQL real: registro de acesso conco
     pool.on('error', () => undefined);
     leitura = new pg.Pool({ connectionString: urlPara(URL_ADMIN!, NOME_DB, 'app_rw', senhaRw), max: 2 });
     leitura.on('error', () => undefined);
-    const mod = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PG_POOL).useValue(pool)
-      .overrideProvider(DB).useValue(drizzle(pool, { schema: s }))
+    // SaaS (F2): o banco de teste é o `portaria` do registro; a plataforma (PGlite) só tem o piloto.
+    const plat = await plataformaComPiloto();
+    const mod = await comSaas(Test.createTestingModule({ imports: [AppModule] }), {
+      plataforma: plat.db, registro: registroDePool(pool, drizzle(pool, { schema: s }) as unknown as Db), fecharPlataforma: () => plat.client.close(),
+    })
       .overrideProvider(CONFIG).useValue(config)
       .compile();
     const nest = mod.createNestApplication<NestExpressApplication>({ logger: false });

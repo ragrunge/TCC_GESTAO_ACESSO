@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, Scope } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AuditoriaModule } from './auditoria/auditoria.service';
 import { AuthModule } from './auth/auth.module';
@@ -7,7 +7,7 @@ import { EnvelopeInterceptor } from './comum/envelope.interceptor';
 import { FiltroExcecao } from './comum/filtro-excecao';
 import { ConfigModule } from './config/config.module';
 import { DatabaseModule } from './database/database.module';
-import { SaudeController } from './saude/saude.controller';
+import { SaudeController, SaudeService } from './saude/saude.controller';
 import { PessoasModule } from './pessoas/pessoas.module';
 import { UnidadesModule } from './unidades/unidades.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
@@ -30,9 +30,15 @@ import { JobsModule } from './jobs/agendador';
     SeloModule, LgpdModule, JobsModule],
   controllers: [SaudeController],
   providers: [
+    SaudeService,
     // Ordem importa: autenticação antes de autorização. Os dois respeitam @Publico() (o /saude continua aberto).
-    { provide: APP_GUARD, useClass: SessaoGuard },
-    { provide: APP_GUARD, useClass: PapelGuard },
+    // SessaoGuard depende do banco do condomínio (SessaoService -> DB): é durável, uma instância por condomínio. O escopo
+    // tem de estar DECLARADO aqui: o Nest decide se um enhancer global é por requisição pelo `scope` do provider, não
+    // pela árvore de dependências, e sem isso a guarda viraria um objeto nunca construído (SaaS, F2).
+    // PapelGuard não depende de banco, mas também é declarado durável: o Nest roda os enhancers globais estáticos ANTES
+    // dos por requisição, e a autorização não pode rodar antes da autenticação.
+    { provide: APP_GUARD, useClass: SessaoGuard, scope: Scope.REQUEST, durable: true },
+    { provide: APP_GUARD, useClass: PapelGuard, scope: Scope.REQUEST, durable: true },
     { provide: APP_FILTER, useClass: FiltroExcecao },
     // Todo 2xx com corpo sai como { data } (ou { data, pagination }); 204 sem corpo.
     { provide: APP_INTERCEPTOR, useClass: EnvelopeInterceptor },

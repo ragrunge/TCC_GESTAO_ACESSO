@@ -8,6 +8,8 @@ import { and, eq } from 'drizzle-orm';
 import type { Contexto } from '../../src/auth/tipos';
 import { diaBrt, somarDias } from '../../src/comum/datas';
 import { DB, type Db } from '../../src/database/database.module';
+import type { CondominioResolvido } from '../../src/saas/condominio';
+import { servicoDe } from '../helpers/saas';
 import { cpfComDv } from '../../src/db/seed-pessoas-dev';
 import { pessoa, unidade, usuarioSistema } from '../../src/db/schema';
 import { EncomendasService } from '../../src/encomendas/encomendas.module';
@@ -40,11 +42,13 @@ export const FUNCIONARIO_E2E = { nome: 'Válter Souza', documento: cpfComDv('907
 /** Formulário de papel do retroativo do seed (Pedro Almeida). */
 export const FORMULARIO_SEED = '0099';
 
-export async function semearDadosE2e(app: INestApplication) {
-  const db = app.get<Db>(DB, { strict: false });
-  const svc = <T>(c: new (...a: never[]) => T) => app.get(c, { strict: false });
-  const pessoas = svc(PessoasService), funcionarios = svc(FuncionariosService), eventos = svc(EventosService);
-  const autorizacoes = svc(AutorizacoesService), ocorrencias = svc(OcorrenciasService), encomendas = svc(EncomendasService);
+export async function semearDadosE2e(app: INestApplication, condominio?: CondominioResolvido) {
+  // SaaS (F2): os serviços são duráveis por condomínio; padrão: os do piloto (o único condomínio do e2e). Os testes de
+  // isolamento semeiam também o `demo`.
+  const db = await servicoDe<Db>(app, DB, condominio);
+  const svc = <T>(c: new (...a: never[]) => T) => servicoDe<T>(app, c, condominio);
+  const [pessoas, funcionarios, eventos] = await Promise.all([svc(PessoasService), svc(FuncionariosService), svc(EventosService)]);
+  const [autorizacoes, ocorrencias, encomendas] = await Promise.all([svc(AutorizacoesService), svc(OcorrenciasService), svc(EncomendasService)]);
 
   const ctx = async (login: string): Promise<Contexto> => {
     const [u] = await db.select().from(usuarioSistema).where(eq(usuarioSistema.login, login));

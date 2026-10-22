@@ -1,0 +1,44 @@
+// Condomínio resolvido para uma requisição ou um job (docs/05_arquitetura_saas.md SAAS-03/04, fase F2). É o que a
+// subárvore de injeção de um condomínio recebe: o banco dele, as chaves dele (desembrulhadas da plataforma pela chave
+// mestra) e a pasta dos anexos dele. Nada aqui é dado pessoal; as chaves nunca vão a log nem a resposta.
+import { join } from 'node:path';
+
+/** Token do provider durável com o condomínio da subárvore (`null` na subárvore "sem condomínio"). */
+export const CONDOMINIO = Symbol('CONDOMINIO');
+
+/** Status em que o condomínio é atendido: `suspenso` recusa login, mas sessões, selo e retenção continuam (SAAS-11). */
+export const STATUS_ATENDIDOS = ['ativo', 'suspenso'] as const;
+export type StatusAtendido = (typeof STATUS_ATENDIDOS)[number];
+
+export interface ChavesCondominio {
+  /** HMAC do CPF (`documento_busca`) e raiz da subchave do limite de login. */
+  hmacCpf: Buffer;
+  /** KEK dos anexos e a versão dela (gravada em `documento.chave_versao` e na AAD da DEK). */
+  kek: Buffer;
+  kekVersao: number;
+}
+
+export interface CondominioResolvido {
+  id: string;
+  codigo: string;
+  /** Nome do banco Postgres (`portaria` no piloto). */
+  banco: string;
+  /** O piloto é o banco `portaria` de antes do SaaS: mantém a pasta de anexos e o endpoint público v1. */
+  piloto: boolean;
+  chaves: ChavesCondominio;
+}
+
+/**
+ * Pasta dos anexos cifrados do condomínio. O piloto continua na raiz do volume (os arquivos de produção não se mexem);
+ * os demais usam `<raiz>/<condominio_id>/`. A varredura de órfãos da retenção só lista `<uuid>.bin`/`<uuid>.tmp` na
+ * própria pasta, então a do piloto não enxerga as subpastas dos outros, e cada condomínio só limpa a sua.
+ */
+export function pastaDocumentos(raiz: string, c: Pick<CondominioResolvido, 'id' | 'piloto'>): string {
+  return c.piloto ? raiz : join(raiz, c.id);
+}
+
+/** Chaves do condomínio da subárvore. Sem condomínio (subárvore de falha fechada): lança, nunca cai numa chave padrão. */
+export function chavesDe(c: CondominioResolvido | null): ChavesCondominio {
+  if (!c) throw new Error('chave de condomínio pedida sem condomínio resolvido');
+  return c.chaves;
+}

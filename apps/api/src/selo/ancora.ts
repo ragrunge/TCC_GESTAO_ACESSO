@@ -77,6 +77,12 @@ export function textoDoEmail(r: ResumoSelo): { assunto: string; texto: string } 
   };
 }
 
+/** Condomínio sem destino de âncora (SaaS, F2: todos menos o piloto, até a F4). O selo fica pendente. */
+export class AncoraSemDestino implements EnvioAncora {
+  destinos(): string[] { return []; }
+  async enviar(): Promise<string> { throw new SemDestinoAncora(); }
+}
+
 @Injectable()
 export class EnvioAncoraReal implements EnvioAncora {
   private transporte: Transporter | null = null;

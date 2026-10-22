@@ -10,6 +10,8 @@ import { createHmac, hkdfSync } from 'node:crypto';
 import { CONFIG, type Config } from '../config/config';
 import { DB, type Db, type Executor } from '../database/database.module';
 import { loginLimite } from '../db/schema';
+import { atrasoDaFalha } from './login-sem-condominio';
+import { chavesDe, CONDOMINIO, type CondominioResolvido } from '../saas/condominio';
 
 export type TipoLimite = 'login' | 'ip';
 
@@ -28,18 +30,20 @@ export const normalizarLogin = (login: string) => login.trim().toLowerCase();
 
 @Injectable()
 export class LimiteLoginService {
-  private readonly subchave: Buffer;
+  private subchave?: Buffer;
 
   constructor(
     @Inject(CONFIG) private readonly config: Config,
     @Inject(DB) private readonly db: Db,
-  ) {
-    // Subchave dedicada (HKDF): a chave do CPF não é usada diretamente para outro fim.
-    this.subchave = Buffer.from(hkdfSync('sha256', config.hmacCpfKey, Buffer.alloc(0), 'portaria/login_limite/v1', 32));
-  }
+    @Inject(CONDOMINIO) private readonly condominio: CondominioResolvido | null,
+  ) {}
 
   /** HMAC, não SHA puro: o login digitado pode ser um CPF, e o espaço do CPF (e do IPv4) se percorre por força bruta. */
   chave(tipo: TipoLimite, valor: string): ChaveLimite {
+    // Subchave dedicada (HKDF) da chave HMAC do CONDOMÍNIO (SAAS-04): a chave do CPF não é usada diretamente para outro
+    // fim, e o mesmo login em dois condomínios dá chaves diferentes. Calculada no primeiro uso (a subárvore "sem
+    // condomínio" constrói este serviço, mas nunca chega aqui).
+    this.subchave ??= Buffer.from(hkdfSync('sha256', chavesDe(this.condominio).hmacCpf, Buffer.alloc(0), 'portaria/login_limite/v1', 32));
     const v = tipo === 'login' ? normalizarLogin(valor) : valor;
     return { tipo, chave: createHmac('sha256', this.subchave).update(`${tipo}:${v}`, 'utf8').digest('hex') };
   }
@@ -117,8 +121,6 @@ export class LimiteLoginService {
 
   /** Atraso crescente das falhas: base * 2^(n-1), com teto. */
   atraso(falhas: number): number {
-    const { atrasoBaseMs, atrasoMaxMs } = this.config.login;
-    if (atrasoBaseMs <= 0) return 0;
-    return Math.min(atrasoMaxMs, atrasoBaseMs * 2 ** Math.max(0, falhas - 1));
+    return atrasoDaFalha(this.config.login, falhas);
   }
 }

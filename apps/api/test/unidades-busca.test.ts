@@ -237,7 +237,7 @@ describe('unidades: criar, editar, desativar e reativar (regras do mock)', () =>
     expect(cat).toMatchObject({ codigo: 'J-102', ativo: false });
     expect((await post('porteiro', '/busca', { q: 'J-102' })).body.data.unidades).toEqual([{ id: novaId, motivo: 'Unidade (desativada)' }]);
 
-    const servico = api.app.get(UnidadesService);
+    const servico = await api.servico<UnidadesService>(UnidadesService);
     await expect(servico.paraNovoUso(api.db, novaId)).rejects.toMatchObject({ status: 422, response: { codigo: 'UNIDADE_INATIVA' } });
     // a unidade inativa pode ser corrigida (é permitido), mas não usada
     expect((await get('porteiro', `/unidades/${novaId}`)).body.data.unidade.ativo).toBe(false);

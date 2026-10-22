@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { AuditoriaService, type EntradaAuditoria } from '../auditoria/auditoria.service';
 import { Acao, Ctx } from '../auth/decorators';
 import type { Contexto } from '../auth/tipos';
+import { chavesDe, CONDOMINIO, type CondominioResolvido } from '../saas/condominio';
 import { CONFIG, type Config } from '../config/config';
 import { diaBrt, somarDias } from '../comum/datas';
 import { codigoPg, erroApi } from '../comum/erros';
@@ -69,13 +70,14 @@ export class ImportacaoService {
     @Inject(DB) private readonly db: Db,
     @Inject(RELOGIO) private readonly relogio: Relogio,
     @Inject(CONFIG) private readonly config: Config,
+    @Inject(CONDOMINIO) private readonly condominio: CondominioResolvido | null,
     @Inject(AuditoriaService) private readonly auditoria: AuditoriaService,
   ) {}
 
   /** HMAC das linhas em forma canônica (ordem fixa de campos), com separação de domínio da chave do CPF. */
   private impressao(linhas: LinhaPlanilha[]) {
     const canon = JSON.stringify(linhas.map((l) => [l.linha, l.bloco, l.unidade, l.nome, l.documento, l.telefone, l.tipo ?? null]));
-    return createHmac('sha256', this.config.hmacCpfKey).update(`importacao:v1|${canon}`, 'utf8').digest('hex');
+    return createHmac('sha256', chavesDe(this.condominio).hmacCpf).update(`importacao:v1|${canon}`, 'utf8').digest('hex');
   }
 
   /** Regras da planilha contra o estado atual do banco (`exec`: a transação da confirmação, ou o pool na análise). */
@@ -96,7 +98,7 @@ export class ImportacaoService {
       const codigo = codigoUnidade(un);
       const dig = soDigitos(l.documento);
       const cpfOk = cpfValido(dig);
-      const hmac = cpfOk ? documentoBusca(dig, this.config.hmacCpfKey) : null;
+      const hmac = cpfOk ? documentoBusca(dig, chavesDe(this.condominio).hmacCpf) : null;
       const chave = hmac ? `cpf|${hmac}|${un.id}` : `${normalizar(nome)}|${un.id}`;
       if (vistos.has(chave)) {
         duplicadas++;

@@ -1,7 +1,7 @@
 # Contexto de build = raiz do monorepo (docker-compose.yml). Estágios:
 #   deps     todas as dependências do workspace apps/api (dev incluídas)
 #   build    tsc -> dist (CommonJS), antes o build CJS de @portaria/domain (packages/domain/dist/cjs)
-#   migrate  drizzle-kit + migrações + drizzle.config.ts (serviço "migrate": roda e termina) e as do banco plataforma
+#   migrate  drizzle-kit + migrações dos dois tipos de banco + o laço scripts/migrar-bancos.mjs (serviço "migrate")
 #   dev      build + tsc-watch: recompila e reinicia a API a cada mudança em src/ (docker compose watch)
 #   prod     só dependencies de produção
 #   runtime  imagem final da API, usuário não-root
@@ -38,12 +38,14 @@ WORKDIR /app/apps/api
 COPY apps/api/drizzle.config.ts ./
 COPY apps/api/drizzle ./drizzle
 COPY apps/api/src/db/schema.ts ./src/db/schema.ts
-# Banco plataforma do SaaS (serviço migrate-plataforma, só com --profile plataforma): config, migrações e schema próprios.
+# Banco plataforma do SaaS: config, migrações e schema próprios.
 COPY apps/api/drizzle-plataforma.config.ts ./
 COPY apps/api/drizzle-plataforma ./drizzle-plataforma
 COPY apps/api/src/saas/schema-plataforma.ts ./src/saas/schema-plataforma.ts
+# SaaS (F2, SAAS-16): plataforma e depois cada banco de condomínio, em série (MIGRATOR_URL_BASE sem nome de banco).
+COPY apps/api/scripts/migrar-bancos.mjs ./scripts/migrar-bancos.mjs
 USER node
-CMD ["npx", "drizzle-kit", "migrate"]
+CMD ["node", "scripts/migrar-bancos.mjs"]
 
 FROM node:22-alpine AS prod
 WORKDIR /app

@@ -41,7 +41,7 @@ async function montar(extra: Parameters<typeof novaApi>[0] = {}) {
     return e.body.data.id as string;
   }
   const visitante = async (nome: string) => (await api.db.insert(s.pessoa).values({ nome, categoria: 'visitante', telefone: '11955550000', semCpf: true }).returning())[0]!;
-  const cofre = api.app.get(CofreDocumentos, { strict: false });
+  const cofre = await api.servico<CofreDocumentos>(CofreDocumentos);
   return { api, ancora, cookies, id, get, post, d32, entrada, visitante, cofre };
 }
 type M = Awaited<ReturnType<typeof montar>>;
@@ -349,7 +349,7 @@ describe('selo e âncora externa (spec §4.6)', () => {
     expect(r.body.data).toMatchObject({ novo: true, ancora: 'pendente' });
     expect((await m.get('auditor', '/auditoria/selos')).body.data.pendentesEnvio).toBe(1);
     m.ancora.falhar = false;
-    expect(await m.api.app.get(SeloService).enviarPendentes()).toBe(1);
+    expect(await (await m.api.servico<SeloService>(SeloService)).enviarPendentes()).toBe(1);
     expect((await m.get('auditor', '/auditoria/selos')).body.data).toMatchObject({ pendentesEnvio: 0, ultimo: { enviadoEm: expect.any(Number) } });
   });
 
@@ -358,7 +358,7 @@ describe('selo e âncora externa (spec §4.6)', () => {
     const todos = await m.api.db.select().from(s.eventoAcesso).orderBy(asc(s.eventoAcesso.seq));
     const ultimo = todos.at(-1)!;
     const dia = new Date(ultimo.registradoEm.getTime() - 3 * 3600_000).toISOString().slice(0, 10);
-    const selo = m.api.app.get(SeloService);
+    const selo = await m.api.servico<SeloService>(SeloService);
     const a = await selo.selarDia(dia);
     expect(a).toMatchObject({ novo: true, selo: { tipo: 'diario', data: dia, ultimoSeq: ultimo.seq, ultimoHash: ultimo.hash } });
     expect((await selo.selarDia(dia))).toMatchObject({ novo: false, selo: { id: a!.selo.id } });

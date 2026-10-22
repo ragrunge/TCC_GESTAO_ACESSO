@@ -3,10 +3,13 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { CONFIG, type Config } from '../config/config';
 import { erroApi } from '../comum/erros';
+import { HttpException } from '@nestjs/common';
 import { ZodPipe } from '../comum/zod.pipe';
 import { AuthService, MENSAGEM_CREDENCIAIS, MENSAGEM_TEMPORARIA_EXPIRADA } from './auth.service';
+import { log } from '../comum/log';
 import { gravarCookieSessao, limparCookieSessao } from './cookie';
 import { Autenticado, Ctx, ipDe, Publico } from './decorators';
+import { LoginSemCondominio } from './login-sem-condominio';
 import { SENHA_MAX } from './senha.service';
 import type { Contexto } from './tipos';
 
@@ -25,20 +28,37 @@ export class AuthController {
   constructor(
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(CONFIG) private readonly config: Config,
+    @Inject(LoginSemCondominio) private readonly semCondominio: LoginSemCondominio,
   ) {}
 
   @Post('login')
   @Publico()
   @HttpCode(200)
   async login(@Body(new ZodPipe(LoginDto)) body: z.infer<typeof LoginDto>, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const r = await this.auth.login(body.login, body.senha, ipDe(req), req.get('user-agent'));
+    // SaaS (SAAS-05): o condomínio vem do cabeçalho X-Condominio (sem ele, o piloto durante a transição). Código
+    // inexistente, condomínio fora de ativo/suspenso ou transição desligada: resposta INDISTINGUÍVEL da de um login
+    // inexistente num condomínio que existe (mesmo argon2, mesmo atraso crescente, mesmo 429 ao bloquear), para o código
+    // não virar oráculo de "quem é cliente". Ver login-sem-condominio.ts.
+    const condominio = req.condominio;
+    const r = condominio
+      // Suspenso (SAAS-11): só quem acerta a senha descobre (auth.service.ts).
+      ? await this.auth.login(body.login, body.senha, ipDe(req), req.get('user-agent'), { suspenso: req.condominioStatus === 'suspenso' })
+      : { ok: false as const, ...(await this.semCondominio.tentar(body.login, body.senha, ipDe(req))) };
+    if (!condominio) log('info', 'auth.login_sem_condominio', { request_id: req.requestId });
     if (!r.ok && r.motivo === 'bloqueado') {
       res.setHeader('Retry-After', String(Math.max(1, Math.ceil((r.ate.getTime() - Date.now()) / 1000))));
       throw erroApi(429, 'LOGIN_BLOQUEADO', 'Muitas tentativas de login. Aguarde alguns minutos e tente novamente.');
     }
     if (!r.ok && r.motivo === 'senha_temporaria_expirada') throw erroApi(401, 'SENHA_TEMPORARIA_EXPIRADA', MENSAGEM_TEMPORARIA_EXPIRADA);
-    if (!r.ok) throw erroApi(401, 'CREDENCIAIS_INVALIDAS', MENSAGEM_CREDENCIAIS);
-    gravarCookieSessao(res, this.config, r.token, r.expiraEm);
+    if (!r.ok && r.motivo === 'condominio_suspenso') {
+      // Já registrado como auth.login_falha e contado no limite: o filtro não grava acesso.negado de novo.
+      throw new HttpException({
+        codigo: 'CONDOMINIO_SUSPENSO', mensagem: 'O acesso deste condomínio está suspenso. Fale com a administração do condomínio.',
+        semRegistroDeNegacao: true,
+      }, 403);
+    }
+    if (!r.ok || !condominio) throw erroApi(401, 'CREDENCIAIS_INVALIDAS', MENSAGEM_CREDENCIAIS);
+    gravarCookieSessao(res, this.config, condominio.id, r.token, r.expiraEm);
     return { usuario: r.usuario, sessao: { expiraEm: r.expiraEm.toISOString(), inatividadeMin: this.config.sessao.inatividadeMin } };
   }
 

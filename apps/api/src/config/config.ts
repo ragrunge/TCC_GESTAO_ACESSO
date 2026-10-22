@@ -31,18 +31,27 @@ export interface Config {
   };
   /** spec §5.1: 64 MiB, 3 iterações, paralelismo 1. `concorrencia` limita hashes simultâneos POR PROCESSO (memória). */
   argon2: { memoriaKib: number; iteracoes: number; paralelismo: number; concorrencia: number; filaMax: number };
-  /** Chave do HMAC do CPF; a API deriva dela (HKDF) uma subchave para o login_limite, sem reusar a chave em si. */
-  hmacCpfKey: Buffer;
   /**
    * Importação da planilha (RF-11, RN-09): prazo, em dias, para regularizar o vínculo legado. O valor é definido em
    * assembleia (`IMPORTACAO_PRAZO_LEGADO_DIAS`, padrão 90, de 1 a 730).
    */
   importacao: { prazoLegadoDias: number };
   /**
-   * Anexos cifrados (RNF-03, spec §9.2): KEK de 32 bytes (`PORTARIA_KEK`, base64) e a versão dela (`PORTARIA_KEK_VERSAO`),
-   * gravada em `documento.chave_versao`; `dir` é a pasta dos arquivos cifrados (`PORTARIA_DOCUMENTOS_DIR`), fora do banco.
+   * Anexos cifrados (RNF-03, spec §9.2): `dir` é a raiz dos arquivos cifrados (`PORTARIA_DOCUMENTOS_DIR`), fora do banco.
+   * A KEK e a versão dela vêm do condomínio (banco plataforma, SAAS-04), não mais do ambiente (saas/condominio.ts).
    */
-  documentos: { kek: Buffer; kekVersao: number; dir: string };
+  documentos: { dir: string };
+  /**
+   * SaaS (docs/05_arquitetura_saas.md, fase F2):
+   *  - `pilotoPadrao` (`SAAS_PILOTO_PADRAO`, padrão true): requisição sem código do condomínio e cookie sem prefixo
+   *    (o formato de antes da F2) vão para o piloto. Desligar ao fim da transição (SAAS-05): aí ficam sem condomínio.
+   *  - `chavesAmbiente`: as chaves antigas do ambiente (`PORTARIA_HMAC_CPF_KEY`, `PORTARIA_KEK`, `PORTARIA_KEK_VERSAO`),
+   *    OPCIONAIS e só para conferir no boot contra as do piloto na plataforma. As chaves em uso vêm sempre da plataforma.
+   */
+  saas: {
+    pilotoPadrao: boolean;
+    chavesAmbiente: { hmacCpf: Buffer | null; kek: Buffer | null; kekVersao: number | null };
+  };
   /**
    * Âncora externa do selo diário (spec §4.6): para onde vai o resumo (data, seq, hash, eventos do dia). Destinos
    * externos (`ANCORA_DESTINOS`), fora do alcance de quem administra o banco:
@@ -117,14 +126,23 @@ function inteiro(env: NodeJS.ProcessEnv, nome: string, padrao: number, min: numb
 export const DOCUMENTOS_DIR_PADRAO = '/var/lib/portaria/documentos';
 
 function carregarDocumentos(env: NodeJS.ProcessEnv): Config['documentos'] {
-  const kek = Buffer.from(exigir(env, 'PORTARIA_KEK'), 'base64');
-  // AES-256: exatamente 32 bytes. Mais ou menos que isso é chave colada errada, não "mais segura".
-  if (kek.length !== 32) throw new ErroConfig('PORTARIA_KEK precisa ter exatamente 32 bytes (base64)');
-  const kekVersao = inteiro(env, 'PORTARIA_KEK_VERSAO', 0, 1, 32767);
-  if (kekVersao === 0) throw new ErroConfig('PORTARIA_KEK_VERSAO não definida');
   const dir = env.PORTARIA_DOCUMENTOS_DIR?.trim() || DOCUMENTOS_DIR_PADRAO;
   if (!dir.startsWith('/')) throw new ErroConfig('PORTARIA_DOCUMENTOS_DIR deve ser um caminho absoluto');
-  return { kek, kekVersao, dir };
+  return { dir };
+}
+
+/** Chaves antigas do ambiente, se ainda estiverem lá (só para a conferência do boot). Mesmo formato de antes da F2. */
+function carregarChavesAmbiente(env: NodeJS.ProcessEnv): Config['saas']['chavesAmbiente'] {
+  const hmacBruto = env.PORTARIA_HMAC_CPF_KEY?.trim();
+  const hmacCpf = hmacBruto ? Buffer.from(hmacBruto, 'base64') : null;
+  if (hmacCpf && hmacCpf.length < 32) throw new ErroConfig('PORTARIA_HMAC_CPF_KEY precisa de pelo menos 32 bytes (base64)');
+  const kekBruto = env.PORTARIA_KEK?.trim();
+  const kek = kekBruto ? Buffer.from(kekBruto, 'base64') : null;
+  // AES-256: exatamente 32 bytes. Mais ou menos que isso é chave colada errada, não "mais segura".
+  if (kek && kek.length !== 32) throw new ErroConfig('PORTARIA_KEK precisa ter exatamente 32 bytes (base64)');
+  const v = inteiro(env, 'PORTARIA_KEK_VERSAO', 0, 1, 32767);
+  if (kek && v === 0) throw new ErroConfig('PORTARIA_KEK sem PORTARIA_KEK_VERSAO');
+  return { hmacCpf, kek, kekVersao: v || null };
 }
 
 const EMAIL = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/;
@@ -210,9 +228,6 @@ export function carregarConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const inatividadeMin = inteiro(env, 'SESSAO_INATIVIDADE_MIN', 30, 1, 24 * 60);
   if (inatividadeMin > absolutaMin) throw new ErroConfig('SESSAO_INATIVIDADE_MIN não pode passar de SESSAO_ABSOLUTA_MIN');
 
-  const hmacCpfKey = Buffer.from(exigir(env, 'PORTARIA_HMAC_CPF_KEY'), 'base64');
-  if (hmacCpfKey.length < 32) throw new ErroConfig('PORTARIA_HMAC_CPF_KEY precisa de pelo menos 32 bytes (base64)');
-
   return {
     ambiente,
     trustProxy,
@@ -228,9 +243,9 @@ export function carregarConfig(env: NodeJS.ProcessEnv = process.env): Config {
       bloqueioMin: inteiro(env, 'LOGIN_BLOQUEIO_MIN', PADROES_LOGIN.bloqueioMin, 1, 24 * 60),
     },
     argon2: { ...PADROES_ARGON2 },
-    hmacCpfKey,
     importacao: { prazoLegadoDias: inteiro(env, 'IMPORTACAO_PRAZO_LEGADO_DIAS', PRAZO_LEGADO_PADRAO_DIAS, 1, 730) },
     documentos: carregarDocumentos(env),
+    saas: { pilotoPadrao: opcionalBooleano(env, 'SAAS_PILOTO_PADRAO', true), chavesAmbiente: carregarChavesAmbiente(env) },
     ancora: carregarAncora(env, ambiente),
     jobs: {
       agendador: opcionalBooleano(env, 'JOBS_AGENDADOR', true),

@@ -3,6 +3,8 @@
 > **Status:** v0.2 (2026-10-22). v0.1 era só proposta; na v0.2 o usuário respondeu às perguntas 1, 2, 3 e 5 da
 > seção 10 (SaaS agora, repositório público, banco por condomínio, VPS compartilhada), e F0/F1 foram implementadas
 > (código e migrações, sem deploy). Nada muda em produção sem os passos manuais de `docs/deploy.md`, seção 12.
+> **F2 (2026-10-22):** implementada no código (API multi-banco, sem deploy); o que entrou, o que divergiu e o que ficou
+> para depois está em §5.1. Deploy manual: `docs/deploy.md`, seção 13.
 > Complementa `01_requisitos.md` (v0.3) e `02_especificacao_tecnica.md` (v0.1); não os altera.
 > O condomínio real do estudo de caso é chamado aqui de **condomínio-piloto**.
 
@@ -455,15 +457,23 @@ CREATE TABLE ancora_diaria (          -- âncora pública agregada (§4.3)
   criada_em timestamptz(3) NOT NULL DEFAULT now()
 );
 
--- Roles
-GRANT CONNECT ON DATABASE plataforma TO app_plataforma;
-REVOKE CONNECT ON DATABASE plataforma FROM app_rw, PUBLIC;
-GRANT SELECT ON condominio, condominio_chave TO app_plataforma;
+-- Roles (como implementado na F1: drizzle-plataforma/0000 e db/bootstrap/10_plataforma.sh)
+GRANT CONNECT ON DATABASE plataforma TO app_migrator, app_plataforma;   -- bootstrap; REVOKE ALL FROM PUBLIC
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO app_plataforma;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_plataforma;         -- todas as tabelas, não só condominio/chave
 GRANT INSERT, UPDATE ON condominio, condominio_contrato, master_usuario, master_sessao,
   plataforma_login_limite, condominio_metrica, ancora_diaria TO app_plataforma;
-GRANT INSERT ON plataforma_audit, condominio_chave TO app_plataforma;
+GRANT INSERT ON plataforma_audit, condominio_chave, master_codigo_recuperacao TO app_plataforma;
 GRANT UPDATE (ativa) ON condominio_chave TO app_plataforma;
--- sem DELETE em nada; exclusão de condomínio pela CLI (SAAS-11)
+GRANT UPDATE (usado_em) ON master_codigo_recuperacao TO app_plataforma;
+REVOKE DELETE, TRUNCATE ON ALL TABLES IN SCHEMA public FROM app_plataforma;
+REVOKE UPDATE ON plataforma_audit FROM app_plataforma;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO app_plataforma;
+-- sem DELETE em nada; exclusão de condomínio pela CLI (SAAS-11). Sem ALTER DEFAULT PRIVILEGES: tabela nova sem GRANT
+-- falha fechada. Triggers: plataforma_audit append-only (inclusive TRUNCATE) e condominio_chave com identidade imutável
+-- (só `ativa` muda, ou o embrulho com mestra de versão maior).
+-- app_provisionador nasce NOLOGIN CREATEDB, sem CONNECT em plataforma nem nos condomínios (ganha LOGIN com a CLI da F5).
 ```
 
 ### 4.2 Bancos de condomínio (migração `0007`, só *expand*)
@@ -523,6 +533,51 @@ fase tem rollback por *redeploy* da imagem anterior.
 | F6 | **Condomínio de teste** em produção (`demo`, dados fictícios do seed) para smoke de isolamento: sessão de um não abre o outro, jobs dos dois rodam, backup e restore de um só | Excluir `demo` (SAAS-11) | Não | P |
 | F7 | Fim de contrato: exportação completa, exclusão com duas pessoas, rotação de chave | — | Não | M |
 | F8 | Primeiro cliente real (depois das mitigações M1 a M9 da seção 10, do contrato de operador e da revisão de segurança) | — | — | — |
+
+### 5.1 Estado da F2 (2026-10-22, código; deploy em `docs/deploy.md` §13)
+
+**Entrou:** `ResolvedorCondominio` (`src/saas/resolvedor.ts`, cache da tabela `condominio`, chaves desembrulhadas por
+condomínio, conferências de boot), durable providers (`src/saas/contexto.ts`, `database.module.ts`: `CONDOMINIO`, `DB`,
+`PG_POOL` duráveis; `REGISTRO_BANCOS` com um pool `app_rw` por banco), `PLATAFORMA_DB` não exportado, chaves só da
+plataforma (sem fallback para o ambiente; as do ambiente, se presentes, são conferidas no boot), KEK conferida contra
+uma DEK existente, cookie `v2.<condominio_id>.<token>` com o antigo aceito para o piloto, login com `X-Condominio`
+(sem código = piloto; código desconhecido indistinguível de login inexistente num condomínio que existe), `suspenso`
+recusa login só depois da senha certa (e conta como falha), agendador e CLI `jobs.js` por condomínio (subárvore durável, trava `portaria:job:<nome>:<condominio_id>`, falha
+isolada), anexos em `<raiz>/<condominio_id>/` (piloto na raiz), âncora e endpoint público v1 só do piloto, laço de
+migração (`apps/api/scripts/migrar-bancos.mjs`) e de backup por banco, `condominio_id` no log. Testes:
+`test/saas-isolamento.test.ts` (itens 1 a 5, 7 e 8 da §6.1, com dois PGlites) e `test/postgres-real/saas-multibanco.test.ts`
+(item 6 e travas com Postgres real).
+
+**Onde divergiu ou o doc deixava margem:**
+- Guardas globais declaradas `scope: REQUEST, durable: true` em `app.module.ts`: o Nest decide se um enhancer global é
+  por requisição pelo `scope` declarado, não pela árvore; sem isso a `SessaoGuard` nunca é construída. A `PapelGuard`
+  também, para continuar depois da autenticação (o Nest roda os estáticos antes dos por requisição).
+- `FiltroExcecao` continua estático e não injeta `DB` (filtro global durável não é suportado pelo Nest): grava o
+  `acesso.negado` no banco do condomínio resolvido pelo middleware, via `REGISTRO_BANCOS`.
+- O condomínio é resolvido num middleware Express assíncrono antes do roteamento (a `ContextIdStrategy` é síncrona e
+  só lê `req.condominio`). No `POST /auth/login` o cookie é ignorado: só `X-Condominio` ou o piloto.
+- Pool por condomínio com `max: 10` (o de hoje), não 3: produção tem um condomínio; baixar na F6.
+- Transição como flag (`SAAS_PILOTO_PADRAO`, padrão `true`), não por prazo: desligar à mão quando o front mandar o código.
+- Login sem condomínio: o mesmo algoritmo de `login_limite` (por login e por IP, mesmos parâmetros, mesmo atraso e
+  mesmo 429), em memória por processo (`auth/login-sem-condominio.ts`), até o limite global na plataforma (SAAS-14).
+- `/saude`: 200 com plataforma e piloto bons; outro condomínio com defeito só conta em `condominios_com_falha` (sem id
+  nem código), para não derrubar todos pelo healthcheck. Resultado em cache por 5 s. O agendador também isola por
+  condomínio quem não resolve (chave ou plataforma). O boot continua estrito: chave que não desembrulha recusa a subida.
+- O laço de migração migra `portaria` sempre (piloto, mesmo antes de registrado) e os bancos `ativo`/`suspenso`/
+  `encerrado`; `provisionando` fica para a CLI de onboarding (F5).
+
+**Ficou para depois:** portão de versão por banco na subida (503 só para o condomínio defasado, SAAS-16); AAD da DEK
+com o condomínio (§6.1, só DEKs novas); campo de código no login do front (§6.2); limite global por IP e taxa por
+condomínio (SAAS-14); `ESTRUTURA` por condomínio (SAAS-06, com a `0007` da F3); tar de anexos por condomínio
+(SAAS-12); sessão de plataforma × rota de condomínio (§6.1 item 6, primeira parte: F5).
+
+**Checklist do fim da transição** (`SAAS_PILOTO_PADRAO=false`):
+- o leitor de âncoras (`ancora-selo.yml`) chama `/auditoria/selos/publico` sem `X-Condominio`: com a flag desligada
+  isso vira 404 e a coleta para. Antes de desligar, o workflow passa a mandar o código do piloto (ou a F4 já trocou o
+  endpoint pelo agregado);
+- o front manda o código no login (§6.2); sem isso, ninguém entra;
+- rollback para uma imagem anterior à F2 desloga todo mundo que tem cookie `v2.` (a imagem velha não reconhece o
+  formato): planejar a janela como "todos entram de novo".
 
 **Verificação da cadeia antiga** (fim de F2, F3 e F4): no banco `portaria`, `verificarCadeia` sobre a exportação nova
 deve dar `ok`, a cabeça deve ser igual ou posterior à de F0 com os mesmos hashes nos `seq` comuns, e

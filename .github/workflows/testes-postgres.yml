@@ -2,9 +2,10 @@
 # conexão só, sem roles de verdade); aqui valem o que o PGlite não prova: concorrência real, LOGIN como app_rw, roles e
 # CONNECT por banco, bootstrap de db/bootstrap/*.sh e as CLIs do SaaS (F0/F1) contra o cluster.
 #
-# Ordem: bootstrap de roles (00_roles.sh, 10_plataforma.sh, rodados duas vezes: são idempotentes) -> migrações de
-# `portaria` e de `plataforma` como app_migrator -> npm run test:pg -> smoke das CLIs e dos privilégios (docs/deploy.md,
-# seção 12.3). Qualquer divergência falha o job com ::error::.
+# Ordem: bootstrap de roles (00_roles.sh, 10_plataforma.sh, rodados duas vezes: são idempotentes) -> migrações em laço
+# (apps/api/scripts/migrar-bancos.mjs, o serviço `migrate` da F2) -> npm run test:pg -> smoke das CLIs e dos privilégios
+# (docs/deploy.md, seções 12.3 e 13) -> smoke da API multi-banco (boot com as chaves da plataforma e recusa com chave
+# trocada). Qualquer divergência falha o job com ::error::.
 #
 # Sem segredo do repositório: o único valor fixo é a senha do superusuário de um Postgres que morre com o job; as demais
 # senhas e as chaves das CLIs são geradas no job, mascaradas no log e descartadas. Nada aqui fala com a VPS.
@@ -123,26 +124,26 @@ jobs:
           prov="$(psql -U postgres -d postgres -tAc "select rolcanlogin::text || '/' || rolcreatedb::text from pg_roles where rolname = 'app_provisionador'")"
           [ "$prov" = "false/true" ] || { echo "::error::app_provisionador deveria ser NOLOGIN CREATEDB (veio: $prov)"; exit 1; }
 
-      - name: Migrações do banco portaria (como o serviço migrate)
+      - name: Migrações em laço (como o serviço migrate da F2)
         working-directory: apps/api
         run: |
-          export DATABASE_URL_MIGRATOR="postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@${PGHOST}:5432/portaria"
-          npx drizzle-kit migrate
-          n="$(PGPASSWORD="$POSTGRES_PASSWORD" psql -U postgres -d portaria -tAc "select count(*) from drizzle.__drizzle_migrations")"
-          esperado="$(ls drizzle/*.sql | wc -l)"
-          [ "$n" = "$esperado" ] || { echo "::error::portaria: $n migrações aplicadas, $esperado arquivos em apps/api/drizzle"; exit 1; }
-
-      - name: Migrações do banco plataforma (como o serviço migrate-plataforma)
-        working-directory: apps/api
-        run: |
-          export DATABASE_URL_MIGRATOR="postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@${PGHOST}:5432/plataforma"
-          npx drizzle-kit migrate --config drizzle-plataforma.config.ts
-          n="$(PGPASSWORD="$POSTGRES_PASSWORD" psql -U postgres -d plataforma -tAc "select count(*) from drizzle.__drizzle_migrations")"
-          esperado="$(ls drizzle-plataforma/*.sql | wc -l)"
-          [ "$n" = "$esperado" ] || { echo "::error::plataforma: $n migrações aplicadas, $esperado arquivos em apps/api/drizzle-plataforma"; exit 1; }
+          falha() { echo "::error::$*"; exit 1; }
+          MIGRATOR_URL_BASE="postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@${PGHOST}:5432" node scripts/migrar-bancos.mjs \
+            || falha "migrar-bancos.mjs falhou"
+          for par in "portaria:drizzle" "plataforma:drizzle-plataforma"; do
+            banco="${par%%:*}"; pasta="${par#*:}"
+            n="$(PGPASSWORD="$POSTGRES_PASSWORD" psql -U postgres -d "$banco" -tAc "select count(*) from drizzle.__drizzle_migrations")"
+            esperado="$(ls "$pasta"/*.sql | wc -l | tr -d " ")"
+            [ "$n" = "$esperado" ] || falha "$banco: $n migrações aplicadas, $esperado arquivos em apps/api/$pasta"
+          done
           # As tabelas da plataforma não podem ter ido parar no banco de condomínio (nem o contrário).
           t="$(PGPASSWORD="$POSTGRES_PASSWORD" psql -U postgres -d portaria -tAc "select count(*) from pg_tables where schemaname = 'public' and tablename in ('condominio','condominio_chave')")"
-          [ "$t" = "0" ] || { echo "::error::tabelas da plataforma apareceram no banco portaria"; exit 1; }
+          [ "$t" = "0" ] || falha "tabelas da plataforma apareceram no banco portaria"
+          t="$(PGPASSWORD="$POSTGRES_PASSWORD" psql -U postgres -d plataforma -tAc "select count(*) from pg_tables where schemaname = 'public' and tablename in ('evento_acesso','sessao')")"
+          [ "$t" = "0" ] || falha "tabelas de condomínio apareceram no banco plataforma"
+          # Segunda passada: nada a aplicar, sai com 0 (idempotente, como a cada `up`).
+          MIGRATOR_URL_BASE="postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@${PGHOST}:5432" node scripts/migrar-bancos.mjs >/dev/null \
+            || falha "migrar-bancos.mjs falhou na segunda passada"
 
       # Os testes criam bancos descartáveis (portaria_teste_<n>) e usam o app_rw que o bootstrap já criou: por isso
       # precisam de APP_RW_PASSWORD (eles se recusam a alterar a senha de um role existente).
@@ -289,3 +290,41 @@ jobs:
             falha "--conferir acusou problema além da falta de âncoras (a cadeia não confere com a linha de base recém-gerada)"
           fi
           rm -rf "$d"
+
+      - name: Smoke da API multi-banco (F2, docs/deploy.md seção 13)
+        working-directory: apps/api
+        run: |
+          falha() { echo "::error::$*"; exit 1; }
+          export DATABASE_URL="postgres://app_rw:${APP_RW_PASSWORD}@${PGHOST}:5432/portaria"
+          export DATABASE_URL_PLATAFORMA="postgres://app_plataforma:${APP_PLATAFORMA_PASSWORD}@${PGHOST}:5432/plataforma"
+          export PORTARIA_CHAVE_MESTRA_VERSAO=1 PORTARIA_KEK_VERSAO=1 PORTARIA_AMBIENTE=dev COOKIE_SECURE=false TRUST_PROXY=false JOBS_AGENDADOR=false PORT=3199
+          d="$RUNNER_TEMP/api"; mkdir -p "$d"
+
+          # 1. Boot com o piloto da smoke anterior (ci-piloto): chaves do ambiente conferidas contra as da plataforma.
+          node dist/main.js >"$d/api.log" 2>&1 &
+          pid=$!
+          ok=0
+          for _ in $(seq 1 30); do
+            if node -e 'fetch("http://127.0.0.1:3199/api/v1/saude").then(r=>r.json()).then(j=>process.exit(j.data&&j.data.banco==="ok"?0:1),()=>process.exit(1))'; then ok=1; break; fi
+            sleep 1
+          done
+          login="$(node -e 'fetch("http://127.0.0.1:3199/api/v1/auth/login",{method:"POST",headers:{"content-type":"application/json","x-condominio":"nao-existe"},body:JSON.stringify({login:"x",senha:"y"})}).then(r=>console.log(r.status))')"
+          kill "$pid"; wait "$pid" || true
+          [ "$ok" = 1 ] || { cat "$d/api.log"; falha "a API não ficou saudável com o piloto registrado"; }
+          grep -q '"evento":"saas.boot".*ambiente=hmac_cpf+kek_documentos+kek_versao' "$d/api.log" || { cat "$d/api.log"; falha "boot sem a conferência das chaves do ambiente"; }
+          [ "$login" = 401 ] || falha "login com código inexistente devia ser 401, foi $login"
+
+          # 2. Chave do ambiente diferente da registrada: a API recusa subir (código 1) e diz qual variável.
+          set +e
+          PORTARIA_KEK="$(openssl rand -base64 32)" node dist/main.js >"$d/recusa.log" 2>&1
+          rc=$?
+          set -e
+          [ "$rc" = 1 ] || falha "boot com PORTARIA_KEK trocada devia sair com 1, saiu com $rc"
+          grep -q 'PORTARIA_KEK difere' "$d/recusa.log" || { cat "$d/recusa.log"; falha "recusa do boot sem a mensagem esperada"; }
+
+          # 3. CLI de jobs no piloto (subárvore do condomínio, trava por condomínio) e nenhuma chave em log.
+          node dist/cli/jobs.js selo >"$d/jobs.json" 2>"$d/jobs.err" || { cat "$d/jobs.err"; falha "jobs.js selo falhou"; }
+          grep -q '"condominioId"' "$d/jobs.json" || falha "jobs.js selo sem condominioId na saída"
+          for chave in "$PORTARIA_CHAVE_MESTRA" "$PORTARIA_KEK" "$PORTARIA_HMAC_CPF_KEY"; do
+            if grep -rqF -- "$chave" "$d"; then falha "uma chave apareceu num log da API ou da CLI"; fi
+          done

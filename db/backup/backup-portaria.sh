@@ -7,6 +7,9 @@
 #   diario/arquivos-<carimbo>.tar.age      volumes `documentos` (anexos, já cifrados pela KEK) e `ancoras` (cópia local)
 #   diario/plataforma-<carimbo>.dump.age   pg_dump -Fc do banco `plataforma` do SaaS (só se ele existir; as chaves dos
 #                                          condomínios vão embrulhadas pela chave mestra, que NÃO entra no backup)
+#   diario/condominio-<banco>-<carimbo>.dump.age   SaaS (F2, SAAS-12): um pg_dump -Fc por banco de condomínio além do
+#                                          piloto (`portaria`, que segue no primeiro arquivo), status ativo, suspenso ou
+#                                          encerrado. Os anexos de todos ficam no mesmo tar (subpasta por condomínio).
 #   diario/<carimbo>.sha256                sha256 dos .age do conjunto (conferir depois da cópia externa)
 # Rotação: os últimos BACKUP_DIARIOS (30) conjuntos diários e, do primeiro backup de cada mês, BACKUP_MENSAIS (12)
 # conjuntos em mensal/.
@@ -56,7 +59,7 @@ DUMP="$D/portaria-$CARIMBO.dump.age"
 ARQ="$D/arquivos-$CARIMBO.tar.age"
 PLAT="$D/plataforma-$CARIMBO.dump.age"
 SUM="$D/$CARIMBO.sha256"
-trap 'rm -f "$DUMP.parcial" "$ARQ.parcial" "$PLAT.parcial"' EXIT
+trap 'rm -f "$DUMP.parcial" "$ARQ.parcial" "$PLAT.parcial" "$D"/condominio-*-"$CARIMBO".dump.age.parcial' EXIT
 
 cd "$PORTARIA_DIR"
 
@@ -80,6 +83,18 @@ if [ "$(docker compose exec -T db psql -U postgres -tAc "SELECT 1 FROM pg_databa
   docker compose exec -T db pg_dump -U postgres -d plataforma -Fc --no-password \
     | age --encrypt -R "$RECIPIENTES" -o "$PLAT.parcial"
   CONJUNTO+=("$PLAT")
+
+  # 2c) Bancos dos outros condomínios (SaaS, F2). O nome vem da plataforma e é conferido de novo aqui (mesmo formato do
+  #     CHECK condominio_banco_ck) antes de virar argumento: fora do formato, o backup inteiro falha.
+  BANCOS="$(docker compose exec -T db psql -U postgres -d plataforma -tAc \
+    "SELECT banco FROM condominio WHERE status IN ('ativo','suspenso','encerrado') AND banco <> 'portaria' ORDER BY banco")"
+  for b in $BANCOS; do
+    [[ "$b" =~ ^portaria_[a-z0-9]{8}$ ]] || falha "nome de banco fora do formato na plataforma"
+    f="$D/condominio-$b-$CARIMBO.dump.age"
+    log "pg_dump $b -> $f"
+    docker compose exec -T db pg_dump -U postgres -d "$b" -Fc --no-password | age --encrypt -R "$RECIPIENTES" -o "$f.parcial"
+    CONJUNTO+=("$f")
+  done
 fi
 
 # O conjunto só aparece com todos os arquivos completos: falha no meio não deixa dump sem anexos (nem o contrário).
@@ -103,7 +118,7 @@ rotacionar() {
     f="${f##*/}"; f="${f#portaria-}"; printf '%s\n' "${f%.dump.age}"
   done | sort -r | tail -n +"$((manter + 1))" | while read -r carimbo; do
     rm -f "$pasta/portaria-$carimbo.dump.age" "$pasta/arquivos-$carimbo.tar.age" "$pasta/plataforma-$carimbo.dump.age" \
-      "$pasta/$carimbo.sha256"
+      "$pasta"/condominio-*-"$carimbo".dump.age "$pasta/$carimbo.sha256"
     log "rotação: removido $(basename "$pasta")/$carimbo"
   done
 }

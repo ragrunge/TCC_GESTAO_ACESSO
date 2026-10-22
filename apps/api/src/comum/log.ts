@@ -4,7 +4,8 @@ import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 
 const CAMPOS_PERMITIDOS = new Set([
-  'request_id', 'usuario_id', 'metodo', 'rota', 'status', 'ms', 'codigo', 'codigo_pg', 'constraint', 'erro', 'motivo', 'detalhe',
+  // condominio_id (SaaS, SAAS-15): o uuid, nunca o código nem o nome do condomínio.
+  'request_id', 'usuario_id', 'condominio_id', 'metodo', 'rota', 'status', 'ms', 'codigo', 'codigo_pg', 'constraint', 'erro', 'motivo', 'detalhe',
 ]);
 
 export type Nivel = 'info' | 'warn' | 'error';
@@ -50,7 +51,7 @@ export function logDeRequisicao(req: Request, res: Response, next: NextFunction)
     // Padrão da rota (/api/v1/usuarios/:id), nunca a URL: a query pode carregar dado de busca.
     const rota = req.route?.path ? `${req.baseUrl ?? ''}${String(req.route.path)}` : '(sem rota)';
     log(res.statusCode >= 500 ? 'error' : 'info', 'http', {
-      request_id: req.requestId, usuario_id: req.auth?.usuario.id, metodo: req.method, rota, status: res.statusCode,
+      request_id: req.requestId, usuario_id: req.auth?.usuario.id, condominio_id: req.condominio?.id, metodo: req.method, rota, status: res.statusCode,
       ms: Number((process.hrtime.bigint() - inicio) / 1_000_000n),
     });
   });

@@ -42,7 +42,7 @@ describe('linha de base (F0)', () => {
       }
     };
     await movimentar(2); // seq 1..4
-    await api.app.get(SeloService).selarDia(diaBrt(new Date())); // diário de hoje: seq 4 (o registrado_em é do relógio real)
+    await (await api.servico<SeloService>(SeloService)).selarDia(diaBrt(new Date())); // diário de hoje: seq 4 (o registrado_em é do relógio real)
     // selos.jsonl como o workflow monta: resposta do endpoint público -> script do workflow
     writeFileSync(join(dir, 'resposta.json'), (await api.http().get('/api/v1/auditoria/selos/publico')).text);
     expect(anexarSelos(['--resposta', join(dir, 'resposta.json'), '--arquivo', join(dir, 'selos.jsonl')]).codigo).toBe(0);

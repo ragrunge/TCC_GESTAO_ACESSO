@@ -42,28 +42,17 @@ services:
       dockerfile: apps/api/Dockerfile
       target: migrate
     image: portaria-migrate:dev
+    # SaaS (F2): plataforma e depois cada banco de condomínio (apps/api/scripts/migrar-bancos.mjs).
     environment:
-      DATABASE_URL_MIGRATOR: postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@db:5432/portaria
-    command: ["npx", "drizzle-kit", "migrate"]
+      MIGRATOR_URL_BASE: postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@db:5432
+    command: ["node", "scripts/migrar-bancos.mjs"]
     depends_on:
       db:
         condition: service_healthy
     restart: "no"
 
-  # SaaS, fase F1: banco `plataforma`, só com --profile plataforma (a API ainda não o usa). Ver docs/deploy.md, seção 12.
-  #   docker compose --profile plataforma run --rm migrate-plataforma
-  #   docker compose --profile plataforma run --rm plataforma-cli node dist/cli/registrar-piloto.js --codigo demo --nome "Demo"
-  migrate-plataforma:
-    profiles: [plataforma]
-    image: portaria-migrate:dev
-    pull_policy: never
-    command: ["npx", "drizzle-kit", "migrate", "--config", "drizzle-plataforma.config.ts"]
-    environment:
-      DATABASE_URL_MIGRATOR: postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@db:5432/plataforma
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: "no"
+  # SaaS: a API (F2) só sobe com o piloto registrado no banco `plataforma` (docs/deploy.md, seção 13). Uma vez por volume:
+  #   docker compose --profile plataforma run --rm plataforma-cli node dist/cli/registrar-piloto.js --codigo piloto --nome "Dev"
 
   plataforma-cli:
     profiles: [plataforma]
@@ -95,6 +84,11 @@ services:
       PORT: "3000"
       # A API usa app_rw (sem DELETE, sem UPDATE nas trilhas, sem CREATE). Nunca app_migrator.
       DATABASE_URL: postgres://app_rw:${APP_RW_PASSWORD}@db:5432/portaria
+      # SaaS (F2): banco plataforma (app_plataforma) e chave mestra; as chaves do condomínio vêm de lá.
+      DATABASE_URL_PLATAFORMA: postgres://app_plataforma:${APP_PLATAFORMA_PASSWORD:?defina APP_PLATAFORMA_PASSWORD no .env}@db:5432/plataforma
+      PORTARIA_CHAVE_MESTRA: ${PORTARIA_CHAVE_MESTRA:?defina PORTARIA_CHAVE_MESTRA no .env}
+      PORTARIA_CHAVE_MESTRA_VERSAO: ${PORTARIA_CHAVE_MESTRA_VERSAO:?defina PORTARIA_CHAVE_MESTRA_VERSAO no .env}
+      SAAS_PILOTO_PADRAO: ${SAAS_PILOTO_PADRAO:-true}
       # Cada variável repassada uma a uma (nunca env_file com o .env inteiro: a API não recebe senha de superusuário).
       PORTARIA_AMBIENTE: ${PORTARIA_AMBIENTE:?defina PORTARIA_AMBIENTE (dev ou producao) no .env}
       COOKIE_SECURE: ${COOKIE_SECURE:?defina COOKIE_SECURE (true ou false) no .env}
@@ -108,9 +102,10 @@ services:
       LOGIN_BLOQUEIO_MIN: ${LOGIN_BLOQUEIO_MIN:-}
       # Prazo de regularização do legado (RN-09, definido em assembleia). Vazio = 90 dias.
       IMPORTACAO_PRAZO_LEGADO_DIAS: ${IMPORTACAO_PRAZO_LEGADO_DIAS:-}
-      PORTARIA_HMAC_CPF_KEY: ${PORTARIA_HMAC_CPF_KEY:?defina PORTARIA_HMAC_CPF_KEY no .env}
-      PORTARIA_KEK: ${PORTARIA_KEK:?defina PORTARIA_KEK no .env}
-      PORTARIA_KEK_VERSAO: ${PORTARIA_KEK_VERSAO:?defina PORTARIA_KEK_VERSAO no .env}
+      # Opcionais desde a F2: só conferidas no boot contra as do piloto na plataforma.
+      PORTARIA_HMAC_CPF_KEY: ${PORTARIA_HMAC_CPF_KEY:-}
+      PORTARIA_KEK: ${PORTARIA_KEK:-}
+      PORTARIA_KEK_VERSAO: ${PORTARIA_KEK_VERSAO:-}
       # Anexos de ocorrência cifrados (AES-256-GCM, spec §9.2): só o conteúdo cifrado, no volume abaixo (fora do banco).
       PORTARIA_DOCUMENTOS_DIR: /var/lib/portaria/documentos
       # Vazios são válidos: sem CORS (mesma origem) e sem seed de dev (produção).

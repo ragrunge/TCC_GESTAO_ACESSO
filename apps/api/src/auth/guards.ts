@@ -6,7 +6,7 @@ import type { Request } from 'express';
 import { CONFIG, type Config } from '../config/config';
 import { AcessoNegado, erroApi } from '../comum/erros';
 import { log } from '../comum/log';
-import { lerCookieSessao } from './cookie';
+import { interpretarCookie, lerCookieSessao } from './cookie';
 import { POLITICA, type Politica } from './decorators';
 import { SessaoService } from './sessao.service';
 
@@ -24,9 +24,17 @@ export class SessaoGuard implements CanActivate {
   async canActivate(c: ExecutionContext): Promise<boolean> {
     if (politicaDe(this.reflector, c)?.tipo === 'publico') return true;
     const req = c.switchToHttp().getRequest<Request>();
-    const token = lerCookieSessao(req, this.config);
-    if (!token) throw erroApi(401, 'NAO_AUTENTICADO', 'Entre no sistema para continuar.');
-    const auth = await this.sessoes.validar(token);
+    const valor = lerCookieSessao(req, this.config);
+    if (!valor) throw erroApi(401, 'NAO_AUTENTICADO', 'Entre no sistema para continuar.');
+    // SaaS (SAAS-03): a sessão só é procurada no banco do condomínio que o middleware resolveu, e só se o cookie for
+    // daquele condomínio. Prefixo de outro condomínio (o X-Condominio escolheu outro), cookie antigo fora do piloto ou
+    // sem condomínio: 401 sem ir a banco nenhum. Prefixo forjado para o condomínio certo não basta: o hash do token
+    // tem de existir nesse banco.
+    const cookie = interpretarCookie(valor);
+    const cond = req.condominio;
+    const doCondominio = !!cond && !!cookie && (cookie.formato === 'v2' ? cookie.condominioId === cond.id : cond.piloto);
+    if (!doCondominio) throw erroApi(401, 'SESSAO_INVALIDA', 'Sua sessão expirou. Entre novamente.');
+    const auth = await this.sessoes.validar(cookie!.token);
     if (!auth) throw erroApi(401, 'SESSAO_INVALIDA', 'Sua sessão expirou. Entre novamente.');
     req.auth = auth;
     return true;

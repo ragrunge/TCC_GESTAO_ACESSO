@@ -13,7 +13,7 @@ import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import type { Contexto } from '../auth/tipos';
-import { CONFIG, type Config } from '../config/config';
+import { chavesDe, CONDOMINIO, type CondominioResolvido } from '../saas/condominio';
 import { diaBrt } from '../comum/datas';
 import { AcessoNegado, codigoPg, erroApi } from '../comum/erros';
 import { codificarCursor, decodificarCursor, Pagina } from '../comum/pagina';
@@ -50,7 +50,7 @@ export class PessoasService {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(RELOGIO) private readonly relogio: Relogio,
-    @Inject(CONFIG) private readonly config: Config,
+    @Inject(CONDOMINIO) private readonly condominio: CondominioResolvido | null,
     @Inject(AuditoriaService) private readonly auditoria: AuditoriaService,
     @Inject(BuscaService) private readonly busca: BuscaService,
   ) {}
@@ -77,7 +77,7 @@ export class PessoasService {
       if (!cpf) throw erroApi(422, 'DOCUMENTO_OBRIGATORIO', 'Informe o CPF.');
       if (!cpfValido(cpf)) throw erroApi(422, 'CPF_INVALIDO', 'CPF inválido (confira os dígitos).');
       mascarado = mascararCpf(cpf);
-      busca = documentoBusca(cpf, this.config.hmacCpfKey);
+      busca = documentoBusca(cpf, chavesDe(this.condominio).hmacCpf);
       const [existe] = await exec.select({ id: pessoa.id }).from(pessoa).where(eq(pessoa.documentoBusca, busca)).limit(1);
       if (existe) throw duplicada();
     }
@@ -128,7 +128,7 @@ export class PessoasService {
         if (i.documento !== undefined && soDigitos(i.documento) !== '') {
           const cpf = soDigitos(i.documento);
           if (!cpfValido(cpf)) throw erroApi(422, 'CPF_INVALIDO', 'CPF inválido (confira os dígitos).');
-          const busca = documentoBusca(cpf, this.config.hmacCpfKey);
+          const busca = documentoBusca(cpf, chavesDe(this.condominio).hmacCpf);
           const [outra] = await tx.select({ id: pessoa.id }).from(pessoa).where(eq(pessoa.documentoBusca, busca)).limit(1);
           if (outra && outra.id !== id) throw duplicada();
           if (!outra) {

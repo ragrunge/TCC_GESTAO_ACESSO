@@ -22,7 +22,7 @@ import type { Request, Response } from 'express';
 import { AppModule } from '../../src/app.module';
 import { type Config, CONFIG, nomeCookie } from '../../src/config/config';
 import { RELOGIO, relogioDoSistema } from '../../src/comum/relogio';
-import { DB, type Db, PG_POOL } from '../../src/database/database.module';
+import type { Db } from '../../src/database/database.module';
 import * as s from '../../src/db/schema';
 import { seedEstrutura } from '../../src/db/seed';
 import { seedPessoasDev } from '../../src/db/seed-pessoas-dev';
@@ -31,6 +31,8 @@ import { gerarOpenApi } from '../../src/openapi/gerar-openapi';
 import { configurarApp, PREFIXO_GLOBAL } from '../../src/plataforma';
 import { configDeTeste } from '../helpers/app';
 import { CHAVE_HMAC_TESTE, PASTA_MIGRACOES } from '../helpers/banco';
+import { novoBancoPlataforma } from '../helpers/plataforma';
+import { CODIGO_PILOTO, comSaas, KEK_TESTE, registrarCondominio, RegistroDeTeste } from '../helpers/saas';
 import { semearDadosE2e, USUARIOS_E2E } from './dados';
 
 /** Senha de todos os usuários do e2e (fictícia, só deste modo). O playwright.config.ts manda a mesma em E2E_SENHA. */
@@ -107,9 +109,12 @@ export async function iniciarServidorE2e(o: OpcoesServidorE2e) {
     },
   });
 
-  const mod = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(PG_POOL).useValue({ end: async () => undefined })
-    .overrideProvider(DB).useValue(db)
+  // Banco plataforma (SaaS, F2) com o piloto: o banco `portaria` do registro é o Proxy acima.
+  const plataforma = await novoBancoPlataforma();
+  await registrarCondominio(plataforma.db, { codigo: CODIGO_PILOTO, banco: 'portaria', hmac: CHAVE_HMAC_TESTE, kek: KEK_TESTE });
+  const mod = await comSaas(Test.createTestingModule({ imports: [AppModule] }), {
+    plataforma: plataforma.db, registro: new RegistroDeTeste(new Map([['portaria', db]])), fecharPlataforma: () => plataforma.client.close(),
+  })
     .overrideProvider(CONFIG).useValue(config)
     .overrideProvider(RELOGIO).useValue(relogioDoSistema)
     .compile();

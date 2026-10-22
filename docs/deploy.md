@@ -627,7 +627,7 @@ docker compose build && docker compose up -d --wait                      #    s�
 docker compose exec -T db sh /docker-entrypoint-initdb.d/10_plataforma.sh # 5. roles + banco (idempotente)
 printf "ALTER ROLE app_plataforma LOGIN PASSWORD '%s';\n" "$(sed -n 's/^APP_PLATAFORMA_PASSWORD=//p' .env)" \
   | docker compose exec -T db psql -q -v ON_ERROR_STOP=1 -U postgres -d postgres   #    senha por stdin, sem eco
-docker compose --profile plataforma run --rm migrate-plataforma          # 6. tabelas da §4.1
+docker compose --profile plataforma run --rm migrate-plataforma          # 6. tabelas da §4.1 (a partir da F2: `docker compose run --rm migrate`)
 docker compose --profile plataforma run --rm plataforma-cli \
   node dist/cli/registrar-piloto.js --codigo <slug> --nome "<nome exibido>"   # 7. piloto + chaves (v. de hoje)
 ```
@@ -646,3 +646,62 @@ Conferir:
 
 **Rollback da F1:** `docker compose exec -T db psql -U postgres -c 'DROP DATABASE plataforma' -c 'DROP ROLE app_plataforma' -c 'DROP ROLE app_provisionador'`
 e voltar o commit/tag (seção 11). O banco `portaria` não foi tocado.
+
+## 13. SaaS F2: API multi-banco (deploy manual: o automático sai com código 2)
+
+Muda compose, `Dockerfile`, `db/backup`, `scripts/deploy` e `.env.producao.example`. O banco `portaria` não recebe
+migração nova. Desde esta fase a API:
+
+- lê o condomínio (banco + chaves) do banco `plataforma`, como `app_plataforma`, com a `PORTARIA_CHAVE_MESTRA`;
+- recusa subir se não houver condomínio ativo, se a chave mestra não desembrulhar as chaves, se `PORTARIA_HMAC_CPF_KEY`
+  / `PORTARIA_KEK` / `PORTARIA_KEK_VERSAO` (agora opcionais) estiverem no `.env` e diferirem das do piloto, ou se a KEK
+  não abrir a DEK de um anexo existente;
+- grava o cookie `v2.<condominio_id>.<token>` e aceita o antigo (sem prefixo) para o piloto enquanto
+  `SAAS_PILOTO_PADRAO` (padrão `true`) estiver ligado; login sem código também vai para o piloto;
+- o serviço `migrate` passa a migrar `plataforma` e depois cada banco de condomínio (`scripts/migrar-bancos.mjs`); o
+  serviço `migrate-plataforma` saiu. O backup faz um dump por banco de condomínio (só o piloto, hoje).
+
+Antes: F1 feita (piloto registrado) e as chaves do piloto no cofre. **Não** esvaziar as três chaves antigas do `.env`
+nesta fase: a imagem anterior (rollback) ainda precisa delas.
+
+```bash
+cd /opt/tcc-portaria
+sudo systemctl start tcc-portaria-backup.service                        # 1. backup antes
+grep -cE '^(APP_PLATAFORMA_PASSWORD|PORTARIA_CHAVE_MESTRA|PORTARIA_CHAVE_MESTRA_VERSAO)=.+' .env   # 2. imprime 3
+docker compose --profile plataforma run --rm plataforma-cli \
+  node dist/cli/registrar-piloto.js --codigo <slug> --nome "<nome exibido>"     # 3. "ja_registrado" (chaves = .env)
+TAG_ANTERIOR="$(sed -n 's/^API_TAG=//p' .env)"; echo "$TAG_ANTERIOR"     # 4. anotar para o rollback
+git fetch && git checkout --detach origin/main                            # 5. código e imagens
+sed -i "s|^API_TAG=.*|API_TAG=$(git rev-parse --short HEAD)|" .env
+docker compose build && docker compose up -d --wait                       # 6. migrate (laço) e depois a API
+install -m 755 -o root -g root scripts/deploy/deploy-vps.sh /usr/local/sbin/tcc-portaria-deploy   # 7. script novo
+```
+
+Conferir:
+
+- passo 3: `"situacao": "ja_registrado"` (com `registrado` ou erro, parar: a plataforma não está como a F1 deixou);
+- passo 6: `docker compose logs migrate | grep migrar-bancos` termina em `ok (plataforma + 1 condomínio(s))`;
+  `docker compose logs api | grep saas.boot` mostra `condominios=1 piloto=sim ambiente=hmac_cpf+kek_documentos+kek_versao`
+  (e `deks_conferidas=1` se já houver anexo);
+- `/saude` com `"banco":"ok"`; uma sessão aberta ANTES do deploy continua logada; login novo na portaria (sem código)
+  funciona e o cookie novo começa com `v2.`; "Verificar integridade" como antes;
+- `curl -s https://<api>/api/v1/auditoria/selos/publico | head -c 120` responde o formato v1 (o workflow da âncora segue);
+- `docker compose exec api node dist/cli/jobs.js ancoras` imprime `{"condominioId":...,"enviados":...}`;
+- `sudo systemctl start tcc-portaria-backup.service` e `journalctl -u tcc-portaria-backup -n 20`: dumps de `portaria` e
+  `plataforma`, nenhum `condominio-*` (só há o piloto);
+- verificação da cadeia antiga (05_arquitetura_saas.md §5): `linha-de-base --conferir` contra a da F0 dá `CONFERE`.
+
+**Rollback da F2:** `git checkout --detach <commit de $TAG_ANTERIOR>`, `sed -i "s|^API_TAG=.*|API_TAG=$TAG_ANTERIOR|" .env`,
+`docker compose up -d --wait` e reinstalar o `deploy-vps.sh` daquele commit. Nada a desfazer em banco (nenhuma migração
+nova; o `migrate` antigo só olha o `portaria`). Efeito visível: quem entrou depois do deploy tem cookie `v2.` e precisa
+entrar de novo (uma vez). O cookie antigo segue válido nos dois sentidos.
+
+**Fim da transição** (fase seguinte, depois de o front mandar o código no login): `SAAS_PILOTO_PADRAO=false` no `.env`
+e esvaziar `PORTARIA_HMAC_CPF_KEY`/`PORTARIA_KEK`/`PORTARIA_KEK_VERSAO` (a cópia do cofre continua sendo a recuperação).
+Antes de desligar: o workflow `ancora-selo.yml` precisa mandar `X-Condominio: <slug>` (sem ele `/auditoria/selos/publico`
+vira 404 e a coleta de âncoras para), e lembrar que, depois disso, voltar para uma imagem anterior à F2 desloga todos
+os cookies `v2.` (todos entram de novo).
+`/saude` passa a devolver `condominios_com_falha` (número; 0 com só o piloto). Plataforma ou piloto fora = 503.
+Ambiente de desenvolvimento (`docker-compose.yml`): a API só sobe com o piloto registrado no volume (comando no topo do
+compose); `npm run local` (PGlite) não muda.
+

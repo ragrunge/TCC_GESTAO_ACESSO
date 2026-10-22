@@ -64,7 +64,8 @@ if INFRA="$(grep -E "$INFRA_RE" <<<"$MUDOU")"; then
   exit 2
 fi
 MIGRACAO=0
-grep -q '^apps/api/drizzle/' <<<"$MUDOU" && MIGRACAO=1
+# drizzle/ (bancos de condomínio) e drizzle-plataforma/ (banco plataforma, SaaS): o serviço migrate aplica os dois (SAAS-16).
+grep -qE '^apps/api/drizzle(-plataforma)?/' <<<"$MUDOU" && MIGRACAO=1
 
 # Backup antes de qualquer migração. Com a chave age instalada, o backup cifrado completo; sem ela, um dump local
 # (root, 600) só para desfazer este deploy, guardando os 3 últimos.
@@ -73,11 +74,17 @@ if [ -s "$RECIPIENTES" ] && command -v age >/dev/null; then
   "$PORTARIA_DIR/db/backup/backup-portaria.sh"
   BACKUP="ver /var/backups/tcc-portaria/diario"
 else
+  # SaaS (F2): um dump por banco (portaria, plataforma e os dos condomínios), com o mesmo carimbo. Guarda 3 conjuntos.
   install -d -m 700 "$PRE_DEPLOY_DIR"
-  BACKUP="$PRE_DEPLOY_DIR/portaria-$(date -u +%Y%m%dT%H%M%SZ)-$TAG_ATUAL.dump"
-  log "dump local antes do deploy (sem chave age): $BACKUP"
-  docker compose exec -T db pg_dump -U postgres -d portaria -Fc --no-password >"$BACKUP"
-  ls -1t "$PRE_DEPLOY_DIR"/*.dump | tail -n +4 | xargs -r rm -f
+  SUFIXO="$(date -u +%Y%m%dT%H%M%SZ)-$TAG_ATUAL.dump"
+  BACKUP="$PRE_DEPLOY_DIR/<banco>-$SUFIXO"
+  BANCOS="$(docker compose exec -T db psql -U postgres -tAc \
+    "SELECT datname FROM pg_database WHERE datname IN ('portaria', 'plataforma') OR datname ~ '^portaria_[a-z0-9]{8}$' ORDER BY 1")"
+  for b in $BANCOS; do
+    log "dump local antes do deploy (sem chave age): $PRE_DEPLOY_DIR/$b-$SUFIXO"
+    docker compose exec -T db pg_dump -U postgres -d "$b" -Fc --no-password >"$PRE_DEPLOY_DIR/$b-$SUFIXO"
+  done
+  ls -1t "$PRE_DEPLOY_DIR"/portaria-*.dump | tail -n +4 | while read -r f; do rm -f "$PRE_DEPLOY_DIR"/*-"${f##*/portaria-}"; done
 fi
 
 git checkout --quiet --detach "$ALVO"

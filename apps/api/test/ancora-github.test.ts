@@ -42,7 +42,7 @@ async function montar(github = true) {
   /** Selo diário gravado direto (superusuário), para ter dias anteriores ao de hoje. O trigger confere seq e hash. */
   const seloDiario = async (data: string, seq: number) => api.db.insert(s.seloCadeia).values({ data, tipo: 'diario', ultimoSeq: seq, ultimoHash: await hashDo(seq) });
   const publico = (ip = novoIp()) => api.http().get(PUBLICO).set('X-Forwarded-For', ip);
-  return { api, get, post, movimentar, hashDo, seloDiario, publico, selo: api.app.get(SeloService) };
+  return { api, get, post, movimentar, hashDo, seloDiario, publico, selo: await api.servico<SeloService>(SeloService) };
 }
 
 describe('GET /auditoria/selos/publico (destino github)', () => {

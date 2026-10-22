@@ -2,6 +2,8 @@
 // aleatórios); o conteúdo é cifrado com AES-256-GCM pela DEK, e a DEK é cifrada (também AES-256-GCM) pela KEK, que
 // vem do ambiente (`PORTARIA_KEK`) e nunca vai ao banco. O banco guarda só a DEK cifrada, o nonce, a versão da KEK, o
 // SHA-256 do conteúdo em claro, o tipo e o tamanho. O disco guarda só o conteúdo cifrado.
+// SaaS (F2): a KEK e a pasta são as do condomínio da subárvore de injeção (saas/condominio.ts), não mais do ambiente.
+// Cada condomínio tem a sua KEK: a DEK de um anexo de A, aberta com a KEK de B, falha na autenticação do GCM.
 //
 // - AAD amarra o arquivo e a DEK ao id do documento: trocar o arquivo ou a DEK de um registro por outro falha na
 //   autenticação do GCM, em vez de entregar o anexo de outra ocorrência.
@@ -17,6 +19,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { erroApi } from '../comum/erros';
 import { log } from '../comum/log';
 import { CONFIG, type Config } from '../config/config';
+import { CONDOMINIO, type CondominioResolvido, pastaDocumentos } from '../saas/condominio';
 
 const NONCE = 12;
 const TAG = 16;
@@ -64,18 +67,48 @@ function decifrar(chave: Buffer, nonce: Buffer, aad: string, cifrado: Buffer): B
 const aadConteudo = (id: string) => `portaria:documento:${id}`;
 const aadDek = (id: string, versao: number) => `portaria:dek:${id}:v${versao}`;
 
+/**
+ * Confere uma KEK contra a DEK cifrada de um documento existente (checagem de boot, saas/resolvedor.ts): true se a DEK
+ * abre e autentica. Não lê o arquivo nem devolve a DEK (zerada aqui).
+ */
+export function kekAbreDek(kek: Buffer, d: { id: string; dekCifrada: Uint8Array; chaveVersao: number }): boolean {
+  try {
+    const env = Buffer.from(d.dekCifrada);
+    const dek = decifrar(kek, env.subarray(0, NONCE), aadDek(d.id, d.chaveVersao), env.subarray(NONCE));
+    dek.fill(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 @Injectable()
 export class CofreDocumentos {
-  constructor(@Inject(CONFIG) private readonly config: Config) {}
+  private readonly dir: string;
+
+  constructor(
+    @Inject(CONFIG) config: Config,
+    @Inject(CONDOMINIO) private readonly condominio: CondominioResolvido | null,
+  ) {
+    this.dir = condominio ? pastaDocumentos(config.documentos.dir, condominio) : '';
+  }
+
+  /** Chaves do condomínio; sem condomínio (subárvore de falha fechada), nada é cifrado nem decifrado. */
+  private chaves() {
+    if (!this.condominio) throw new Error('cofre de documentos sem condomínio resolvido');
+    return this.condominio.chaves;
+  }
 
   private caminho(nome: string): string {
     if (!NOME_ARQUIVO.test(nome)) throw erroApi(500, 'DOCUMENTO_INVALIDO', 'Registro de documento inconsistente.');
-    return join(this.config.documentos.dir, nome);
+    this.chaves();
+    return join(this.dir, nome);
   }
 
   /** Cifra e grava o conteúdo. Devolve os metadados para a linha de `documento` (com o id já definido). */
   async guardar(conteudo: Buffer): Promise<Guardado> {
-    const { kek, kekVersao, dir } = this.config.documentos;
+    const { kek, kekVersao } = this.chaves();
+    const dir = this.dir;
     const id = randomUUID();
     const dek = randomBytes(32);
     const nonce = randomBytes(NONCE);
@@ -112,7 +145,8 @@ export class CofreDocumentos {
    */
   async eliminar(nome: string): Promise<boolean> {
     if (!NOME_ARQUIVO.test(nome) && !NOME_TEMPORARIO.test(nome)) return false;
-    try { await rm(join(this.config.documentos.dir, nome), { force: true }); return true; } catch {
+    this.chaves();
+    try { await rm(join(this.dir, nome), { force: true }); return true; } catch {
       log('warn', 'documento.eliminacao_falhou', { detalhe: nome.slice(0, 36) });
       return false;
     }
@@ -120,8 +154,9 @@ export class CofreDocumentos {
 
   /** Arquivos `<uuid>.bin` e `<uuid>.tmp` do volume (pasta ausente = vazio). */
   async listar(): Promise<ArquivoNoVolume[]> {
+    this.chaves();
     let nomes: string[];
-    try { nomes = await readdir(this.config.documentos.dir); } catch (e) {
+    try { nomes = await readdir(this.dir); } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw e;
     }
@@ -130,7 +165,7 @@ export class CofreDocumentos {
       const temporario = NOME_TEMPORARIO.test(nome);
       if (!temporario && !NOME_ARQUIVO.test(nome)) continue;
       try {
-        const st = await stat(join(this.config.documentos.dir, nome));
+        const st = await stat(join(this.dir, nome));
         if (st.isFile()) saida.push({ nome, id: nome.slice(0, 36), temporario, modificadoEm: st.mtimeMs });
       } catch { /* sumiu entre o readdir e o stat: nada a fazer */ }
     }
@@ -140,7 +175,7 @@ export class CofreDocumentos {
   /** Lê e decifra. Confere a versão da KEK, a autenticação do GCM e o SHA-256 gravado. */
   async ler(d: DocumentoCifrado): Promise<Buffer> {
     if (d.eliminadoEm) throw erroApi(410, 'DOCUMENTO_ELIMINADO', 'Este anexo foi eliminado (retenção).');
-    const { kek, kekVersao } = this.config.documentos;
+    const { kek, kekVersao } = this.chaves();
     // Rotação de KEK (spec §9.2) ainda não existe: documento de outra versão não tem chave disponível.
     if (d.chaveVersao !== kekVersao) throw erroApi(500, 'CHAVE_INDISPONIVEL', 'A chave deste anexo não está disponível no servidor.');
     let cifrado: Buffer;

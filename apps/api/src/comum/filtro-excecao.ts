@@ -9,7 +9,7 @@ import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException, Inject 
 import type { Request, Response } from 'express';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { ipDe } from '../auth/decorators';
-import { DB, type Db } from '../database/database.module';
+import { REGISTRO_BANCOS, type RegistroBancos } from '../database/registro-bancos';
 import { AcessoNegado, codigoPg, constraintPg, type CorpoErro, respostaErro } from './erros';
 import { log } from './log';
 
@@ -29,7 +29,9 @@ function corpoDe(e: HttpException): CorpoErro {
 @Catch()
 export class FiltroExcecao implements ExceptionFilter {
   constructor(
-    @Inject(DB) private readonly db: Db,
+    // Não injeta DB: este filtro é global e estático (filtro durável global não é suportado pelo Nest). O banco é o do
+    // condomínio que o middleware resolveu para a requisição (saas/contexto.ts).
+    @Inject(REGISTRO_BANCOS) private readonly bancos: RegistroBancos,
     @Inject(AuditoriaService) private readonly auditoria: AuditoriaService,
   ) {}
 
@@ -59,14 +61,22 @@ export class FiltroExcecao implements ExceptionFilter {
       if (erro instanceof Error && process.env.PORTARIA_AMBIENTE === 'dev') console.error(erro.stack?.split('\n').slice(1, 8).join('\n'));
     }
 
-    if (status === 403) await this.registrarNegacao(req, erro);
+    // `semRegistroDeNegacao`: a recusa já foi registrada (e limitada) por quem a deu, ex.: login em condomínio suspenso.
+    const jaRegistrada = erro instanceof HttpException && (erro.getResponse() as { semRegistroDeNegacao?: boolean })?.semRegistroDeNegacao === true;
+    if (status === 403 && !jaRegistrada) await this.registrarNegacao(req, erro);
     if (!res.headersSent) res.status(status).json(respostaErro(status, corpo, req.originalUrl ?? req.url));
   }
 
   private async registrarNegacao(req: Request, erro: unknown) {
     const usuario = req.auth?.usuario;
+    const c = req.condominio;
+    if (!c) {
+      // Sem condomínio não há trilha onde gravar (nenhum banco foi escolhido): fica só o log.
+      log('warn', 'acesso.negado_sem_condominio', { request_id: req.requestId });
+      return;
+    }
     try {
-      await this.auditoria.registrar(this.db, {
+      await this.auditoria.registrar(this.bancos.db(c.banco), {
         ator: usuario ? { id: usuario.id, nome: usuario.nome, papel: usuario.papel } : null,
         nomeInformado: '(sem sessão)',
         acao: 'acesso.negado',

@@ -3,6 +3,8 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import type { Config } from './config/config';
 import { logDeRequisicao } from './comum/log';
+import { aplicarEstrategiaCondominio, middlewareCondominio } from './saas/contexto';
+import { ResolvedorCondominio } from './saas/resolvedor';
 
 /** Prefixo global da API (usado também pelo gerador de OpenAPI, para montar as URLs dos servidores). */
 export const PREFIXO_GLOBAL = 'api/v1';
@@ -16,6 +18,10 @@ export function configurarApp(app: NestExpressApplication, config: Config) {
   // JSON até 1 MB: a planilha de importação (RF-11) chega a ~3000 linhas. O resto da API manda corpos de poucos KB.
   app.useBodyParser('json', { limit: '1mb' });
   app.use(logDeRequisicao);
+  // SaaS (F2, SAAS-03): o condomínio da requisição é resolvido ANTES do roteamento do Nest, e a estratégia de contexto
+  // o usa para escolher a subárvore de injeção (o banco e as chaves dele). Ver saas/contexto.ts.
+  aplicarEstrategiaCondominio();
+  app.use(middlewareCondominio(app.get(ResolvedorCondominio), config, `/${PREFIXO_GLOBAL}/auth/login`));
   app.use((_req: Request, res: Response, next: NextFunction) => {
     // Respostas da API carregam dado pessoal e, na redefinição, a senha temporária: nada em cache.
     res.setHeader('Cache-Control', 'no-store');
@@ -25,7 +31,7 @@ export function configurarApp(app: NestExpressApplication, config: Config) {
   // CORS só para as origens exatas listadas (dev com front em outra porta). Produção: mesma origem via rewrite,
   // lista vazia, CORS desligado. Nunca refletir Origin: com credentials, isso anularia o SameSite.
   if (config.corsOrigens.length) {
-    app.enableCors({ origin: config.corsOrigens, credentials: true, methods: ['GET', 'POST', 'PATCH'], allowedHeaders: ['Content-Type'] });
+    app.enableCors({ origin: config.corsOrigens, credentials: true, methods: ['GET', 'POST', 'PATCH'], allowedHeaders: ['Content-Type', 'X-Condominio'] });
   }
   app.enableShutdownHooks();
 }
