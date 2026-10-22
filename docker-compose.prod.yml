@@ -12,7 +12,8 @@
 #   - projeto `tcc-portaria` (volumes e redes nascem com esse prefixo; nada é compartilhado com outro projeto);
 #   - banco SEM porta publicada, numa rede interna (sem saída para a internet);
 #   - API publicada só em 127.0.0.1:${API_HOST_PORT} (padrão 3100), para o proxy da VPS; nada em 0.0.0.0;
-#   - limite de memória por serviço, logs com rotação, usuário não-root na API.
+#   - limite de memória por serviço, CPU e processos na API, logs com rotação, usuário não-root na API, capabilities
+#     mínimas no banco (valores e motivo em docs/deploy.md, seção 15).
 name: tcc-portaria
 
 x-logging: &logging
@@ -49,6 +50,12 @@ services:
     # Postgres com 512 MiB: buffers e conexões no tamanho do limite (a API abre no máximo 10 conexões).
     command: ["postgres", "-c", "shared_buffers=128MB", "-c", "max_connections=40", "-c", "work_mem=4MB"]
     shm_size: 128m
+    # Só o que o entrypoint da imagem oficial usa como root antes de descer para `postgres` (testado no postgres:17-alpine,
+    # volume novo, reinício e volume com dono errado): SETUID/SETGID (su-exec), CHOWN e FOWNER (acertar dono e modo do
+    # PGDATA e de /var/run/postgresql), DAC_READ_SEARCH (o `find` do PGDATA 700; no lugar de DAC_OVERRIDE, mais amplo).
+    # O servidor em si roda como `postgres`, sem capability efetiva.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_READ_SEARCH, FOWNER, SETGID, SETUID]
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
     logging: *logging
@@ -210,6 +217,10 @@ services:
     security_opt: ["no-new-privileges:true"]
     # 384 MiB: a API e 2 hashes argon2 simultâneos (64 MiB cada, limite em PADROES_ARGON2.concorrencia).
     mem_limit: 384m
+    # VPS compartilhada com o Tobe: no máximo 1 CPU (2 argon2 simultâneos dividem esse núcleo; o login fica mais lento sob
+    # rajada, a VPS não) e 200 processos/threads (o Node usa ~20; o teto só segura fork bomb ou vazamento de threads).
+    cpus: 1.0
+    pids_limit: 200
     restart: unless-stopped
     logging: *logging
 

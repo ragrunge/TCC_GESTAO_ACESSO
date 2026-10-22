@@ -180,9 +180,15 @@ Regras comuns aos três:
 
 ```nginx
 # /etc/nginx/sites-available/tcc-portaria  (ln -s em sites-enabled; `nginx -t` antes de `systemctl reload nginx`)
+# Zonas de limite de requisições: no topo do arquivo (o include de sites-enabled cai dentro de `http {}`). Nomes com
+# prefixo tcc_ para não colidir com zonas do Tobe. Chave = IP da CONEXÃO (ver nota abaixo).
+limit_req_zone $binary_remote_addr zone=tcc_login:10m rate=30r/m;
+limit_req_zone $binary_remote_addr zone=tcc_api:10m rate=20r/s;
+
 server {
     listen 80;
     server_name 179-197-78-78.sslip.io;
+    server_tokens off;
     location /.well-known/acme-challenge/ { root /var/www/certbot; }
     location / { return 301 https://$host$request_uri; }
 }
@@ -191,14 +197,28 @@ server {
     # nginx 1.24 (Ubuntu 24.04) não conhece `http2 on;` (só a partir da 1.25.1): http2 vai no listen.
     listen 443 ssl http2;
     server_name 179-197-78-78.sslip.io;
+    server_tokens off;
 
     ssl_certificate     /etc/letsencrypt/live/179-197-78-78.sslip.io/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/179-197-78-78.sslip.io/privkey.pem;
     add_header Strict-Transport-Security "max-age=31536000" always;
 
     client_max_body_size 6m;
+    limit_req_status 429;
+
+    # Login: 30/min por IP de conexão, rajada de 10. Mesmo proxy de /api/.
+    location = /api/v1/auth/login {
+        limit_req zone=tcc_login burst=10 nodelay;
+        proxy_pass http://127.0.0.1:3100;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
 
     location /api/ {
+        limit_req zone=tcc_api burst=40 nodelay;
         proxy_pass http://127.0.0.1:3100;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -211,6 +231,14 @@ server {
     location / { return 404; }
 }
 ```
+
+> **Nota sobre os limites do nginx.** A chave é o IP da **conexão** (`$binary_remote_addr`), não o XFF: ninguém a
+> forja. Em compensação, quem passa pela Vercel aparece com o IP da borda da Vercel, então o balde é dividido por
+> todos os usuários que saem pela mesma borda (com uma portaria e poucos operadores, folgado; se um 429 do nginx
+> aparecer para a guarita sem ataque, subir `rate`/`burst` do `tcc_login`). Já o limite da **aplicação** (seção 4,
+> spec §5.1: par login+IP e IP) usa o XFF com `TRUST_PROXY=2`, e quem chama a VPS direto, sem a Vercel, ainda escolhe
+> o IP que a API vê: por isso o nginx limita à parte. Fechar isso com um cabeçalho secreto Vercel -> nginx (o nginx
+> recusa o que vier sem ele) fica para depois.
 
 Certificado em dois passos, porque o `nginx -t` falha enquanto o bloco 443 aponta para um certificado que ainda não
 existe: (1) `mkdir -p /var/www/certbot`, habilitar só o bloco 80, `nginx -t && systemctl reload nginx`;
@@ -731,3 +759,42 @@ migrações em laço (plataforma primeiro) e sobe a API. Conferir e completar à
 - rollback da imagem: a 0007 só anda para a frente, mas é compatível com a imagem anterior (a função antiga
   `lgpd_anonimizar_pessoa` delega à nova, e o trigger mantém `desativado_em` quando a API antiga muda `ativo`). A API
   antiga não lê `menor_idade`: um menor sem CPF aparece como "(sem CPF)" para ela.
+
+## 15. Limites de login, trilha sem login digitado e endurecimento do compose (migração 0008): deploy MANUAL
+
+Muda `docker-compose.prod.yml`, então o `deploy-vps.sh` sai com código 2 (infra só à mão). Junto vão a API (bloqueio
+por par login+IP, trilha sem o texto digitado no login), a migração 0008 e o front (campo de foto retirado).
+
+**Compose (valores conservadores, VPS compartilhada com o Tobe):**
+
+| Serviço | Mudança | Motivo |
+|---|---|---|
+| api | `cpus: 1.0`, `pids_limit: 200` (o `mem_limit: 384m` já existia) | Um núcleo no máximo: rajada de login (2 argon2 simultâneos) fica mais lenta para a portaria, não para o Tobe. O Node usa poucas dezenas de threads; 200 só segura fork bomb ou vazamento |
+| db | `cap_drop: [ALL]` + `cap_add: [CHOWN, DAC_READ_SEARCH, FOWNER, SETGID, SETUID]` | Só o que o entrypoint da imagem oficial usa como root antes de descer para `postgres`. Testado no Docker Desktop com `postgres:17-alpine`: volume novo (bootstrap inteiro), reinício, volume com dono `root` (o entrypoint corrige), `pg_dump` e `psql` por `exec`. O servidor roda sem capability efetiva. Sem `SETUID`/`SETGID` o container não sobe (`failed switching to 'postgres'`); sem `DAC_READ_SEARCH` também não (`find: Permission denied`) |
+
+**Passos na VPS** (depois do backup da seção 8):
+
+```bash
+cd /opt/tcc-portaria && git pull --ff-only
+docker compose build
+docker compose up -d --wait        # recria db (capabilities) e api; migrate aplica a 0008 em todos os bancos
+docker compose ps -a               # db/api healthy; permissoes/migrate Exited (0)
+docker compose logs migrate | grep migrar-bancos    # termina em ok (plataforma + N condomínio(s))
+docker inspect tcc-portaria-db-1 --format '{{.HostConfig.CapDrop}} {{.HostConfig.CapAdd}}'
+docker inspect tcc-portaria-api-1 --format '{{.HostConfig.NanoCpus}} {{.HostConfig.PidsLimit}}'
+```
+
+O `db` é recriado (a mudança de capabilities exige): alguns segundos de API sem banco (`/saude` com `banco: erro`).
+Fazer fora do horário de pico da portaria.
+
+**nginx:** atualizar o site conforme a seção 5.1 (zonas `tcc_login`/`tcc_api`, `server_tokens off`, `limit_req` no
+login e em `/api/`), `nginx -t && systemctl reload nginx`. Conferir que um login normal pela Vercel continua 200.
+**Não** testar o 429 contra a produção (seção 10).
+
+**Migração 0008:** só alarga o CHECK de `login_limite.tipo` para aceitar `login_ip`. Não destrutiva. Rollback da
+imagem sem desfazer a migração é compatível: a imagem anterior ignora as linhas `login_ip` e volta a bloquear por
+login (o comportamento antigo). Desfazer a migração exige antes apagar essas linhas como `app_migrator`.
+
+**Trilha:** a partir deste deploy, `auth.login_falha` e `auth.bloqueio` não gravam o login digitado (login existente:
+só o ator; inexistente: `usuario_nome = '(login inexistente)'`). As linhas antigas continuam com o texto digitado
+(dígitos mascarados): a trilha é append-only e elas só saem com a retenção da trilha.
