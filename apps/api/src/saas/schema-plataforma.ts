@@ -172,3 +172,20 @@ export const ancoraDiaria = pgTable('ancora_diaria', {
   folhas: jsonb('folhas').notNull(),
   criadaEm: instante('criada_em').notNull().defaultNow(),
 }, () => [check('ancora_diaria_raiz_ck', sql`raiz ~ '^[0-9a-f]{64}$'`)]);
+
+/**
+ * Registro das anonimizações (LGPD art. 18, VI, e retenção) FORA do banco do condomínio (0001): um restore do banco do
+ * condomínio para antes do pedido desfaria a anonimização em silêncio; este registro permite reaplicá-la
+ * (`jobs.js reaplicar-anonimizacoes`). Só ids: o `pessoa_id` aponta para uma linha que já está anonimizada no banco do
+ * condomínio, e o app_plataforma não tem CONNECT lá (SAAS-03). Append-only (sem UPDATE/DELETE para app_plataforma).
+ */
+export const lgpdAnonimizacao = pgTable('lgpd_anonimizacao', {
+  condominioId: uuid('condominio_id').notNull().references(() => condominio.id),
+  pessoaId: uuid('pessoa_id').notNull(),
+  motivo: text('motivo').notNull(),
+  anonimizadaEm: instante('anonimizada_em').notNull(),
+  registradaEm: instante('registrada_em').notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ name: 'lgpd_anonimizacao_pk', columns: [t.condominioId, t.pessoaId] }),
+  check('lgpd_anonimizacao_motivo_ck', sql`motivo IN ('pedido', 'retencao')`),
+]);

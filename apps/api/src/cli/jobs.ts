@@ -3,6 +3,9 @@
 //   docker compose exec api node dist/cli/jobs.js retencao [--condominio <código>]          retenção completa (seção 7)
 //   docker compose exec api node dist/cli/jobs.js selo [AAAA-MM-DD] [--condominio <código>]  selo diário (padrão: ontem, BRT) + âncoras
 //   docker compose exec api node dist/cli/jobs.js ancoras [--condominio <código>]           só reenvia as âncoras pendentes
+//   docker compose exec api node dist/cli/jobs.js reaplicar-anonimizacoes [--condominio <código>]
+//        depois de um RESTORE (docs/deploy.md, seção 9): refaz as anonimizações que a plataforma registra e o banco
+//        restaurado desfez. Lista quem ainda tem vínculo válido no banco restaurado (conferir à mão).
 // SaaS (F2): roda num condomínio só, o do --condominio (padrão: o piloto), na mesma subárvore de injeção que a API usa
 // para ele (banco, chaves, trava). Roda como app_rw (DATABASE_URL da API), com a mesma trava de job: se o agendador
 // estiver no meio, sai com código 3. A saída tem só contagens e ids (sem dado pessoal).
@@ -13,7 +16,7 @@ import { NOME_AGENDADOR } from '../selo/selo.module';
 import { servicosDoCondominio } from '../jobs/agendador';
 import { ResolvedorCondominio } from '../saas/resolvedor';
 
-const USO = 'uso: jobs.js retencao | selo [AAAA-MM-DD] | ancoras   [--condominio <código>]';
+const USO = 'uso: jobs.js retencao | selo [AAAA-MM-DD] | ancoras | reaplicar-anonimizacoes   [--condominio <código>]';
 
 export function lerArgumentos(argv: string[]): { comando: string; dia?: string; codigo?: string } | null {
   const resto = [...argv];
@@ -25,7 +28,7 @@ export function lerArgumentos(argv: string[]): { comando: string; dia?: string; 
     resto.splice(i, 2);
   }
   const [comando, dia, ...sobra] = resto;
-  if (!['retencao', 'selo', 'ancoras'].includes(comando ?? '') || sobra.length || (dia !== undefined && comando !== 'selo')) return null;
+  if (!['retencao', 'selo', 'ancoras', 'reaplicar-anonimizacoes'].includes(comando ?? '') || sobra.length || (dia !== undefined && comando !== 'selo')) return null;
   return { comando: comando!, dia, codigo };
 }
 
@@ -42,7 +45,14 @@ async function principal(): Promise<number> {
     const resolvedor = app.get(ResolvedorCondominio);
     const r = args.codigo ? await resolvedor.porCodigoDoLogin(args.codigo) : await resolvedor.piloto();
     if (!r) { console.error('condomínio não encontrado (ou fora de ativo/suspenso)'); return 1; }
-    const { selo, retencao, trava } = await servicosDoCondominio(app, r.condominio);
+    const { selo, retencao, trava, lgpd } = await servicosDoCondominio(app, r.condominio);
+    if (args.comando === 'reaplicar-anonimizacoes') {
+      // Mesma trava da retenção: as duas anonimizam, e a retenção também reaplica.
+      const x = await trava.tentar('retencao', () => lgpd.reaplicar({ ator: null, nomeInformado: `${NOME_AGENDADOR} via CLI (restore)` }));
+      if (!x.obtida) { console.error('retenção em andamento em outro processo; tente de novo'); return 3; }
+      console.log(JSON.stringify({ condominioId: r.condominio.id, ...x.valor }));
+      return 0;
+    }
     if (args.comando === 'retencao') {
       const x = await trava.tentar('retencao', () => retencao.aplicar({ ator: null, nomeInformado: `${NOME_AGENDADOR} via CLI` }));
       if (!x.obtida) { console.error('retenção já em andamento em outro processo'); return 3; }

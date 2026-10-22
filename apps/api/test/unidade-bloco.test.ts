@@ -63,8 +63,11 @@ describe('migração 0005: torre -> bloco, sem apagar nem mudar id, hash ou refe
     const [usuario] = await usuarioAntigo('Ana Adm', 'ana', 'administracao');
     const [porteiro] = await usuarioAntigo('Paulo', 'paulo', 'porteiro');
     const [ponto] = await db.insert(s.pontoAcesso).values({ nome: 'Portaria social' }).returning();
-    const [morador] = await db.insert(s.pessoa).values({ nome: 'Joana', categoria: 'morador', semCpf: true, telefone: '11987654321' }).returning();
-    const [visitante] = await db.insert(s.pessoa).values({ nome: 'Vítor', categoria: 'visitante', semCpf: true, telefone: '11987654322' }).returning();
+    // Pessoas também em SQL cru: o schema atual tem `menor_idade` (0007).
+    const pessoaAntiga = async (nome: string, categoria: string, telefone: string) => (await client.query<{ id: string }>(
+      'INSERT INTO pessoa (nome, categoria, sem_cpf, telefone) VALUES ($1, $2, true, $3) RETURNING id', [nome, categoria, telefone])).rows;
+    const [morador] = await pessoaAntiga('Joana', 'morador', '11987654321');
+    const [visitante] = await pessoaAntiga('Vítor', 'visitante', '11987654322');
     const [vinculo] = await db.insert(s.vinculoUnidade).values({
       pessoaId: morador!.id, unidadeId: t432, tipo: 'proprietario', registradoPorId: usuario!.id, vigenciaInicio: '2026-01-01',
     }).returning();

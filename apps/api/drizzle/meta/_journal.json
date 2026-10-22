@@ -50,6 +50,13 @@
       "when": 1792431707824,
       "tag": "0006_senha_temporaria_validade",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792702684258,
+      "tag": "0007_lgpd_titular_retencao",
+      "breakpoints": true
     }
   ]
 }

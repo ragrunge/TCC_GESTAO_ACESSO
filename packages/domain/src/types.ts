@@ -41,7 +41,9 @@ export interface Pessoa {
   documentoBusca?: string;
   /** Cadastro sem CPF (exceção): só entra por `excecao_porteiro` e não pode ter vínculo aprovado. */
   semCpf?: boolean;
-  /** Só dígitos, com DDD (10 ou 11). Ausente apenas em importado (legado) ou anonimizado. */
+  /** Dependente menor de idade (LGPD art. 14): CPF e telefone opcionais; no vínculo de dependente, o cadastro já é completo. */
+  menorIdade?: boolean;
+  /** Só dígitos, com DDD (10 ou 11). Ausente apenas em importado (legado), anonimizado ou menor de idade. */
   telefone?: string;
   /** API real: '(**) *****-1234' nas listas e para quem não pode editar o cadastro (o telefone completo não vem). */
   telefoneMascarado?: string;

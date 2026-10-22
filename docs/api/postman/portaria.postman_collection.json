@@ -1785,7 +1785,7 @@
             "description": "Permissão: `pessoa.cadastrar_externo`",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"nome\": \"Fulano de Tal\",\n  \"documento\": \"111.444.777-35\",\n  \"telefone\": \"11955550000\",\n  \"categoria\": \"visitante\",\n  \"empresa\": \"exemplo\",\n  \"servico\": \"exemplo\",\n  \"semCpf\": false\n}",
+              "raw": "{\n  \"nome\": \"Fulano de Tal\",\n  \"documento\": \"111.444.777-35\",\n  \"telefone\": \"11955550000\",\n  \"categoria\": \"visitante\",\n  \"empresa\": \"exemplo\",\n  \"servico\": \"exemplo\",\n  \"semCpf\": false,\n  \"menorIdade\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1879,7 +1879,7 @@
             "description": "Permissão: `pessoa.editar`",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"nome\": \"Fulano de Tal\",\n  \"telefone\": \"11955550000\",\n  \"documento\": \"111.444.777-35\",\n  \"empresa\": \"exemplo\",\n  \"servico\": \"exemplo\"\n}",
+              "raw": "{\n  \"nome\": \"Fulano de Tal\",\n  \"telefone\": \"11955550000\",\n  \"documento\": \"111.444.777-35\",\n  \"empresa\": \"exemplo\",\n  \"servico\": \"exemplo\",\n  \"menorIdade\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"

@@ -126,7 +126,8 @@ export class UsuariosService {
     this.naoSiMesmo(ctx, id, 'AUTO_DESATIVACAO', 'Você não pode desativar o próprio usuário.');
     return this.alterar(ctx, id, 'usuario.desativar', null, async (tx, alvo, agora) => {
       if (!alvo.ativo) return null;
-      const [d] = await tx.update(usuarioSistema).set({ ativo: false, atualizadoEm: agora }).where(eq(usuarioSistema.id, id)).returning(colunasGestao);
+      // desativado_em: fato gerador da retenção do operador ("enquanto ativo + 3 anos", 0007).
+      const [d] = await tx.update(usuarioSistema).set({ ativo: false, desativadoEm: agora, atualizadoEm: agora }).where(eq(usuarioSistema.id, id)).returning(colunasGestao);
       // Desativar derruba as sessões abertas na mesma transação (o guard também recusa usuário inativo).
       await this.sessoes.revogarDoUsuario(tx, id, 'desativacao', agora);
       return d!;
@@ -136,7 +137,10 @@ export class UsuariosService {
   reativar(ctx: Contexto, id: string) {
     return this.alterar(ctx, id, 'usuario.reativar', null, async (tx, alvo, agora) => {
       if (alvo.ativo) return null;
-      const [d] = await tx.update(usuarioSistema).set({ ativo: true, atualizadoEm: agora }).where(eq(usuarioSistema.id, id)).returning(colunasGestao);
+      // Operador anonimizado pela retenção não volta: nome e login são genéricos (cadastre um usuário novo).
+      const [r] = await tx.select({ anonimizadoEm: usuarioSistema.anonimizadoEm }).from(usuarioSistema).where(eq(usuarioSistema.id, id));
+      if (r?.anonimizadoEm) throw erroApi(409, 'USUARIO_ANONIMIZADO', 'Usuário anonimizado pela retenção (LGPD) não pode ser reativado. Cadastre um usuário novo.');
+      const [d] = await tx.update(usuarioSistema).set({ ativo: true, desativadoEm: null, atualizadoEm: agora }).where(eq(usuarioSistema.id, id)).returning(colunasGestao);
       return d!;
     });
   }

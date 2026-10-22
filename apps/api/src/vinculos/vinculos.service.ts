@@ -146,7 +146,7 @@ export class VinculosService {
   private async pessoaDoVinculo(tx: Tx, pessoaId: string) {
     const [p] = await tx.select({
       id: pessoa.id, categoria: pessoa.categoria, semCpf: pessoa.semCpf, telefone: pessoa.telefone, anonimizadaEm: pessoa.anonimizadaEm,
-      temCpf: sql<boolean>`(${pessoa.documentoBusca} IS NOT NULL)`.mapWith(Boolean),
+      menorIdade: pessoa.menorIdade, temCpf: sql<boolean>`(${pessoa.documentoBusca} IS NOT NULL)`.mapWith(Boolean),
     }).from(pessoa).where(eq(pessoa.id, pessoaId)).for('update');
     return p!;
   }
@@ -213,8 +213,8 @@ export class VinculosService {
     return this.comVinculo(id, async (tx, antes) => {
       if (antes.status !== 'pendente') throw erroApi(409, 'VINCULO_JA_DECIDIDO', `Este vínculo já foi decidido (está ${ROTULO_STATUS[antes.status]}).`);
       const p = await this.pessoaDoVinculo(tx, antes.pessoaId);
-      if (!cadastroCompletoDe(p)) {
-        throw erroApi(422, 'CADASTRO_INCOMPLETO', 'Para aprovar o vínculo a pessoa precisa ter CPF válido (não “sem CPF”) e telefone cadastrados.');
+      if (!cadastroCompletoDe(p, antes.tipo)) {
+        throw erroApi(422, 'CADASTRO_INCOMPLETO', 'Para aprovar o vínculo a pessoa precisa ter CPF válido (não “sem CPF”) e telefone cadastrados (dependente menor de idade dispensa os dois).');
       }
       // Aprovar é um novo uso da unidade: desativada, barra (422 UNIDADE_INATIVA). FOR SHARE segura a desativação concorrente.
       await this.unidades.paraNovoUso(tx, antes.unidadeId);
@@ -247,7 +247,7 @@ export class VinculosService {
     return this.comVinculo(id, async (tx, antes) => {
       if (antes.status !== 'legado') throw erroApi(409, 'VINCULO_NAO_LEGADO', 'Só vínculo legado (importado da planilha) é regularizado.');
       const p = await this.pessoaDoVinculo(tx, antes.pessoaId);
-      if (!cadastroCompletoDe(p)) {
+      if (!cadastroCompletoDe(p, antes.tipo)) {
         throw erroApi(422, 'CADASTRO_INCOMPLETO', 'Para regularizar, complete o cadastro (CPF válido e telefone) pela ficha da pessoa.');
       }
       await this.unidades.paraNovoUso(tx, antes.unidadeId); // regularizar aprova: unidade desativada barra

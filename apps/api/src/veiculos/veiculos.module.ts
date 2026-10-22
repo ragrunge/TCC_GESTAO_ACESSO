@@ -72,7 +72,11 @@ export class VeiculosService {
         if (i.placa !== undefined) { const p = normalizarPlaca(i.placa); if (p !== antes.placa) mudancas.placa = p; }
         if (i.modelo !== undefined) { const m = obrigatorio(i.modelo, 'MODELO_OBRIGATORIO', 'Informe o modelo.'); if (m !== antes.modelo) mudancas.modelo = m; }
         if (i.cor !== undefined) { const c = obrigatorio(i.cor, 'COR_OBRIGATORIA', 'Informe a cor.'); if (c !== antes.cor) mudancas.cor = c; }
-        if (i.ativo !== undefined && i.ativo !== antes.ativo) mudancas.ativo = i.ativo;
+        if (i.ativo !== undefined && i.ativo !== antes.ativo) {
+          mudancas.ativo = i.ativo;
+          // Fato gerador da retenção do veículo (0007): 3 anos depois da desativação o job apaga a linha.
+          mudancas.desativadoEm = i.ativo ? null : this.relogio.agora();
+        }
         if (!Object.keys(mudancas).length) return antes;
         if (mudancas.ativo === true) await this.unidades.paraNovoUso(tx, antes.unidadeId);
         const [depois] = await tx.update(veiculo).set(mudancas).where(eq(veiculo.id, id)).returning(colunas);

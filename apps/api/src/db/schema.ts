@@ -98,6 +98,10 @@ export const usuarioSistema = pgTable('usuario_sistema', {
   senhaAlteradaEm: instante('senha_alterada_em'),
   /** Fim da validade da senha temporária (72 h, @portaria/domain/rules). NULL sem troca pendente (CHECK abaixo). */
   senhaTemporariaExpiraEm: instante('senha_temporaria_expira_em'),
+  /** Fato gerador da retenção do operador (seção 7: "enquanto ativo + 3 anos"). Preenchido ao desativar, nulo ao reativar. */
+  desativadoEm: instante('desativado_em'),
+  /** Retenção aplicada (`retencao_anonimizar_operadores`, 0007): nome e login genéricos; não volta a ser ativado. */
+  anonimizadoEm: instante('anonimizado_em'),
   // O bloqueio por falhas de login NÃO fica aqui (0003): vive em `login_limite`, por login e por IP, para tratar igual
   // login existente e inexistente (sem enumeração) e funcionar com várias réplicas.
   criadoEm: criadoEm(),
@@ -106,6 +110,7 @@ export const usuarioSistema = pgTable('usuario_sistema', {
   uniqueIndex('usuario_login_uq').on(sql`lower(${t.login})`),
   check('usuario_senha_argon2id_ck', sql`senha_hash LIKE '$argon2id$%'`),
   check('usuario_senha_temporaria_ck', sql`deve_trocar_senha OR senha_temporaria_expira_em IS NULL`),
+  check('usuario_desativado_ck', sql`NOT ativo OR (desativado_em IS NULL AND anonimizado_em IS NULL)`),
 ]);
 
 // ----- Sessões (spec §5.1): token opaco no cookie; aqui só o SHA-256 dele --------------------------------------
@@ -215,6 +220,8 @@ export const pessoa = pgTable('pessoa', {
   categoria: categoriaPessoa('categoria').notNull(),
   /** Exceção: cadastro sem CPF. Só entra por `excecao_porteiro` (trigger do evento) e não tem vínculo aprovado (regra da API). */
   semCpf: boolean('sem_cpf').notNull().default(false),
+  /** Dependente menor de idade (LGPD art. 14, 0007): CPF e telefone opcionais. Não é "sem CPF": entra como morador. */
+  menorIdade: boolean('menor_idade').notNull().default(false),
   /** Exibição: ***.456.789-**. O CHECK impede que um CPF completo seja gravado aqui por engano. */
   documentoMascarado: text('documento_mascarado'),
   /** HMAC-SHA256(chave HMAC, 11 dígitos), hex. Busca exata e unicidade sem guardar o CPF. O CPF não é armazenado. */
@@ -232,11 +239,13 @@ export const pessoa = pgTable('pessoa', {
   check('pessoa_nome_ck', sql`length(btrim(nome)) > 0`),
   check('pessoa_documento_coerente_ck', sql`anonimizada_em IS NOT NULL
     OR (sem_cpf AND documento_busca IS NULL AND documento_mascarado IS NULL)
-    OR (NOT sem_cpf AND documento_busca IS NOT NULL AND documento_mascarado IS NOT NULL)`),
+    OR (NOT sem_cpf AND documento_busca IS NOT NULL AND documento_mascarado IS NOT NULL)
+    OR (menor_idade AND NOT sem_cpf AND documento_busca IS NULL AND documento_mascarado IS NULL)`),
+  check('pessoa_menor_ck', sql`NOT menor_idade OR (NOT sem_cpf AND categoria = 'morador')`),
   check('pessoa_documento_busca_ck', sql`documento_busca ~ '^[0-9a-f]{64}$'`),
   check('pessoa_documento_mascarado_ck', sql`documento_mascarado ~ '^\\*\\*\\*\\.[0-9]{3}\\.[0-9]{3}-\\*\\*$'`),
   check('pessoa_telefone_ck', sql`telefone ~ '^[0-9]{10,11}$'`),
-  check('pessoa_telefone_obrigatorio_ck', sql`telefone IS NOT NULL OR anonimizada_em IS NOT NULL OR importacao_id IS NOT NULL`),
+  check('pessoa_telefone_obrigatorio_ck', sql`telefone IS NOT NULL OR anonimizada_em IS NOT NULL OR importacao_id IS NOT NULL OR menor_idade`),
   check('pessoa_prestador_empresa_ck', sql`categoria <> 'prestador' OR anonimizada_em IS NOT NULL
     OR length(btrim(coalesce(empresa, ''))) > 0`),
   check('pessoa_anonimizada_sem_pii_ck', sql`anonimizada_em IS NULL
@@ -325,10 +334,13 @@ export const veiculo = pgTable('veiculo', {
   modelo: text('modelo').notNull(),
   cor: text('cor').notNull(),
   ativo: boolean('ativo').notNull().default(true),
+  /** Fato gerador da retenção do veículo (0007): preenchido ao desativar, nulo ao reativar. 3 anos depois o job apaga. */
+  desativadoEm: instante('desativado_em'),
   criadoEm: criadoEm(),
 }, (t) => [
   uniqueIndex('veiculo_placa_ativa_uq').on(t.placa).where(sql`ativo`),
   check('veiculo_placa_ck', sql`placa ~ '^[A-Z0-9]{7}$'`),
+  check('veiculo_desativado_ck', sql`NOT ativo OR desativado_em IS NULL`),
 ]);
 
 // ----- Autorização prévia (RF-14, RN-07) --------------------------------------------------------------
@@ -635,4 +647,4 @@ export const retencaoExecucao = pgTable('retencao_execucao', {
   ateSeq: bigint('ate_seq', { mode: 'number' }),
   quantidade: integer('quantidade').notNull(),
   detalhes: jsonb('detalhes'),
-}, () => [check('retencao_tipo_ck', sql`tipo IN ('eventos', 'audit_redacao', 'pessoas', 'documentos', 'audit_descarte')`)]);
+}, () => [check('retencao_tipo_ck', sql`tipo IN ('eventos', 'audit_redacao', 'pessoas', 'documentos', 'audit_descarte', 'veiculos', 'operadores', 'sessoes')`)]);

@@ -25,11 +25,14 @@ const Texto = (max: number) => z.string().max(max);
 const NovaPessoaDto = z.strictObject({
   nome: Texto(150),
   documento: Texto(20).optional(),
-  telefone: Texto(20),
+  /** Obrigatório, salvo dependente menor de idade (`menorIdade`); a regra fica no serviço (422). */
+  telefone: Texto(20).optional(),
   categoria: z.enum(categoriaPessoa.enumValues),
   empresa: Texto(150).optional(),
   servico: Texto(150).optional(),
   semCpf: z.boolean().optional(),
+  /** Dependente menor de idade (LGPD art. 14): CPF e telefone opcionais. Só morador. */
+  menorIdade: z.boolean().optional(),
 });
 const EdicaoPessoaDto = z.strictObject({
   nome: Texto(150).optional(),
@@ -37,6 +40,8 @@ const EdicaoPessoaDto = z.strictObject({
   documento: Texto(20).optional(),
   empresa: Texto(150).nullable().optional(),
   servico: Texto(150).nullable().optional(),
+  /** false: deixou de ser menor (exige CPF e telefone); true: só morador, não "sem CPF". */
+  menorIdade: z.boolean().optional(),
 });
 const ListarPessoasDto = PaginacaoDto.extend({ categoria: z.enum(categoriaPessoa.enumValues).optional() });
 

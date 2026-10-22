@@ -9,11 +9,16 @@
 //     (`retencao_descartar_eventos` confere o selo, o prazo pelo relógio do banco e trava a cabeça). Evento vencido depois
 //     do último selo elegível fica para a próxima execução e é contado em `eventosVencidosSemSelo`.
 //  4. Trilha de alterações: 3 anos a partir do registro (`retencao_descartar_audit`).
+//  5. Veículo: apagado 3 anos depois da desativação (`retencao_eliminar_veiculos`, 0007; fato gerador `desativado_em`).
+//  6. Operador: nome e login genéricos 3 anos depois da desativação (`retencao_anonimizar_operadores`, 0007).
+//  7. Sessão: IP e navegador apagados 90 dias depois do último uso (`retencao_limpar_sessoes`, 0007; spec 9.4).
+// Antes de tudo, a reaplicação das anonimizações registradas na plataforma (restore, `LgpdService.reaplicar`), e no
+// fim a cópia para a plataforma das anonimizações deste banco que ainda não estão lá (`sincronizarRegistro`). Falha na
+// plataforma não para a retenção: vai ao resultado (`registroExterno`) e ao log.
 // O que a seção 7 NÃO define (spec §14, decisão em aberto, sem prazo inventado):
 //  - anexos de ocorrência: só são eliminados se `RETENCAO_ANEXO_OCORRENCIA_ANOS` estiver definido (contado do encerramento
 //    da ocorrência); sem ele, nada sai por prazo.
-//  - veículo, operador e funcionário: a seção 7 define prazo, mas o modelo não guarda o fato gerador (veículo é da unidade,
-//    não da pessoa; operador e funcionário não guardam a data de desligamento). Registrado no §14.
+//  - funcionário: a seção 7 define prazo (contrato + 3 anos), mas o modelo não guarda a data do desligamento (§14).
 // Por fim, a varredura do volume de documentos: apaga arquivo de documento já eliminado (a remoção de antes falhou),
 // arquivo sem registro (queda entre gravar e commitar, com mais de 1 hora) e temporário velho; registro ativo sem arquivo
 // só é contado e logado (é perda de dado, não lixo: ninguém apaga o registro por conta própria).
@@ -44,6 +49,15 @@ export interface ResultadoRetencaoApi {
   prazoAnexosDefinido: boolean;
   arquivosOrfaosRemovidos: number;
   registrosSemArquivo: number;
+  veiculosEliminados: number;
+  operadoresAnonimizados: number;
+  sessoesLimpas: number;
+  /** Anonimizações registradas na plataforma refeitas neste banco (depois de um restore). */
+  anonimizacoesReaplicadas: number;
+  /** Reaplicadas que ainda têm vínculo válido no banco restaurado (ids, para conferência). */
+  reaplicadasComVinculoValido: string[];
+  /** 'ok' ou 'falhou' (plataforma fora): a reaplicação e a cópia ficam para a próxima execução. */
+  registroExterno: 'ok' | 'falhou';
 }
 
 type Rows<T> = { rows: T[] };
@@ -101,8 +115,20 @@ export class RetencaoService {
     const r: ResultadoRetencaoApi = {
       visitantesPrestadores: 0, moradores: 0, registrosRedigidos: 0, pessoaIds: [], eventosDescartados: 0, eventosVencidosSemSelo: 0,
       trilhaDescartada: 0, fotosEliminadas: 0, anexosEliminados: 0, prazoAnexosDefinido: this.config.retencao.anexoOcorrenciaAnos !== null,
-      arquivosOrfaosRemovidos: 0, registrosSemArquivo: 0,
+      arquivosOrfaosRemovidos: 0, registrosSemArquivo: 0, veiculosEliminados: 0, operadoresAnonimizados: 0, sessoesLimpas: 0,
+      anonimizacoesReaplicadas: 0, reaplicadasComVinculoValido: [], registroExterno: 'ok',
     };
+    const n = async (q: ReturnType<typeof sql>) => Number(((await this.db.execute(q)) as unknown as Rows<{ n: number | string }>).rows[0]?.n ?? 0);
+
+    // 0. Restore: o que a plataforma registra como anonimizado e aqui voltou a ter dados pessoais.
+    try {
+      const x = await this.lgpd.reaplicar(quem);
+      r.anonimizacoesReaplicadas = x.reaplicadas.length;
+      r.reaplicadasComVinculoValido = x.comVinculoValido;
+    } catch (e) {
+      r.registroExterno = 'falhou';
+      log('error', 'retencao.reaplicacao_falhou', { erro: e instanceof Error ? e.name : 'erro' });
+    }
 
     // 1. Pessoas: uma transação por pessoa (uma falha não desfaz as outras), reconferida com a linha travada.
     const candidatas = ((await this.db.execute(elegiveisSql(limitePessoas))) as unknown as Rows<{ id: string; categoria: string }>).rows;
@@ -117,7 +143,7 @@ export class RetencaoService {
       if (c.categoria === 'morador') r.moradores++; else r.visitantesPrestadores++;
       r.pessoaIds.push(c.id);
       r.registrosRedigidos += feito.registrosRedigidos;
-      // a foto, se havia, já está marcada como eliminada: o arquivo sai na varredura do passo 6
+      // a foto, se havia, já está marcada como eliminada: o arquivo sai na varredura do passo 7
     }
 
     // 2. Foto ao fim do vínculo: morador com foto, sem vínculo pendente/aprovado/legado e com algum vínculo terminado.
@@ -168,8 +194,21 @@ export class RetencaoService {
       }
     }
 
-    // 6. Volume de documentos.
+    // 6. Veículos, operadores e sessões (0007): prazo e fato gerador conferidos pelo relógio do banco, na função.
+    r.veiculosEliminados = await n(sql`SELECT retencao_eliminar_veiculos() AS n`);
+    r.operadoresAnonimizados = await n(sql`SELECT retencao_anonimizar_operadores() AS n`);
+    r.sessoesLimpas = await n(sql`SELECT retencao_limpar_sessoes() AS n`);
+
+    // 7. Volume de documentos.
     Object.assign(r, await this.varrerVolume(agora));
+
+    // 8. Registro fora do banco: tudo o que retencao_execucao tem e a plataforma ainda não (inclui as de hoje).
+    try {
+      await this.lgpd.sincronizarRegistro();
+    } catch (e) {
+      r.registroExterno = 'falhou';
+      log('error', 'retencao.registro_plataforma_falhou', { erro: e instanceof Error ? e.name : 'erro' });
+    }
 
     await this.auditoria.registrar(this.db, { ...quem, acao: 'lgpd.retencao', entidade: 'retencao_execucao', depois: r });
     return r;

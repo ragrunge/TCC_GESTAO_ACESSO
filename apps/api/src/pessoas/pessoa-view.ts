@@ -9,16 +9,17 @@ import { pessoa } from '../db/schema';
 
 export const SEM_CPF = '(sem CPF)';
 export const ANONIMIZADO = '(anonimizado)';
+export const MENOR_SEM_CPF = '(menor, sem CPF)';
 
 /** Colunas lidas para montar a PessoaApi. `temCpf` no lugar do HMAC: o valor do HMAC não sai do banco. */
 export const colunasPessoa = {
-  id: pessoa.id, nome: pessoa.nome, categoria: pessoa.categoria, semCpf: pessoa.semCpf,
+  id: pessoa.id, nome: pessoa.nome, categoria: pessoa.categoria, semCpf: pessoa.semCpf, menorIdade: pessoa.menorIdade,
   documentoMascarado: pessoa.documentoMascarado, telefone: pessoa.telefone, empresa: pessoa.empresa, servico: pessoa.servico,
   importacaoId: pessoa.importacaoId, anonimizadaEm: pessoa.anonimizadaEm, criadoEm: pessoa.criadoEm,
 };
 
 export type LinhaPessoa = {
-  id: string; nome: string; categoria: (typeof pessoa.categoria.enumValues)[number]; semCpf: boolean;
+  id: string; nome: string; categoria: (typeof pessoa.categoria.enumValues)[number]; semCpf: boolean; menorIdade: boolean;
   documentoMascarado: string | null; telefone: string | null; empresa: string | null; servico: string | null;
   importacaoId: string | null; anonimizadaEm: Date | null; criadoEm: Date;
 };
@@ -29,6 +30,8 @@ export interface PessoaApi {
   documentoTipo: 'cpf';
   categoria: LinhaPessoa['categoria'];
   semCpf: boolean;
+  /** Dependente menor de idade (art. 14): CPF e telefone opcionais. */
+  menorIdade: boolean;
   documentoMascarado: string;
   telefone?: string;
   telefoneMascarado: string | null;
@@ -43,9 +46,9 @@ export interface PessoaApi {
 export const veTelefoneCompleto = (papel: Papel) => pode(papel, 'pessoa.editar');
 
 export function paraPessoaApi(p: LinhaPessoa, o: { telefoneCompleto?: boolean } = {}): PessoaApi {
-  const documento = p.anonimizadaEm ? ANONIMIZADO : p.semCpf ? SEM_CPF : (p.documentoMascarado ?? SEM_CPF);
+  const documento = p.anonimizadaEm ? ANONIMIZADO : p.semCpf ? SEM_CPF : (p.documentoMascarado ?? (p.menorIdade ? MENOR_SEM_CPF : SEM_CPF));
   return {
-    id: p.id, nome: p.nome, documentoTipo: 'cpf', categoria: p.categoria, semCpf: p.semCpf, documentoMascarado: documento,
+    id: p.id, nome: p.nome, documentoTipo: 'cpf', categoria: p.categoria, semCpf: p.semCpf, menorIdade: p.menorIdade, documentoMascarado: documento,
     ...(o.telefoneCompleto && p.telefone ? { telefone: p.telefone } : {}),
     telefoneMascarado: p.telefone ? mascararTelefone(p.telefone) : null,
     ...(p.empresa ? { empresa: p.empresa } : {}),
@@ -59,6 +62,11 @@ export function paraPessoaApi(p: LinhaPessoa, o: { telefoneCompleto?: boolean } 
 /**
  * Cadastro completo (pré-requisito para aprovar ou regularizar vínculo, RN-02): mesma regra de `cadastroCompleto` do
  * domain (CPF, não "sem CPF", telefone com DDD e não anonimizada). `temCpf` = documento_busca preenchido.
+ * Exceção (LGPD art. 14, minimização): dependente menor de idade num vínculo do tipo `dependente` dispensa CPF e
+ * telefone. Num vínculo de proprietário ou inquilino, o menor precisa do cadastro completo como qualquer pessoa.
  */
-export const cadastroCompletoDe = (p: { semCpf: boolean; anonimizadaEm: Date | null; telefone: string | null; temCpf: boolean }) =>
-  !p.semCpf && !p.anonimizadaEm && p.temCpf && /^\d{10,11}$/.test(p.telefone ?? '');
+export const cadastroCompletoDe = (
+  p: { semCpf: boolean; anonimizadaEm: Date | null; telefone: string | null; temCpf: boolean; menorIdade?: boolean },
+  tipoVinculo?: string,
+) => !p.semCpf && !p.anonimizadaEm
+  && ((p.temCpf && /^\d{10,11}$/.test(p.telefone ?? '')) || (!!p.menorIdade && tipoVinculo === 'dependente'));

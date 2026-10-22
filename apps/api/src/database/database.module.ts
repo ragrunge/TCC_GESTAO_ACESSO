@@ -4,7 +4,8 @@
 //    Na subárvore "sem condomínio", `DB` lança no primeiro uso (falha fechada) e `PG_POOL` é null.
 //  - `REGISTRO_BANCOS`: os pools `app_rw`, um por banco de condomínio (database/registro-bancos.ts).
 //  - `PLATAFORMA_DB` (pool `app_plataforma`) e a chave mestra: declarados aqui, mas NÃO exportados. Só o
-//    ResolvedorCondominio os injeta (teste de arquitetura em test/saas-isolamento.test.ts).
+//    ResolvedorCondominio e o RegistroAnonimizacoes (só a tabela lgpd_anonimizacao, só ids) os injetam (teste de
+//    arquitetura em test/saas-isolamento.test.ts).
 import { Global, Inject, Module, type OnApplicationShutdown, Scope } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import type { ExtractTablesWithRelations } from 'drizzle-orm';
@@ -14,6 +15,7 @@ import * as schema from '../db/schema';
 import { CONDOMINIO, type CondominioResolvido } from '../saas/condominio';
 import type { PayloadCondominio } from '../saas/contexto';
 import { CHAVE_MESTRA, chaveMestraDoAmbiente, dbPlataforma, PLATAFORMA_DB, PLATAFORMA_POOL, poolPlataforma } from '../saas/plataforma-db';
+import { RegistroAnonimizacoes } from '../saas/registro-anonimizacao';
 import { ResolvedorCondominio } from '../saas/resolvedor';
 import { REGISTRO_BANCOS, type RegistroBancos, RegistroBancosPg } from './registro-bancos';
 
@@ -55,6 +57,7 @@ export const dbSemCondominio = (): Db => new Proxy({} as Db, {
     { provide: PLATAFORMA_DB, inject: [PLATAFORMA_POOL], useFactory: (pool: Pool) => dbPlataforma(pool) },
     { provide: CHAVE_MESTRA, useFactory: chaveMestraDoAmbiente },
     ResolvedorCondominio,
+    RegistroAnonimizacoes,
     {
       provide: CONDOMINIO, scope: Scope.REQUEST, durable: true, inject: [REQUEST],
       useFactory: (p: PayloadCondominio | undefined): CondominioResolvido | null => p?.condominio ?? null,
@@ -68,7 +71,7 @@ export const dbSemCondominio = (): Db => new Proxy({} as Db, {
       useFactory: (c: CondominioResolvido | null, r: RegistroBancos): Pool | null => (c ? r.pool(c.banco) : null),
     },
   ],
-  exports: [DB, PG_POOL, CONDOMINIO, REGISTRO_BANCOS, ResolvedorCondominio],
+  exports: [DB, PG_POOL, CONDOMINIO, REGISTRO_BANCOS, ResolvedorCondominio, RegistroAnonimizacoes],
 })
 export class DatabaseModule implements OnApplicationShutdown {
   constructor(

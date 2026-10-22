@@ -300,9 +300,9 @@ describe('§6.1 item 7: arquitetura', () => {
     .flatMap((e) => (e.isDirectory() ? arquivos(join(dir, e.name)) : e.name.endsWith('.ts') ? [join(dir, e.name)] : []));
   const fontes = arquivos(raiz).map((f) => ({ f: f.slice(raiz.length + 1), texto: readFileSync(f, 'utf8') }));
 
-  it('só o DatabaseModule, o módulo da plataforma e o ResolvedorCondominio citam PLATAFORMA_DB', () => {
+  it('só o DatabaseModule, o módulo da plataforma, o ResolvedorCondominio e o registro de anonimizações citam PLATAFORMA_DB', () => {
     const citam = fontes.filter((x) => /\bPLATAFORMA_DB\b/.test(x.texto)).map((x) => x.f).sort();
-    expect(citam).toEqual(['database/database.module.ts', 'saas/plataforma-db.ts', 'saas/resolvedor.ts']);
+    expect(citam).toEqual(['database/database.module.ts', 'saas/plataforma-db.ts', 'saas/registro-anonimizacao.ts', 'saas/resolvedor.ts']);
   });
 
   it('nenhuma classe do src guarda estado em campo estático (estado tem de ficar na instância, por condomínio)', () => {

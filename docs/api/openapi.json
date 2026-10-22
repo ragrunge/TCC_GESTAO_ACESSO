@@ -4623,11 +4623,13 @@
                   },
                   "semCpf": {
                     "type": "boolean"
+                  },
+                  "menorIdade": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
                   "nome",
-                  "telefone",
                   "categoria"
                 ],
                 "additionalProperties": false
@@ -4874,6 +4876,9 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "menorIdade": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false

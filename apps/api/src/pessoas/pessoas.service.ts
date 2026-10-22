@@ -1,5 +1,9 @@
 // Cadastro de pessoas (RF-02, RN-10, LGPD art. 18). Regras do cadastro e da edição:
 // - nome, telefone (10 ou 11 dígitos, com DDD) e CPF obrigatórios; CPF validado pelo dígito verificador;
+// - exceção "menor de idade" (LGPD art. 14, minimização): dependente menor, só morador, pode vir sem CPF e sem telefone.
+//   Com CPF, valem a validação, a máscara e o HMAC único de sempre; sem CPF, a deduplicação é pelo nome entre os menores
+//   sem CPF. Não é "sem CPF" (que só entra por exceção do porteiro): o menor entra como morador. Ao deixar de ser menor
+//   (edição `menorIdade: false`), CPF e telefone passam a ser obrigatórios;
 // - o CPF não é guardado: só a máscara e o HMAC (documento_busca), único -> 409 PESSOA_DUPLICADA (tradução do 23505);
 // - exceção "sem CPF": nome e telefone continuam obrigatórios, e a deduplicação é por nome + telefone;
 // - prestador exige empresa (RF-36); porteiro só cadastra visitante e prestador (pessoa.cadastrar_morador);
@@ -28,10 +32,11 @@ import { colunasPessoa, paraPessoaApi, veTelefoneCompleto, type LinhaPessoa, typ
 type Categoria = (typeof pessoa.categoria.enumValues)[number];
 
 export interface NovaPessoa {
-  nome: string; documento?: string; telefone: string; categoria: Categoria; empresa?: string; servico?: string; semCpf?: boolean;
+  nome: string; documento?: string; telefone?: string; categoria: Categoria; empresa?: string; servico?: string; semCpf?: boolean;
+  menorIdade?: boolean;
 }
 export interface EdicaoPessoa {
-  nome?: string; telefone?: string; documento?: string; empresa?: string | null; servico?: string | null;
+  nome?: string; telefone?: string; documento?: string; empresa?: string | null; servico?: string | null; menorIdade?: boolean;
 }
 
 const soDigitos = (s: string) => s.replace(/\D/g, '');
@@ -62,15 +67,24 @@ export class PessoasService {
   async valoresNovaPessoa(exec: Executor, i: NovaPessoa, agora: Date) {
     const nome = i.nome.trim();
     if (!nome) throw erroApi(422, 'NOME_OBRIGATORIO', 'Informe o nome.');
-    if (!telefoneValido(i.telefone)) throw erroApi(422, 'TELEFONE_INVALIDO', 'Informe o telefone com DDD (10 ou 11 dígitos).');
+    const menor = !!i.menorIdade;
+    if (menor && i.categoria !== 'morador') throw erroApi(422, 'MENOR_SO_MORADOR', 'Só dependente morador pode ser cadastrado como menor de idade.');
+    if (menor && i.semCpf) throw erroApi(422, 'MENOR_SEM_CPF_EXCECAO', 'Menor de idade não usa a exceção “sem CPF”: deixe o CPF em branco se ele não tiver.');
+    const telDigitado = soDigitos(i.telefone ?? '');
+    if (!(menor && !telDigitado) && !telefoneValido(telDigitado)) throw erroApi(422, 'TELEFONE_INVALIDO', 'Informe o telefone com DDD (10 ou 11 dígitos).');
     if (i.categoria === 'prestador' && !(i.empresa ?? '').trim()) throw erroApi(422, 'EMPRESA_OBRIGATORIA', 'Prestador exige empresa (RF-36).');
-    const telefone = soDigitos(i.telefone);
+    const telefone = telDigitado || null;
     let mascarado: string | null = null;
     let busca: string | null = null;
-    if (i.semCpf) {
+    if (menor && !soDigitos(i.documento ?? '')) {
+      // Menor sem CPF: sem chave única; evita o cadastro em dobro pelo nome entre os menores sem CPF.
+      const [igual] = await exec.select({ id: pessoa.id }).from(pessoa)
+        .where(and(eq(pessoa.menorIdade, true), sql`${pessoa.documentoBusca} IS NULL`, sql`${pessoa.anonimizadaEm} IS NULL`, sql`${nomeSemAcentoSql()} = ${normalizar(nome)}`)).limit(1);
+      if (igual) throw erroApi(409, 'PESSOA_DUPLICADA', 'Já existe cadastro de menor sem CPF com este nome.');
+    } else if (i.semCpf) {
       // Sem CPF não há chave única: evita o cadastro em dobro por nome + telefone.
       const [igual] = await exec.select({ id: pessoa.id }).from(pessoa)
-        .where(and(eq(pessoa.semCpf, true), eq(pessoa.telefone, telefone), sql`${nomeSemAcentoSql()} = ${normalizar(nome)}`)).limit(1);
+        .where(and(eq(pessoa.semCpf, true), eq(pessoa.telefone, telefone!), sql`${nomeSemAcentoSql()} = ${normalizar(nome)}`)).limit(1);
       if (igual) throw erroApi(409, 'PESSOA_DUPLICADA', 'Já existe cadastro sem CPF com este nome e telefone.');
     } else {
       const cpf = soDigitos(i.documento ?? '');
@@ -82,7 +96,7 @@ export class PessoasService {
       if (existe) throw duplicada();
     }
     return {
-      nome, categoria: i.categoria, semCpf: !!i.semCpf, documentoMascarado: mascarado, documentoBusca: busca, telefone,
+      nome, categoria: i.categoria, semCpf: !!i.semCpf, menorIdade: menor, documentoMascarado: mascarado, documentoBusca: busca, telefone,
       empresa: vazioParaNulo(i.empresa), servico: vazioParaNulo(i.servico), criadoEm: agora, atualizadoEm: agora,
     };
   }
@@ -136,6 +150,18 @@ export class PessoasService {
             mudancas.documentoMascarado = mascararCpf(cpf);
             mudancas.semCpf = false;
           }
+        }
+        if (i.menorIdade !== undefined && i.menorIdade !== antes.menorIdade) {
+          if (i.menorIdade && (antes.categoria !== 'morador' || antes.semCpf)) {
+            throw erroApi(422, 'MENOR_SO_MORADOR', 'Só morador com CPF (ou sem CPF por ser menor) pode ser marcado como menor de idade.');
+          }
+          mudancas.menorIdade = i.menorIdade;
+        }
+        const menorFinal = mudancas.menorIdade ?? antes.menorIdade;
+        if (!menorFinal && !antes.semCpf && !antes.importacaoId) {
+          // Deixou de ser menor (ou nunca foi): CPF e telefone obrigatórios, como no cadastro.
+          if (!(mudancas.documentoBusca ?? antes.documentoMascarado)) throw erroApi(422, 'DOCUMENTO_OBRIGATORIO', 'Informe o CPF: só dependente menor de idade fica sem CPF.');
+          if (!(mudancas.telefone ?? antes.telefone)) throw erroApi(422, 'TELEFONE_INVALIDO', 'Informe o telefone com DDD: só dependente menor de idade fica sem telefone.');
         }
         if (i.empresa !== undefined && vazioParaNulo(i.empresa) !== antes.empresa) mudancas.empresa = vazioParaNulo(i.empresa);
         if (i.servico !== undefined && vazioParaNulo(i.servico) !== antes.servico) mudancas.servico = vazioParaNulo(i.servico);

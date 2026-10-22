@@ -49,7 +49,7 @@ export function selecionarVinculos(exec: Executor) {
   return exec.select({
     v,
     pessoaNome: pessoa.nome, pessoaSemCpf: pessoa.semCpf, pessoaMascarado: pessoa.documentoMascarado,
-    pessoaTelefone: pessoa.telefone, pessoaAnonimizadaEm: pessoa.anonimizadaEm,
+    pessoaTelefone: pessoa.telefone, pessoaAnonimizadaEm: pessoa.anonimizadaEm, pessoaMenorIdade: pessoa.menorIdade,
     pessoaTemCpf: sql<boolean>`(${pessoa.documentoBusca} IS NOT NULL)`.mapWith(Boolean),
     bloco: unidade.bloco, numero: unidade.numero,
     registradoPorNome: registrador.nome, decididoPorNome: decisor.nome, conferidoPorNome: conferente.nome,
@@ -73,7 +73,7 @@ export function paraVinculoApi(l: LinhaView, hoje: string): VinculoApi {
     ...(x.conferenciaDescricao ? { descricao: x.conferenciaDescricao } : {}),
     ...(x.conferenciaObservacao ? { observacao: x.conferenciaObservacao } : {}),
   } : null;
-  const documento = l.pessoaAnonimizadaEm ? '(anonimizado)' : l.pessoaSemCpf ? '(sem CPF)' : (l.pessoaMascarado ?? '(sem CPF)');
+  const documento = l.pessoaAnonimizadaEm ? '(anonimizado)' : l.pessoaSemCpf ? '(sem CPF)' : (l.pessoaMascarado ?? (l.pessoaMenorIdade ? '(menor, sem CPF)' : '(sem CPF)'));
   return {
     id: x.id, pessoaId: x.pessoaId, unidadeId: x.unidadeId, tipo: x.tipo, status: x.status,
     vigenciaInicio: x.vigenciaInicio, vigenciaFim: x.vigenciaFim, prazoRegularizacao: x.prazoRegularizacao,
@@ -89,7 +89,9 @@ export function paraVinculoApi(l: LinhaView, hoje: string): VinculoApi {
     encerradoEm: x.encerradoEm ? x.encerradoEm.getTime() : null,
     pessoaNome: l.pessoaNome,
     pessoaDocumento: documento,
-    pessoaCadastroCompleto: cadastroCompletoDe({ semCpf: l.pessoaSemCpf, anonimizadaEm: l.pessoaAnonimizadaEm, telefone: l.pessoaTelefone, temCpf: l.pessoaTemCpf }),
+    pessoaCadastroCompleto: cadastroCompletoDe({
+      semCpf: l.pessoaSemCpf, anonimizadaEm: l.pessoaAnonimizadaEm, telefone: l.pessoaTelefone, temCpf: l.pessoaTemCpf, menorIdade: l.pessoaMenorIdade,
+    }, x.tipo),
     unidadeCodigo: codigoUnidade({ bloco: l.bloco, numero: l.numero }),
     decididoPorNome: l.decididoPorNome, registradoPorNome: l.registradoPorNome, conferidoPorNome: l.conferidoPorNome,
     legadoVencido: x.status === 'legado' && x.prazoRegularizacao !== null && x.prazoRegularizacao < hoje,

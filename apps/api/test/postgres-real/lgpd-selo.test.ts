@@ -154,6 +154,32 @@ describe.skipIf(!URL_ADMIN)('LGPD e selo sobre PostgreSQL real (app_rw com LOGIN
     expect(exec.rows.map((x) => x.tipo)).toEqual(expect.arrayContaining(['pessoas', 'audit_redacao']));
   });
 
+  it('0007: a anonimização (dona app_migrator, chamada pelo app_rw) limpa registros congelados; o app_rw sozinho não passa pela exceção', async () => {
+    const v = await post('sindico', '/pessoas', { nome: 'Teodoro Visitante Real', categoria: 'visitante', documento: '111.444.777-35', telefone: '11955554444' });
+    expect(v.status).toBe(201);
+    const ana = (await su.query(`SELECT id FROM pessoa WHERE nome = 'Ana Ribeiro'`)).rows[0].id as string;
+    const anaUn = (await su.query(`SELECT unidade_id FROM vinculo_unidade WHERE pessoa_id = $1 AND status = 'aprovado' LIMIT 1`, [ana])).rows[0].unidade_id as string;
+    const enc = await post('porteiro', '/encomendas', { unidadeId: anaUn, destinatario: 'Teodoro Visitante Real', unidadeConfirmada: true });
+    expect((await post('porteiro', `/encomendas/${enc.body.data.id}/retirada`, { pessoaId: ana })).status).toBe(200);
+    const oc = await post('porteiro', '/ocorrencias', { tipo: 'outro', descricao: 'Teodoro Visitante Real deixou um volume' });
+    await post('sindico', `/ocorrencias/${oc.body.data.id}/status`, { status: 'em_andamento' });
+    await post('sindico', `/ocorrencias/${oc.body.data.id}/status`, { status: 'encerrada' });
+    const a = await post('sindico', `/lgpd/pessoas/${v.body.data.id}/anonimizar`);
+    expect(a.status).toBe(200);
+    expect(a.body.data.limpeza).toMatchObject({ textoLivre: 'substituido', encomendas: 1, ocorrencias: 1 });
+    expect((await su.query('SELECT destinatario FROM encomenda WHERE id = $1', [enc.body.data.id])).rows[0].destinatario).toBe('[anonimizado]');
+    expect((await su.query('SELECT descricao FROM ocorrencia WHERE id = $1', [oc.body.data.id])).rows[0].descricao).toBe('[anonimizado] deixou um volume');
+    // app_rw com o GUC ligado continua barrado (não é o dono da tabela)
+    const rw = new pg.Client({ connectionString: urlPara(URL_ADMIN!, NOME_DB, 'app_rw', process.env.APP_RW_PASSWORD ?? 'senha_de_teste_app_rw') });
+    rw.on('error', () => undefined);
+    await rw.connect();
+    try {
+      await rw.query(`SELECT set_config('portaria.operacao', 'lgpd_anonimizar', false)`);
+      await expect(rw.query('UPDATE encomenda SET destinatario = $1 WHERE id = $2', ['x', enc.body.data.id])).rejects.toThrow(/já foi retirada/);
+      await expect(rw.query('UPDATE ocorrencia SET descricao = $1 WHERE id = $2', ['x', oc.body.data.id])).rejects.toThrow(/encerrada/);
+    } finally { await rw.end(); }
+  });
+
   it('trava de job entre conexões: com a trava tomada por outra sessão, 409; solta, roda', async () => {
     await su.query('SELECT pg_advisory_lock(hashtextextended($1, 0))', [`portaria:job:retencao:${pilotoId}`]);
     try {

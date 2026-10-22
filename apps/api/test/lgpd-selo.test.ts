@@ -89,7 +89,7 @@ describe('exportação do titular (GET /lgpd/pessoas/:id/exportacao, spec §9.3)
     expect(r.status).toBe(200);
     expect(r.body.data.nomeArquivo).toMatch(/^lgpd-[0-9a-f]{8}-\d{4}-\d{2}-\d{2}\.json$/);
     const c = JSON.parse(r.body.data.conteudo);
-    expect(c).toMatchObject({ tipo: 'portaria-parque/lgpd-exportacao', versao: 1, geradoPor: 'Paula Nogueira' });
+    expect(c).toMatchObject({ tipo: 'portaria-parque/lgpd-exportacao', versao: 2, geradoPor: 'Paula Nogueira' });
     expect(c.titular).toMatchObject({ nome: 'Ana Ribeiro', categoria: 'Morador', cpf: '***.982.247-**', semCpf: false, telefone: '(**) *****-0001' });
     expect(c.vinculos).toHaveLength(1);
     expect(c.vinculos[0]).toMatchObject({ unidade: 'D-32', tipo: 'proprietario', status: 'aprovado', comprovanteConferido: { tipo: 'escritura' } });

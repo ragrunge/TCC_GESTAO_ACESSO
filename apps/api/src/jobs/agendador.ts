@@ -23,6 +23,7 @@ import { CONFIG, type Config } from '../config/config';
 import { DB, type Db } from '../database/database.module';
 import { auditLog } from '../db/schema';
 import { LgpdModule } from '../lgpd/lgpd.module';
+import { LgpdService } from '../lgpd/lgpd.service';
 import { RetencaoService } from '../lgpd/retencao.service';
 import type { CondominioResolvido } from '../saas/condominio';
 import { contextoDoJob, type ResolvedorDeInstancias } from '../saas/contexto';
@@ -36,8 +37,10 @@ const BRT_MS = 3 * 3600 * 1000;
 export async function servicosDoCondominio(moduleRef: ResolvedorDeInstancias, c: CondominioResolvido) {
   const id = contextoDoJob(moduleRef, c);
   const r = <T>(t: Type<T> | symbol) => moduleRef.resolve<T>(t, id, { strict: false });
-  const [selo, retencao, trava, db] = await Promise.all([r<SeloService>(SeloService), r<RetencaoService>(RetencaoService), r<TravaJobs>(TravaJobs), r<Db>(DB)]);
-  return { selo, retencao, trava, db };
+  const [selo, retencao, trava, db, lgpd] = await Promise.all([
+    r<SeloService>(SeloService), r<RetencaoService>(RetencaoService), r<TravaJobs>(TravaJobs), r<Db>(DB), r<LgpdService>(LgpdService),
+  ]);
+  return { selo, retencao, trava, db, lgpd };
 }
 
 @Injectable()

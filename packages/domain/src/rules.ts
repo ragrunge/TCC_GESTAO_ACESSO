@@ -94,9 +94,15 @@ export function podeEntregarEncomenda(
   return { ok: false, motivo: `Esta pessoa não tem vínculo com a ${rotulo} nem autorização de retirada. Contate a unidade.` };
 }
 
-/** Cadastro completo (pré-requisito para aprovar ou regularizar vínculo): CPF (não "sem CPF"), telefone e não anonimizado. */
-export const cadastroCompleto = (p?: Pick<Pessoa, 'semCpf' | 'documentoBusca' | 'telefone' | 'anonimizadaEm'> | null) =>
-  !!p && !p.semCpf && !p.anonimizadaEm && !!p.documentoBusca && /^\d{10,11}$/.test((p.telefone ?? '').replace(/\D/g, ''));
+/**
+ * Cadastro completo (pré-requisito para aprovar ou regularizar vínculo): CPF (não "sem CPF"), telefone e não anonimizado.
+ * Dependente menor de idade (LGPD art. 14) num vínculo de `dependente` dispensa CPF e telefone.
+ */
+export const cadastroCompleto = (
+  p?: Pick<Pessoa, 'semCpf' | 'documentoBusca' | 'telefone' | 'anonimizadaEm' | 'menorIdade'> | null,
+  tipoVinculo?: string,
+) => !!p && !p.semCpf && !p.anonimizadaEm
+  && ((!!p.documentoBusca && /^\d{10,11}$/.test((p.telefone ?? '').replace(/\D/g, ''))) || (!!p.menorIdade && tipoVinculo === 'dependente'));
 
 /** Legado com prazo de regularização vencido (RN-09): continua listado, em destaque, para revisão da administração. */
 export const legadoVencido = (v: VinculoUnidade, agora: number) =>
