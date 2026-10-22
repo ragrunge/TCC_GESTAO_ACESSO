@@ -1,5 +1,6 @@
 // Relatórios (RF-30, RF-31): o CSV do resumo. FONTE ÚNICA do formato, usada pelo front e pela API.
-// UTF-8 com BOM, separador ";", CRLF, e proteção contra injeção de fórmula (célula que começa com = + - @).
+// UTF-8 com BOM, separador ";", CRLF, e proteção contra injeção de fórmula (OWASP CSV Injection: célula de texto que
+// começa com = + - @ TAB ou CR recebe ' na frente; aspas, ";" e quebras de linha vão entre aspas).
 import { fmtData } from './time';
 import { ROTULO_CATEGORIA, ROTULO_MEIO, type CategoriaPessoa, type MeioAutorizacao } from './types';
 
@@ -20,10 +21,12 @@ export const FAIXAS_ENCOMENDA = [['0 a 2 dias', 0, 2], ['3 a 7 dias', 3, 7], ['8
 /** Período máximo de um relatório (dias). */
 export const PERIODO_MAX_RELATORIO_DIAS = 366;
 
-function celula(v: string | number): string {
-  let t = String(v);
-  if (/^[=+\-@]/.test(t)) t = `'${t}`; // evita interpretação como fórmula no Excel
-  return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+/** Uma célula do CSV. Exportada para teste. Número (contagem) sai como número, sem prefixo. */
+export function celula(v: string | number): string {
+  if (typeof v === 'number') return String(v);
+  // Excel, LibreOffice e Sheets interpretam como fórmula; TAB e CR iniciais também (o app ignora o branco e lê o resto).
+  const t = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+  return /[;"\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
 }
 
 /**
