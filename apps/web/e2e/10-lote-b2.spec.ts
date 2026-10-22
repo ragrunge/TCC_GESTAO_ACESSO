@@ -52,7 +52,7 @@ test.describe('10. Lote B2', () => {
 
     await page.getByRole('button', { name: 'Desativar unidade' }).click();
     await expect(toast(page, /Unidade J-101 desativada/)).toBeVisible();
-    await expect(page.getByText(/Unidade desativada: não aparece para nova entrada/)).toBeVisible();
+    await expect(page.getByText(/Unidade desativada: reative para incluir/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Solicitar vínculo' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Reativar unidade' }).click();
     await expect(toast(page, 'Unidade J-101 reativada.')).toBeVisible();

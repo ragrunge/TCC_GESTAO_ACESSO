@@ -4,19 +4,31 @@ import { ROTULO_CATEGORIA } from '@portaria/domain/types';
 import { Button } from './Button';
 import { Field } from './Field';
 import { Avatar } from './UnitTag';
+import { Alert } from './Alert';
+import { mensagemErro } from '../app/useAsync';
 
 /** Busca e escolha de uma pessoa (nome, documento, unidade ou placa). */
-export function PessoaPicker({ rotulo, valor, onChange, semMoradores, autoFocus }: {
+export function PessoaPicker({ rotulo, valor, onChange, semMoradores, autoFocus, onCadastrar }: {
   rotulo: string; valor: PessoaBusca | null; onChange: (p: PessoaBusca | null) => void; semMoradores?: boolean; autoFocus?: boolean;
+  /** Quando informado, oferece "Cadastrar nova pessoa" (quem usa decide pela permissão). Recebe o texto buscado. */
+  onCadastrar?: (texto: string) => void;
 }) {
   const api = useApi();
   const [q, setQ] = useState('');
   const [achados, setAchados] = useState<PessoaBusca[]>([]);
+  const [buscou, setBuscou] = useState(false);
+  const [erroBusca, setErroBusca] = useState('');
 
   useEffect(() => {
-    if (q.trim().length < 2) { setAchados([]); return; }
+    setErroBusca('');
+    if (q.trim().length < 2) { setAchados([]); setBuscou(false); return; }
     let vivo = true;
-    const t = setTimeout(() => { api.pessoas.buscar(q, { semMoradores }).then((r) => vivo && setAchados(r)).catch(() => undefined); }, 150);
+    setBuscou(false);
+    const t = setTimeout(() => {
+      api.pessoas.buscar(q, { semMoradores })
+        .then((r) => { if (vivo) { setAchados(r); setBuscou(true); } })
+        .catch((e) => { if (vivo) { setAchados([]); setErroBusca(mensagemErro(e)); } });
+    }, 150);
     return () => { vivo = false; clearTimeout(t); };
   }, [q, api, semMoradores]);
 
@@ -45,6 +57,11 @@ export function PessoaPicker({ rotulo, valor, onChange, semMoradores, autoFocus 
           </button></li>
         ))}
       </ul>
+      {erroBusca && <Alert tom="vermelho" role="alert">Não foi possível buscar: {erroBusca}</Alert>}
+      {buscou && achados.length === 0 && !erroBusca && <p className="text-[14px] text-[#56616B]" role="status">Nenhuma pessoa encontrada.</p>}
+      {onCadastrar && q.trim().length >= 2 && (
+        <div><Button pequeno onClick={() => onCadastrar(q.trim())}>Cadastrar nova pessoa</Button></div>
+      )}
     </div>
   );
 }

@@ -19,14 +19,14 @@ const GRUPOS: { titulo: string; itens: { rota: Rota; rotulo: string; contador?: 
   { titulo: 'Portaria', itens: [
     { rota: 'painel', rotulo: 'Painel' },
     { rota: 'entrada', rotulo: 'Registrar entrada' },
-    { rota: 'pessoas', rotulo: 'Pessoas no condomínio' },
+    { rota: 'pessoas', rotulo: 'Presentes agora' },
     { rota: 'encomendas', rotulo: 'Encomendas' },
     { rota: 'ocorrencias', rotulo: 'Ocorrências' },
   ] },
   { titulo: 'Administração', itens: [
     { rota: 'unidades', rotulo: 'Unidades' },
     { rota: 'vinculos', rotulo: 'Vínculos pendentes', contador: true },
-    { rota: 'cadastro', rotulo: 'Pessoas' },
+    { rota: 'cadastro', rotulo: 'Cadastro de pessoas' },
     { rota: 'funcionarios', rotulo: 'Funcionários' },
     { rota: 'importar', rotulo: 'Importar planilha' },
   ] },

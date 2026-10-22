@@ -1,13 +1,14 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Ban, Check, Info } from 'lucide-react';
-import { useApi, type AutorizacaoView, type PessoaBusca, type RestricaoView } from '../../api';
+import { useApi, type AutorizacaoView, type PessoaBusca, type RestricaoView, type VinculoView } from '../../api';
 import { useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
 import { Badge, SeloVinculo } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { Modal } from '../../components/Modal';
+import { ConfirmarModal } from '../../components/ConfirmarModal';
 import { PessoaPicker } from '../../components/PessoaPicker';
 import { useToast } from '../../components/Toast';
 import { ROTULO_VINCULO, type EventoView, type TipoVinculo, type Veiculo } from '@portaria/domain/types';
@@ -15,13 +16,14 @@ import { MIN_JUSTIFICATIVA, descreverJanela } from '@portaria/domain/rules';
 import { DIAS_SEMANA_ABREV, fmtData, fromInput, toInputDate, agora } from '@portaria/domain/time';
 import { acharUnidadePorTexto, codigoUnidade } from '@portaria/domain/units';
 import { mensagemErro, useAsync } from '../../app/useAsync';
+import { NovaPessoaForm, ID_FORM_PESSOA } from '../cadastro/NovaPessoaForm';
 import { useCatalogo } from '../../app/catalogo';
 import { APOS_AUTORIZACAO, APOS_VEICULO, useInvalidar } from '../../app/consultas';
 import { useAcoesUnidade, useUnidadeDetalhe } from './useUnidades';
 import { chipDoEvento, quandoCurto, textoAutorizacao } from '../common/evento';
 import { EventoGaveta } from '../historico/EventoGaveta';
 
-type Modo = null | 'vinculo' | 'previa' | 'restricao' | 'veiculo' | 'editar';
+type Modo = null | 'vinculo' | 'morador' | 'previa' | 'restricao' | 'veiculo' | 'editar';
 
 /** Seção cujo módulo a API real ainda não tem: o resto da tela funciona normalmente. */
 function SecaoEmBreve({ titulo, children }: { titulo: string; children?: ReactNode }) {
@@ -44,7 +46,12 @@ export function UnidadeDetalhe({ id }: { id: string }) {
   const [modo, setModo] = useState<Modo>(null);
   const [evento, setEvento] = useState<EventoView | null>(null);
   const [veiculoEditado, setVeiculoEditado] = useState<Veiculo | null>(null);
+  const [revogando, setRevogando] = useState<AutorizacaoView | null>(null);
+  const [encerrando, setEncerrando] = useState<VinculoView | null>(null);
+  const [pendenteAviso, setPendenteAviso] = useState(false);
   const podeVinculo = useCan('vinculo.criar');
+  const podeEncerrar = useCan('vinculo.decidir');
+  const podeCadastrarMorador = useCan('pessoa.cadastrar_morador');
   const podePrevia = useCan('autorizacao.criar');
   const podeRestricao = useCan('restricao.criar');
   const podeRevogar = useCan('unidade.editar');
@@ -75,7 +82,16 @@ export function UnidadeDetalhe({ id }: { id: string }) {
   }
 
   async function revogarPrevia(a: AutorizacaoView) {
-    try { await api.autorizacoes.revogar(a.id); avisar({ texto: 'Autorização prévia revogada.' }); void recarregar(); } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
+    await api.autorizacoes.revogar(a.id);
+    setRevogando(null);
+    avisar({ texto: 'Autorização prévia revogada.' });
+    void recarregar();
+  }
+  async function encerrarVinculo(v: VinculoView, motivo: string) {
+    await api.vinculos.encerrar(v.id, { motivo });
+    setEncerrando(null);
+    avisar({ tom: 'ambar', texto: `Vínculo de ${v.pessoaNome} encerrado. Deixa de valer para acesso; o histórico é mantido.` });
+    void recarregar();
   }
   async function revogarRestricao(r: RestricaoView) {
     try { await api.restricoes.revogar(r.id); avisar({ texto: 'Restrição revogada.' }); void recarregar(); } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
@@ -91,27 +107,38 @@ export function UnidadeDetalhe({ id }: { id: string }) {
         <div className="flex flex-wrap gap-2">
           {d && ativa && podePrevia && <Button variante="primario" onClick={() => setModo('previa')}>Nova autorização prévia</Button>}
           {d && ativa && podeRestricao && <Button onClick={() => setModo('restricao')}>Nova restrição</Button>}
-          {d && ativa && podeVinculo && <Button onClick={() => setModo('vinculo')}>Solicitar vínculo</Button>}
+          {d && ativa && podeVinculo && <Button onClick={() => { setPendenteAviso(false); setModo('vinculo'); }}>Solicitar vínculo</Button>}
           {d && podeEditarUnidade && <Button onClick={() => setModo('editar')}>Editar número</Button>}
           {d && podeEditarUnidade && <Button disabled={acoes.alternarAtivo.isPending} onClick={() => void alternarAtivo()}>{ativa ? 'Desativar unidade' : 'Reativar unidade'}</Button>}
         </div>
       </div>
       {d && !ativa && (
-        <Alert tom="ambar" role="status">Unidade desativada: não aparece para nova entrada, encomenda ou vínculo. O histórico continua disponível.</Alert>
+        <Alert tom="ambar" role="status">Unidade desativada: reative para incluir moradores ou autorizações.{' '}
+          {podeEditarUnidade ? 'Use o botão “Reativar unidade”, no alto da página.' : 'Peça à administração ou ao síndico para reativá-la.'}{' '}
+          Ela não aparece para nova entrada, encomenda ou vínculo; o histórico continua disponível.</Alert>
+      )}
+      {pendenteAviso && (
+        <Alert tom="neutro" role="status">Vínculo solicitado: fica <strong>pendente</strong> até a aprovação em{' '}
+          <Link className="font-semibold underline" to="/vinculos">Vínculos</Link>. Enquanto pendente, não dá acesso de morador.</Alert>
       )}
 
       {d && (
         <>
           <section className="rounded-[10px] border border-[#DCE1E5] bg-white">
-            <h2 className="border-b border-[#E6EAED] px-5 py-[14px] text-[16px] font-semibold">Moradores</h2>
+            <div className="flex items-center justify-between gap-3 border-b border-[#E6EAED] px-5 py-[10px]">
+              <h2 className="text-[16px] font-semibold">Moradores</h2>
+              {podeVinculo && ativa && <Button pequeno onClick={() => { setPendenteAviso(false); setModo('morador'); }}>Incluir morador</Button>}
+            </div>
             {d.vinculos === null && <div className="px-5 py-4"><SecaoEmBreve titulo="Moradores">Vínculos da unidade: disponível em breve na API real.</SecaoEmBreve></div>}
             {d.vinculos?.map((v) => (
-              <div key={v.id} className="grid min-h-[52px] grid-cols-1 gap-1 sm:grid-cols-[minmax(0,1fr)_220px_120px] sm:items-center sm:gap-3 border-b border-[#EEF1F3] px-5 py-[10px] last:border-b-0">
+              <div key={v.id} className="grid min-h-[52px] grid-cols-1 gap-1 sm:grid-cols-[minmax(0,1fr)_220px_120px_auto] sm:items-center sm:gap-3 border-b border-[#EEF1F3] px-5 py-[10px] last:border-b-0">
                 <span className="truncate font-medium">{v.pessoaNome}</span>
                 <span className="truncate text-[14px]">{ROTULO_VINCULO[v.tipo]}
                   {v.status === 'legado' && v.prazoRegularizacao ? <span className="text-[#56616B]"> · regularizar até {fmtData(v.prazoRegularizacao)}</span>
                     : v.vigenciaFim ? <span className="text-[#56616B]"> · até {fmtData(v.vigenciaFim)}</span> : null}</span>
                 <SeloVinculo status={v.status} />
+                <span>{podeEncerrar && (v.status === 'aprovado' || v.status === 'legado') && (
+                  <button type="button" className={link} aria-label={`Encerrar vínculo de ${v.pessoaNome}`} onClick={() => setEncerrando(v)}>Encerrar vínculo</button>)}</span>
               </div>
             ))}
             {d.vinculos?.length === 0 && <div className="px-5 py-4 text-[#56616B]">Nenhum vínculo cadastrado.</div>}
@@ -143,7 +170,7 @@ export function UnidadeDetalhe({ id }: { id: string }) {
                     {a.semSolicitante && a.justificativa && <span className="text-[13px] text-[#7A2E0E]">Justificativa: {a.justificativa}</span>}
                     {a.estado !== 'valida' && <span className="mt-0.5 self-start"><Badge tom="ambar" tamanho="xs">Fora da janela agora</Badge></span>}
                   </div>
-                  {podePrevia && <button type="button" className={link} aria-label={`Revogar autorização de ${a.pessoaNome}`} onClick={() => void revogarPrevia(a)}>Revogar</button>}
+                  {podePrevia && <button type="button" className={link} aria-label={`Revogar autorização de ${a.pessoaNome}`} onClick={() => setRevogando(a)}>Revogar</button>}
                 </div>
               ))}
               {d.autorizacoes?.length === 0 && <span className={vazio}>Nenhuma autorização ativa.</span>}
@@ -190,7 +217,14 @@ export function UnidadeDetalhe({ id }: { id: string }) {
       )}
 
       {evento && <EventoGaveta ev={evento} onClose={() => setEvento(null)} />}
-      {d && modo === 'vinculo' && <VinculoModal unidade={uid} onClose={() => setModo(null)} onFeito={() => feito('Vínculo solicitado. Fica pendente até a aprovação; pendente não dá acesso de morador.')} />}
+      {d && (modo === 'vinculo' || modo === 'morador') && <VinculoModal unidade={uid} incluir={modo === 'morador'} podeCadastrar={podeCadastrarMorador} onClose={() => setModo(null)}
+        onFeito={() => { feito('Vínculo solicitado. Fica pendente até a aprovação; pendente não dá acesso de morador.'); setPendenteAviso(true); }} />}
+      {revogando && (
+        <ConfirmarModal titulo="Revogar autorização prévia" rotulo="Revogar autorização" onClose={() => setRevogando(null)} onConfirmar={() => revogarPrevia(revogando)}>
+          <p>Revogar a autorização prévia de <strong>{revogando.pessoaNome}</strong>? Ela deixa de valer na portaria; o histórico é mantido.</p>
+        </ConfirmarModal>
+      )}
+      {encerrando && <EncerrarVinculoModal vinculo={encerrando} onClose={() => setEncerrando(null)} onConfirmar={(motivo) => encerrarVinculo(encerrando, motivo)} />}
       {d && modo === 'previa' && <PreviaModal unidade={uid} onClose={() => setModo(null)} onFeito={() => feito('Autorização prévia cadastrada.')} />}
       {d && modo === 'restricao' && <RestricaoModal unidade={uid} onClose={() => setModo(null)} onFeito={(todo) => feito(todo ? 'Pedido de restrição para todo o condomínio registrado. Aguarda aprovação do síndico.' : 'Restrição cadastrada.')} />}
       {d && modo === 'veiculo' && <VeiculoModal unidade={uid} onClose={() => setModo(null)} onFeito={() => { setModo(null); avisar({ texto: 'Veículo cadastrado.' }); void invalidar(APOS_VEICULO); }} />}
@@ -247,13 +281,15 @@ const rodapeForm = (onClose: () => void, form: string, rotulo: string) => (
   </>
 );
 
-function VinculoModal({ unidade, onClose, onFeito }: { unidade: string; onClose: () => void; onFeito: () => void }) {
+function VinculoModal({ unidade, incluir, podeCadastrar, onClose, onFeito }: { unidade: string; incluir?: boolean; podeCadastrar?: boolean; onClose: () => void; onFeito: () => void }) {
   const api = useApi();
   const [pessoa, setPessoa] = useState<PessoaBusca | null>(null);
   const [tipo, setTipo] = useState<TipoVinculo>('proprietario');
   const [ini, setIni] = useState(toInputDate(agora()));
   const [fim, setFim] = useState('');
   const [erro, setErro] = useState('');
+  // Cadastro de pessoa no lugar do formulário (mesma janela: dois modais empilhados quebrariam o foco); o estado do vínculo fica.
+  const [cadastrando, setCadastrando] = useState<string | null>(null);
   async function salvar(e: FormEvent) {
     e.preventDefault();
     if (!pessoa) { setErro('Escolha a pessoa.'); return; }
@@ -265,11 +301,22 @@ function VinculoModal({ unidade, onClose, onFeito }: { unidade: string; onClose:
       onFeito();
     } catch (err) { setErro(mensagemErro(err)); }
   }
+  if (cadastrando !== null) {
+    return (
+      <Modal titulo="Nova pessoa" onClose={() => setCadastrando(null)} largura={600} gap={14}
+        rodape={<><Button type="submit" form={ID_FORM_PESSOA} variante="primario" grande className="flex-1">Cadastrar e escolher</Button><Button grande onClick={() => setCadastrando(null)}>Voltar</Button></>}>
+        <UnidadeTitulo unidade={unidade} />
+        <NovaPessoaForm nomeInicial={/\d/.test(cadastrando) ? '' : cadastrando} aviso="Depois de cadastrada, a pessoa já fica escolhida no vínculo. O vínculo continua pendente até a aprovação em Vínculos."
+          onFeito={(p) => { setPessoa({ ...p, ultimoAcesso: '', unidadesVinculadas: [], unidadesVinculadasCodigos: [] }); setCadastrando(null); setErro(''); }} />
+      </Modal>
+    );
+  }
+  const titulo = incluir ? 'Incluir morador' : 'Solicitar vínculo';
   return (
-    <Modal titulo="Solicitar vínculo" onClose={onClose} largura={600} rodape={rodapeForm(onClose, "f-vinc", "Solicitar vínculo")}>
+    <Modal titulo={titulo} onClose={onClose} largura={600} rodape={rodapeForm(onClose, "f-vinc", "Solicitar vínculo")}>
       <UnidadeTitulo unidade={unidade} />
       <form id="f-vinc" onSubmit={salvar} className="flex flex-col gap-[14px]">
-        <PessoaPicker rotulo="Pessoa" valor={pessoa} onChange={setPessoa} autoFocus />
+        <PessoaPicker rotulo="Pessoa" valor={pessoa} onChange={setPessoa} autoFocus onCadastrar={podeCadastrar ? setCadastrando : undefined} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Tipo de vínculo"><select className="input" value={tipo} onChange={(e) => setTipo(e.target.value as TipoVinculo)}>{(Object.keys(ROTULO_VINCULO) as TipoVinculo[]).map((t) => <option key={t} value={t}>{ROTULO_VINCULO[t]}</option>)}</select></Field>
           <Field label="Início da vigência"><input type="date" className="input" value={ini} onChange={(e) => setIni(e.target.value)} /></Field>
@@ -403,5 +450,19 @@ function VeiculoModal({ unidade, atual, onClose, onFeito }: { unidade: string; a
         {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
       </form>
     </Modal>
+  );
+}
+
+/** Encerra um vínculo aprovado ou legado direto da unidade (RF-07): motivo obrigatório e confirmação. */
+function EncerrarVinculoModal({ vinculo, onClose, onConfirmar }: { vinculo: VinculoView; onClose: () => void; onConfirmar: (motivo: string) => Promise<void> }) {
+  const [motivo, setMotivo] = useState('');
+  const ok = motivo.trim().length >= MIN_JUSTIFICATIVA;
+  return (
+    <ConfirmarModal titulo="Encerrar vínculo" rotulo="Confirmar encerramento" desabilitado={!ok} onClose={onClose} onConfirmar={() => onConfirmar(motivo)}>
+      <p>Encerrar o vínculo de <strong>{vinculo.pessoaNome}</strong> ({ROTULO_VINCULO[vinculo.tipo]})? Ele deixa de valer para acesso; o histórico é mantido.</p>
+      <Field label="Motivo do encerramento (obrigatório)" dica={`${motivo.trim().length} de ${MIN_JUSTIFICATIVA} caracteres no mínimo`}>
+        <textarea className="input" rows={3} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex.: Locação encerrada; o inquilino entregou as chaves à administração." />
+      </Field>
+    </ConfirmarModal>
   );
 }

@@ -1,8 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/types';
 
-export const mensagemErro = (e: unknown): string =>
-  e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Erro inesperado.';
+/** `details` do 400 de validação: [{ field, message }]. Só caminho e mensagem; a API nunca devolve o valor enviado. */
+function camposInvalidos(detalhes: unknown): string[] {
+  if (!Array.isArray(detalhes)) return [];
+  return detalhes.flatMap((d) => {
+    const { field, message } = (d ?? {}) as { field?: unknown; message?: unknown };
+    if (typeof message !== 'string' || !message) return [];
+    return [typeof field === 'string' && field && field !== '(corpo)' ? `${field}: ${message}` : message];
+  });
+}
+
+export const mensagemErro = (e: unknown): string => {
+  if (e instanceof ApiError) {
+    const campos = e.code === 'DADOS_INVALIDOS' ? camposInvalidos(e.detalhes) : [];
+    return campos.length ? `Dados inválidos: ${campos.join('; ')}` : e.message;
+  }
+  return e instanceof Error ? e.message : 'Erro inesperado.';
+};
 
 /** Carrega dados assíncronos e permite recarregar. Ignora respostas de chamadas antigas. */
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {

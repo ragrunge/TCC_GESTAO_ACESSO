@@ -78,7 +78,7 @@ test.describe.serial('API real: registro de acesso na portaria', () => {
     await expect(toast(page, 'Entrada registrada').first()).toBeVisible();
     await expect(page).toHaveURL(/\/painel$/);
     await expect(page.getByRole('table', { name: 'Últimas movimentações de acesso' }).getByText(V.interfone)).toBeVisible();
-    await page.getByRole('link', { name: /Pessoas no condomínio/ }).first().click();
+    await page.getByRole('link', { name: /Presentes agora/ }).first().click();
     const linha = page.getByRole('table', { name: 'Pessoas atualmente no condomínio' }).getByRole('row').filter({ hasText: V.interfone });
     await expect(linha).toHaveCount(1);
     await expect(linha).toContainText('Ana Ribeiro');

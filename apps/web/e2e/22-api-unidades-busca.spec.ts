@@ -95,7 +95,7 @@ test.describe.serial('API real: catálogo, badge, busca e unidades', () => {
 
     await page.getByRole('button', { name: 'Desativar unidade' }).click();
     await expect(page.getByRole('region', { name: 'Notificações' }).getByText(/desativada\. O histórico continua disponível/)).toBeVisible();
-    await expect(page.getByText(/Unidade desativada: não aparece para nova entrada/)).toBeVisible();
+    await expect(page.getByText(/Unidade desativada: reative para incluir/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reativar unidade' })).toBeVisible();
     await expect(page.getByRole('group', { name: 'Unidades do bloco Z' }).getByRole('button', { name: `Apartamento ${NUMERO} (desativada)` })).toBeVisible();
 
