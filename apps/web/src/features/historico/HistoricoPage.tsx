@@ -96,7 +96,7 @@ export function HistoricoPage() {
   // Selo e âncora externa (spec 4.6): para quem verifica a integridade.
   const mostraSelo = podeVerificar;
   const campo = 'flex flex-col gap-1 text-[13px] font-medium';
-  const entrada = 'input !h-10 !px-[10px] !text-[14px]';
+  const entrada = 'input !h-[44px] !px-[10px] !text-[14px] lg:!h-10';
 
   return (
     <div className="flex flex-col gap-4">
@@ -123,7 +123,7 @@ export function HistoricoPage() {
 
       {mostraSelo && <SeloAncora />}
 
-      <form className="grid grid-cols-4 items-end gap-x-4 gap-y-3 rounded-[10px] border border-[#DCE1E5] bg-white px-5 py-4" onSubmit={(e) => e.preventDefault()} aria-label="Filtros">
+      <form className="grid grid-cols-1 items-end gap-x-4 gap-y-3 rounded-[10px] border border-[#DCE1E5] bg-white px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-4" onSubmit={(e) => e.preventDefault()} aria-label="Filtros">
         <div className={campo}>Período
           <span className="flex gap-1.5">
             <input type="date" aria-label="De" className={`${entrada} min-w-0 flex-1`} value={de} onChange={(e) => setDe(e.target.value)} />
@@ -144,16 +144,16 @@ export function HistoricoPage() {
         <label className={campo}>Meio de autorização
           <select className={entrada} value={meio} onChange={(e) => setMeio(e.target.value)}><option value="">Todos</option>{(Object.keys(ROTULO_MEIO) as MeioAutorizacao[]).map((m) => <option key={m} value={m}>{ROTULO_MEIO[m]}</option>)}</select>
         </label>
-        <div className="col-span-2 flex h-10 items-center gap-4">
-          <label className="flex cursor-pointer items-center gap-2 text-[14px] font-medium"><input type="checkbox" className="h-[18px] w-[18px] accent-[#0B5563]" checked={exc} onChange={(e) => setExc(e.target.checked)} />Somente exceções</label>
-          <label className="flex cursor-pointer items-center gap-2 text-[14px] font-medium"><input type="checkbox" className="h-[18px] w-[18px] accent-[#0B5563]" checked={retro} onChange={(e) => setRetro(e.target.checked)} />Somente retroativos</label>
-          <button type="button" onClick={limpar} className="ml-auto h-10 px-3 text-[14px] font-semibold text-[#0B5563] hover:underline">Limpar filtros</button>
+        <div className="flex min-h-[44px] flex-wrap items-center gap-x-4 gap-y-1 sm:col-span-2 lg:min-h-10">
+          <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-[14px] font-medium lg:min-h-0"><input type="checkbox" className="h-[18px] w-[18px] accent-[#0B5563]" checked={exc} onChange={(e) => setExc(e.target.checked)} />Somente exceções</label>
+          <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-[14px] font-medium lg:min-h-0"><input type="checkbox" className="h-[18px] w-[18px] accent-[#0B5563]" checked={retro} onChange={(e) => setRetro(e.target.checked)} />Somente retroativos</label>
+          <button type="button" onClick={limpar} className="ml-auto h-[44px] px-3 text-[14px] font-semibold lg:h-10 text-[#0B5563] hover:underline">Limpar filtros</button>
         </div>
       </form>
 
       {lista.error && <Alert tom="vermelho" role="alert">{mensagemErro(lista.error)}</Alert>}
       <div className="overflow-hidden rounded-[10px] border border-[#DCE1E5] bg-white">
-        <div className="border-b border-[#E6EAED] px-5 py-3 text-[14px] text-[#56616B]">
+        <div className="border-b border-[#E6EAED] px-4 py-3 text-[14px] text-[#56616B] sm:px-5">
           {dados.length} {dados.length === 1 ? 'evento' : 'eventos'} nos filtros escolhidos{lista.hasNextPage ? ' (há mais: carregue abaixo)' : ''}
         </div>
         <Lista legenda="Eventos de acesso" colunas={COLUNAS} className="!rounded-none !border-0">

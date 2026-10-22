@@ -96,7 +96,7 @@ export function SeloAncora() {
       )}
       <details className="text-[14px]">
         <summary className="cursor-pointer font-medium">Conferir âncora recebida</summary>
-        <form className="mt-3 grid grid-cols-[140px_minmax(0,1fr)_auto] items-end gap-3" onSubmit={(x) => void conferir(x)} aria-label="Conferir âncora recebida">
+        <form className="mt-3 grid grid-cols-1 items-end gap-3 sm:grid-cols-[140px_minmax(0,1fr)_auto]" onSubmit={(x) => void conferir(x)} aria-label="Conferir âncora recebida">
           <Field label="Seq"><input className="input font-mono" inputMode="numeric" value={seq} onChange={(x) => setSeq(x.target.value)} /></Field>
           <Field label="Hash recebido"><input className="input font-mono text-[13px]" value={hash} onChange={(x) => setHash(x.target.value)} spellCheck={false} /></Field>
           <Button type="submit" carregando={conferindo}>Conferir</Button>

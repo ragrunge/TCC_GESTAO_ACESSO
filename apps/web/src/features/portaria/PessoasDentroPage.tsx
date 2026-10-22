@@ -44,9 +44,9 @@ export function PessoasDentroPage() {
     <div className="flex flex-col gap-5">
       <PageHeader titulo="Pessoas no condomínio"
         descricao={`${dados.length} ${dados.length === 1 ? 'pessoa entrou' : 'pessoas entraram'} e ainda não ${dados.length === 1 ? 'teve' : 'tiveram'} a saída registrada.`}
-        acoes={podeRegistrar && <Link to="/entrada" className="inline-flex h-11 items-center gap-[10px] rounded-lg bg-[#0B5563] px-[18px] font-semibold !text-white hover:bg-[#08434E]">Nova entrada <kbd className="rounded-[5px] border border-white/50 px-[7px] py-0.5 font-mono text-[13px]">F2</kbd></Link>} />
+        acoes={podeRegistrar && <Link to="/entrada" className="inline-flex h-11 items-center gap-[10px] rounded-lg bg-[#0B5563] max-lg:h-[44px] px-[18px] font-semibold !text-white hover:bg-[#08434E]">Nova entrada <kbd className="rounded-[5px] border border-white/50 px-[7px] py-0.5 font-mono text-[13px]">F2</kbd></Link>} />
       {lista.error && <Alert tom="vermelho" role="alert">{mensagemErro(lista.error)}</Alert>}
-      <Lista legenda="Pessoas atualmente no condomínio" colunas={COLUNAS}>
+      <Lista legenda="Pessoas atualmente no condomínio" colunas={COLUNAS} empilhar>
         <ListaCab rotulos={['Nome', 'Tipo', 'Unidade', 'Entrada', 'Permanência', 'Autorizado por', '']} />
         {dados.map((e) => {
           const excedeu = permanenciaExcedida(e.ocorridoEm, agora);
@@ -63,12 +63,12 @@ export function PessoasDentroPage() {
                 {dur}{excedeu && <span className="font-sans text-[12px]">acima de 8h</span>}
               </Cel>
               <Cel className="text-[14px]">{textoAutorizacao(e)}<span className="text-[#56616B]"> · {chipDoEvento(e).texto}</span></Cel>
-              <Cel className="flex gap-2">{podeRegistrar && (
+              <Cel className="col-span-2 flex flex-wrap gap-2 md:col-span-1">{podeRegistrar && (
                 <button type="button" onClick={() => void saida(e.id, e.pessoaNome)}
-                  className="h-10 rounded-lg border border-[#B9C3CA] bg-white px-[14px] text-[14px] font-medium hover:border-[#0B5563] hover:text-[#0B5563]">Registrar saída</button>
+                  className="h-[44px] rounded-lg border border-[#B9C3CA] bg-white px-[14px] text-[14px] font-medium hover:border-[#0B5563] hover:text-[#0B5563] lg:h-10">Registrar saída</button>
               )}{podeRetroativo && (
                 <button type="button" onClick={() => setRetro(e)}
-                  className="h-10 rounded-lg border border-[#B9C3CA] bg-white px-[14px] text-[14px] font-medium hover:border-[#0B5563] hover:text-[#0B5563]">Saída retroativa</button>
+                  className="h-[44px] rounded-lg border border-[#B9C3CA] bg-white px-[14px] text-[14px] font-medium hover:border-[#0B5563] hover:text-[#0B5563] lg:h-10">Saída retroativa</button>
               )}</Cel>
             </ListaLinha>
           );
@@ -103,12 +103,12 @@ function SaidaRetroativaModal({ entrada, onClose, onFeito }: { entrada: EventoVi
     <Modal titulo={`Saída retroativa · ${entrada.pessoaNome}`} largura={560} gap={14} onClose={onClose}
       rodape={<><Button type="submit" form="f-saida-retro" variante="primario" grande className="flex-1" carregando={salvando}>Registrar saída retroativa</Button><Button grande onClick={onClose}>Cancelar</Button></>}>
       <p className="text-[14px] text-[#56616B]">Entrada em {fmtDataHora(entrada.ocorridoEm)} ({entrada.codigo}). A hora do lançamento é definida pelo sistema e gravada junto, com a etiqueta Retroativo.</p>
-      <form id="f-saida-retro" onSubmit={salvar} className="grid grid-cols-2 gap-[14px]">
+      <form id="f-saida-retro" onSubmit={salvar} className="grid grid-cols-1 gap-[14px] sm:grid-cols-2">
         <Field label="Data real da saída"><input type="date" className="input" value={data} min={toInputDate(entrada.ocorridoEm)} max={toInputDate(agoraSim())} onChange={(e) => setData(e.target.value)} /></Field>
         <Field label="Hora real da saída" erro={hora && !dataOk ? 'Depois da entrada e antes de agora.' : undefined}><input type="time" className="input" value={hora} onChange={(e) => setHora(e.target.value)} /></Field>
-        <Field label="Nº do formulário de papel (obrigatório)" className="col-span-2"><input className="input" value={formulario} onChange={(e) => setFormulario(e.target.value)} /></Field>
-        <Field label="Observação (opcional)" className="col-span-2"><input className="input" value={obs} onChange={(e) => setObs(e.target.value)} /></Field>
-        {erro && <Alert tom="vermelho" role="alert" className="col-span-2">{erro}</Alert>}
+        <Field label="Nº do formulário de papel (obrigatório)" className="sm:col-span-2"><input className="input" value={formulario} onChange={(e) => setFormulario(e.target.value)} /></Field>
+        <Field label="Observação (opcional)" className="sm:col-span-2"><input className="input" value={obs} onChange={(e) => setObs(e.target.value)} /></Field>
+        {erro && <Alert tom="vermelho" role="alert" className="sm:col-span-2">{erro}</Alert>}
       </form>
     </Modal>
   );

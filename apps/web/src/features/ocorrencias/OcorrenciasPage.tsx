@@ -76,7 +76,7 @@ export function OcorrenciasPage() {
         <Tabs rotulo="Situação das ocorrências" ativa={filtro} onChange={setFiltro}
           abas={[{ id: 'todas', rotulo: 'Todas' }, { id: 'abertas', rotulo: 'Abertas e em andamento' }, { id: 'encerradas', rotulo: 'Encerradas' }]} />
         {lista.error && <div className="p-4"><Alert tom="vermelho" role="alert">{mensagemErro(lista.error)}</Alert></div>}
-        <Lista legenda="Ocorrências registradas" colunas={COLUNAS} className="!rounded-none !border-0">
+        <Lista legenda="Ocorrências registradas" colunas={COLUNAS} empilhar className="!rounded-none !border-0">
           <ListaCab rotulos={['Código', 'Data', 'Tipo', 'Unidade', 'Descrição', 'Status', 'Registrado por']} />
           {dados.map((o) => (
             <ListaLinha key={o.id} minH={56} padY={10} onClick={() => setAbertaId(o.id)} ariaLabel={`Abrir ocorrência ${o.codigo}`}>
@@ -84,7 +84,7 @@ export function OcorrenciasPage() {
               <Cel className="text-[14px]">{fmtDataHora(o.abertaEm)}</Cel>
               <Cel className="font-medium">{ROTULO_TIPO_OCORRENCIA[o.tipo]}</Cel>
               <Cel className={o.unidadeId ? 'font-mono font-semibold' : 'text-[14px]'}>{o.unidadeId ? codigo(o.unidadeId) : 'Área comum'}</Cel>
-              <Cel className="truncate text-[14px] text-[#33424B]">{o.descricao}</Cel>
+              <Cel className="col-span-2 truncate text-[14px] text-[#33424B] md:col-span-1">{o.descricao}</Cel>
               <Cel><SeloOcorrencia status={o.status} /></Cel>
               <Cel className="text-[14px]">{o.abertaPorNome}</Cel>
             </ListaLinha>
@@ -173,7 +173,7 @@ function DetalheModal({ id, inicial, onClose, podeOperarDe }: {
       </>}>
       <div className="-mt-[10px] font-mono text-[13px] text-[#56616B] order-first">{o.codigo} · {fmtDataHora(o.abertaEm)}</div>
       <p>{o.descricao}</p>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="flex flex-col"><span className={rot}>Envolvidos</span><span>{o.envolvidos || '—'}</span></div>
         <div className="flex flex-col"><span className={rot}>Registrado por</span><span>{o.abertaPorNome}</span></div>
         <div className="flex flex-col items-start"><span className={rot}>Status</span><SeloOcorrencia status={o.status} /></div>
@@ -222,7 +222,7 @@ function DetalheModal({ id, inicial, onClose, podeOperarDe }: {
           vinculando ? (
             <div className="flex flex-col gap-2">
               <SeletorEventos selecionados={selecionados} onChange={setSelecionados} ocultar={o.eventoIds} />
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button variante="primario" pequeno disabled={selecionados.length === 0} onClick={async () => {
                   if (await escrever(() => api.ocorrencias.vincularEventos(o.id, selecionados), `${selecionados.length} evento(s) vinculado(s) à ${o.codigo}.`)) {
                     setSelecionados([]); setVinculando(false);
@@ -255,12 +255,12 @@ function SeletorEventos({ selecionados, onChange, ocultar = [] }: { selecionados
       {lista.map((ev) => {
         const on = selecionados.includes(ev.id);
         return (
-          <label key={ev.id} className={`grid min-h-11 cursor-pointer grid-cols-[22px_70px_minmax(0,1fr)_70px_minmax(0,1fr)] items-center gap-[10px] rounded-lg border bg-white px-[10px] py-1 text-[14px] focus-within:ring-2 focus-within:ring-[#0B5563] ${on ? 'border-[#0B5563]' : 'border-[#E1E6EA]'}`}>
+          <label key={ev.id} className={`grid min-h-[44px] cursor-pointer grid-cols-[22px_70px_minmax(0,1fr)] items-center md:grid-cols-[22px_70px_minmax(0,1fr)_70px_minmax(0,1fr)] gap-[10px] rounded-lg border bg-white px-[10px] py-1 text-[14px] focus-within:ring-2 focus-within:ring-[#0B5563] ${on ? 'border-[#0B5563]' : 'border-[#E1E6EA]'}`}>
             <input type="checkbox" className="sr-only" checked={on} onChange={(e) => onChange(e.target.checked ? [...selecionados, ev.id] : selecionados.filter((x) => x !== ev.id))} />
             <span aria-hidden className={`grid h-5 w-5 place-items-center rounded border-2 text-white ${on ? 'border-[#0B5563] bg-[#0B5563]' : 'border-[#9AA7B0] bg-white'}`}>{on && <Check className="h-3 w-3" strokeWidth={3.4} />}</span>
             <span className="font-mono">{quandoCurto(ev.ocorridoEm, agoraSim())}</span>
             <span className="truncate font-medium">{ev.pessoaNome}</span>
-            <span className="font-mono font-semibold">{ev.unidadeRotulo ?? '—'}</span>
+            <span className="col-start-2 font-mono font-semibold md:col-start-auto">{ev.unidadeRotulo ?? '—'}</span>
             <span className="truncate text-[#33424B]">{chipDoEvento(ev).texto} · {ev.operadorNome}</span>
           </label>
         );
@@ -315,11 +315,11 @@ function NovaOcorrenciaModal({ inicial, onClose, onFeito }: { inicial: Record<st
           <div role="radiogroup" aria-labelledby="rot-tipo-oc" className="flex flex-wrap gap-1.5">
             {TIPOS.map((t, i) => (
               <button key={t} type="button" role="radio" aria-checked={tipo === t} {...(i === 0 ? { 'data-autofocus': true } : {})} onClick={() => setTipo(t)}
-                className={`h-10 rounded-full border px-[14px] text-[14px] ${tipo === t ? 'border-[#0B5563] bg-[#0B5563] text-white' : 'border-[#B9C3CA] bg-white text-ink hover:bg-[#EEF2F4]'}`}>{ROTULO_TIPO_OCORRENCIA[t]}</button>
+                className={`h-[44px] rounded-full border px-[14px] text-[14px] lg:h-10 ${tipo === t ? 'border-[#0B5563] bg-[#0B5563] text-white' : 'border-[#B9C3CA] bg-white text-ink hover:bg-[#EEF2F4]'}`}>{ROTULO_TIPO_OCORRENCIA[t]}</button>
             ))}
           </div>
         </div>
-        <div className="grid grid-cols-[160px_minmax(0,1fr)] gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
           <Field label="Unidade" erro={unidadeInvalida ? 'Unidade inexistente.' : undefined}>
             <input className="input font-mono" value={unidade} onChange={(e) => setUnidade(e.target.value)} placeholder="D-32" />
           </Field>
@@ -333,16 +333,16 @@ function NovaOcorrenciaModal({ inicial, onClose, onFeito }: { inicial: Record<st
           {problemas.length > 0 && <Alert tom="ambar">{problemas.join(' ')}</Alert>}
         </div>
         <div className="rounded-[10px] border border-[#DCE1E5]">
-          <div className="flex items-center justify-between px-[14px] py-[10px]">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-[14px] py-[10px]">
             <span className="text-[14px] font-medium">Eventos de acesso vinculados{vinc.length > 0 ? ` (${vinc.length})` : ''}</span>
             <button type="button" aria-expanded={mostrarEventos} onClick={() => setMostrarEventos((v) => !v)}
-              className="h-10 rounded-lg border border-[#0B5563] bg-white px-[14px] text-[14px] font-semibold text-[#0B5563]">{mostrarEventos ? 'Ocultar' : 'Vincular eventos'}</button>
+              className="h-[44px] shrink-0 rounded-lg border border-[#0B5563] bg-white px-[14px] lg:h-10 text-[14px] font-semibold text-[#0B5563]">{mostrarEventos ? 'Ocultar' : 'Vincular eventos'}</button>
           </div>
           {mostrarEventos && <SeletorEventos selecionados={vinc} onChange={setVinc} />}
         </div>
         {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
-        <div className="flex gap-[10px]">
-          <Button type="submit" variante="primario" grande className="flex-1" carregando={salvando}>Registrar ocorrência</Button>
+        <div className="flex flex-col gap-[10px] sm:flex-row">
+          <Button type="submit" variante="primario" grande className="sm:flex-1" carregando={salvando}>Registrar ocorrência</Button>
           <Button grande atalho="Esc" onClick={onClose}>Cancelar</Button>
         </div>
       </form>

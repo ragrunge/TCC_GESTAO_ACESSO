@@ -22,6 +22,7 @@ import { RelatoriosPage } from '../features/relatorios/RelatoriosPage';
 import { UsuariosPage } from '../features/usuarios/UsuariosPage';
 import { FuncionariosPage } from '../features/funcionarios/FuncionariosPage';
 import { CatalogoProvider } from './catalogo';
+import { AvisosPwa } from '../pwa/AvisosPwa';
 
 function Raiz() {
   const { usuario, pronto } = useAuth();
@@ -36,6 +37,7 @@ export function App() {
     <ApiProvider>
       <QueryClientProvider client={queryClient}>
       <ToastProvider>
+        <AvisosPwa />
         <AuthProvider>
           <BrowserRouter>
             <Routes>

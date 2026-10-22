@@ -20,7 +20,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={valor}>
       {children}
-      <div className="pointer-events-none fixed bottom-6 right-6 z-[80] flex w-[620px] max-w-[calc(100vw-48px)] flex-col items-end gap-2" role="region" aria-label="Notificações">
+      <div className="pointer-events-none fixed bottom-4 right-4 z-[80] flex w-[620px] max-w-[calc(100vw-32px)] sm:bottom-6 sm:right-6 sm:max-w-[calc(100vw-48px)] flex-col items-end gap-2" role="region" aria-label="Notificações">
         {itens.map((t) => (
           <div key={t.id} role={t.tom === 'vermelho' ? 'alert' : 'status'} style={{ borderLeftColor: BARRA[t.tom] }}
             className="pointer-events-auto flex max-w-full items-start gap-3 rounded-[10px] border-l-[5px] bg-[#10262C] px-[18px] py-[14px] text-white shadow-[0_12px_32px_rgba(0,0,0,0.25)]">
@@ -28,7 +28,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               {t.titulo && <p className="font-semibold">{t.titulo}</p>}
               <p>{t.texto}</p>
             </div>
-            <button type="button" onClick={() => remover(t.id)} aria-label="Fechar" className="px-0.5 text-[18px] leading-none text-[#C8D3D7] hover:text-white">×</button>
+            <button type="button" onClick={() => remover(t.id)} aria-label="Fechar" className="-my-2 -mr-2 min-h-[44px] min-w-[44px] text-[18px] leading-none text-[#C8D3D7] hover:text-white">×</button>
           </div>
         ))}
       </div>

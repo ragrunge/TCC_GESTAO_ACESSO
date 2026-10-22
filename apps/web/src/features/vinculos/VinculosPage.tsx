@@ -97,7 +97,7 @@ export function VinculosPage() {
       </div>
       {fila.error && <Alert tom="vermelho" role="alert">{mensagemErro(fila.error)}</Alert>}
 
-      <div className="grid grid-cols-[340px_minmax(0,1fr)] items-start gap-4">
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
         <div className="flex flex-col gap-2">
           <Tabs rotulo="Fila de vínculos" ativa={aba} onChange={(a) => { setAba(a); setSel(null); }}
             abas={[{ id: 'pendentes', rotulo: `Pendentes${nPend === undefined ? '' : ` (${nPend})`}` }, { id: 'legados', rotulo: `Legados${nLeg === undefined ? '' : ` (${nLeg})`}` }, { id: 'decididos', rotulo: 'Decididos' }]} />
@@ -125,25 +125,25 @@ export function VinculosPage() {
         </div>
 
         {atual && (
-          <div className="flex flex-col gap-[18px] rounded-[10px] border border-[#DCE1E5] bg-white px-6 py-5">
-            <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-[18px] rounded-[10px] border border-[#DCE1E5] bg-white px-4 py-5 sm:px-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h2 className="text-[22px] font-semibold">{atual.pessoaNome} — {ROTULO_VINCULO[atual.tipo]}</h2>
-                <Link to={`/unidades/${atual.unidadeId}`} className="mt-1 block font-mono text-[22px] font-semibold !text-[#0B3F49] hover:underline">{rotulo(atual.unidadeId)}</Link>
+                <Link to={`/unidades/${atual.unidadeId}`} className="mt-1 flex min-h-[44px] items-center font-mono text-[22px] font-semibold !text-[#0B3F49] hover:underline lg:min-h-0">{rotulo(atual.unidadeId)}</Link>
               </div>
               {(atual.status === 'pendente' || atual.status === 'legado') && (
                 <Badge tom={conferido ? 'verde' : 'ambar'} tamanho="sm">{conferido ? 'Comprovante conferido' : 'Comprovante não conferido'}</Badge>
               )}
             </div>
 
-            <div className="grid grid-cols-4 gap-[14px]">
+            <div className="grid grid-cols-2 gap-[14px] md:grid-cols-4">
               <div className="flex flex-col gap-0.5"><span className={rot}>CPF</span><span className="font-mono">{atual.pessoaDocumento}</span></div>
               <div className="flex flex-col gap-0.5"><span className={rot}>Vigência</span><span>{atual.vigenciaInicio ? fmtData(atual.vigenciaInicio) : '—'} a {atual.vigenciaFim ? fmtData(atual.vigenciaFim) : 'indeterminada'}</span></div>
               <div className="flex flex-col gap-0.5"><span className={rot}>Solicitado em</span><span>{fmtDataHora(atual.solicitadoEm)}</span></div>
               <div className="flex flex-col gap-0.5"><span className={rot}>Solicitado por</span><span>{atual.solicitadoPor}</span></div>
             </div>
 
-            <div className="grid grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
               <ConferenciaComprovanteBloco key={atual.id} vinculo={atual} podeRegistrar={podeDecidir && (atual.status === 'pendente' || atual.status === 'legado')}
                 onRegistrado={recarregar} />
 
@@ -164,16 +164,16 @@ export function VinculosPage() {
                         </label>
                         <span className="text-[13px] text-[#56616B]">{just.trim().length} caracteres</span>
                         {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
-                        <div className="flex gap-[10px]">
-                          <Button variante="perigo" grande className="flex-1" disabled={!justOk} carregando={salvando} onClick={() => void decidir('rejeitar')}>Confirmar rejeição</Button>
+                        <div className="flex flex-col gap-[10px] sm:flex-row">
+                          <Button variante="perigo" grande className="sm:flex-1" disabled={!justOk} carregando={salvando} onClick={() => void decidir('rejeitar')}>Confirmar rejeição</Button>
                           <Button grande onClick={() => { setRejeitando(false); setJust(''); setErro(''); }}>Cancelar</Button>
                         </div>
                       </div>
                     ) : (
                       <div className="flex flex-col gap-2">
-                        <div className="flex gap-[10px]">
-                          <Button variante="primario" grande className="flex-1" disabled={!atual.pessoaCadastroCompleto || !conferido} onClick={() => void decidir('aprovar')} carregando={salvando}>Aprovar</Button>
-                          <button type="button" onClick={() => setRejeitando(true)} className="h-12 flex-1 rounded-lg border-2 border-[#B42318] bg-white font-semibold text-[#B42318] hover:bg-[#FEF3F2]">Rejeitar</button>
+                        <div className="flex flex-col gap-[10px] sm:flex-row">
+                          <Button variante="primario" grande className="sm:flex-1" disabled={!atual.pessoaCadastroCompleto || !conferido} onClick={() => void decidir('aprovar')} carregando={salvando}>Aprovar</Button>
+                          <button type="button" onClick={() => setRejeitando(true)} className="h-12 sm:flex-1 rounded-lg border-2 border-[#B42318] bg-white font-semibold text-[#B42318] hover:bg-[#FEF3F2]">Rejeitar</button>
                         </div>
                         {erro && <span role="alert" className="text-[14px] font-medium text-[#B42318]">{erro}</span>}
                       </div>
@@ -194,8 +194,8 @@ export function VinculosPage() {
                     )}
                     {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
                     {podeDecidir && (
-                      <div className="flex gap-[10px]">
-                        <Button variante="primario" grande className="flex-1" disabled={!conferido} carregando={salvando} onClick={() => void regularizar()}>Regularizar</Button>
+                      <div className="flex flex-col gap-[10px] sm:flex-row">
+                        <Button variante="primario" grande className="sm:flex-1" disabled={!conferido} carregando={salvando} onClick={() => void regularizar()}>Regularizar</Button>
                         <Button grande onClick={() => setFicha(atual.pessoaId)}>Abrir ficha / completar cadastro</Button>
                       </div>
                     )}
@@ -227,8 +227,8 @@ export function VinculosPage() {
                         <span className="text-[13px] font-normal text-[#56616B]">Em branco: hoje, ou o fim da vigência se ele já passou. Não pode ser futura.</span>
                       </label>
                       {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
-                      <div className="flex gap-[10px]">
-                        <Button variante="perigo" className="flex-1" disabled={!motivoOk} carregando={salvando} onClick={() => void encerrar()}>Confirmar encerramento</Button>
+                      <div className="flex flex-col gap-[10px] sm:flex-row">
+                        <Button variante="perigo" className="sm:flex-1" disabled={!motivoOk} carregando={salvando} onClick={() => void encerrar()}>Confirmar encerramento</Button>
                         <Button onClick={() => { setEncerrando(false); setErro(''); }}>Cancelar</Button>
                       </div>
                     </div>
@@ -292,11 +292,11 @@ function ConferenciaComprovanteBloco({ vinculo, podeRegistrar, onRegistrado }: {
             <Check className="mt-0.5 h-[18px] w-[18px] shrink-0" strokeWidth={2.6} aria-hidden />
             <span className="font-semibold">Comprovante conferido</span>
           </div>
-          <div className="grid grid-cols-2 gap-[10px]">
+          <div className="grid grid-cols-1 gap-[10px] sm:grid-cols-2">
             <div className="flex flex-col gap-0.5"><span className={rot}>Documento</span><span>{ROTULO_COMPROVANTE[c.tipoDocumento]}{c.descricao ? ` — ${c.descricao}` : ''}</span></div>
             <div className="flex flex-col gap-0.5"><span className={rot}>Data da conferência</span><span>{fmtData(c.data)}</span></div>
             <div className="flex flex-col gap-0.5"><span className={rot}>Conferido por</span><span>{vinculo.conferidoPorNome ?? '—'}</span></div>
-            {c.observacao && <div className="col-span-2 flex flex-col gap-0.5"><span className={rot}>Observação</span><span>{c.observacao}</span></div>}
+            {c.observacao && <div className="sm:col-span-2 flex flex-col gap-0.5"><span className={rot}>Observação</span><span>{c.observacao}</span></div>}
           </div>
           {podeRegistrar && <div><Button pequeno onClick={() => setEditando(true)}>Refazer conferência</Button></div>}
         </div>
@@ -320,12 +320,12 @@ function ConferenciaComprovanteBloco({ vinculo, podeRegistrar, onRegistrado }: {
             <textarea className="input" rows={2} maxLength={MAX_OBSERVACAO_CONFERENCIA} value={observacao} onChange={(e) => setObservacao(e.target.value)}
               placeholder="Ex.: recebido por e-mail; firma reconhecida." />
           </Field>
-          <label className="flex items-center gap-2 text-[14px] font-medium">
+          <label className="flex min-h-[44px] items-center gap-2 text-[14px] font-medium">
             <input type="checkbox" className="h-[18px] w-[18px]" checked={confirmado} onChange={(e) => setConfirmado(e.target.checked)} />
             Conferi o comprovante apresentado
           </label>
           {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
-          <div className="flex gap-[10px]">
+          <div className="flex flex-col gap-[10px] sm:flex-row">
             <Button variante="primario" disabled={!ok} carregando={salvando} onClick={() => void registrar()}>Registrar conferência</Button>
             {c && <Button onClick={() => { setEditando(false); setErro(''); }}>Cancelar</Button>}
           </div>

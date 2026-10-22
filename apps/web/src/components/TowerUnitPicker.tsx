@@ -43,8 +43,8 @@ function rotuloTeclas(agrupamento: string, blocos: string[]): string {
 type Variante = 'entrada' | 'lista' | 'modal';
 const BLOCO_BOTAO: Record<Variante, string> = {
   entrada: 'h-12 w-12 rounded-lg text-[18px]',
-  modal: 'h-11 w-11 rounded-lg text-[17px]',
-  lista: 'h-9 rounded-md text-[15px]',
+  modal: 'h-11 w-11 rounded-lg text-[17px] max-lg:h-[44px] max-lg:w-[44px]',
+  lista: 'h-[44px] rounded-md text-[15px] xl:h-9',
 };
 
 /** Botões dos blocos com unidade ativa (radiogroup; a tecla do bloco, "A" ou "4", o escolhe). */
@@ -58,7 +58,7 @@ export const BotoesBloco = forwardRef<HTMLDivElement, {
   const primeiro = blocos[0];
   return (
     <div ref={ref} role="radiogroup" aria-label={rotulo ?? agrupamento}
-      className={variante === 'lista' ? 'grid grid-cols-9 gap-1' : 'flex flex-wrap gap-2'}
+      className={variante === 'lista' ? 'grid grid-cols-5 gap-1 min-[480px]:grid-cols-9' : 'flex flex-wrap gap-2'}
       onKeyDown={(e) => {
         if (desabilitado || e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
         const b = e.key.toUpperCase();
@@ -92,7 +92,7 @@ export function GradeAndares({ bloco, numero, onEscolher, variante = 'entrada', 
   const andares = andaresDoBloco(lista ?? numerosDoBloco(bloco));
   const colunas = Math.max(1, ...andares.map((a) => a.numeros.length));
   const rotuloLargura = variante === 'entrada' ? '48px' : '42px';
-  const botao = variante === 'entrada' ? 'h-[34px] rounded-md text-[14px]' : variante === 'modal' ? 'h-8 rounded-[5px] text-[13px]' : 'h-8 rounded-[5px] text-[13px]';
+  const botao = variante === 'entrada' ? 'h-[44px] rounded-md text-[14px] lg:h-[34px]' : 'h-[44px] rounded-[5px] text-[13px] lg:h-8';
   return (
     <div role="group" aria-label={`Unidades ${doAgrupamento(agrupamento)} ${bloco}`}
       className={variante === 'modal' ? 'flex flex-col gap-1 max-w-[360px]' : `flex flex-col gap-1 ${variante === 'entrada' ? 'max-w-[420px]' : ''}`}>
@@ -125,7 +125,7 @@ export function UnidadeEscolhida({ id, onAlterar, grande = true }: { id: string;
   return (
     <div className={`flex items-center justify-between gap-4 rounded-[10px] border-2 border-[#0B5563] bg-[#F0F8F9] ${grande ? 'px-[18px] py-[14px]' : 'px-4 py-3'}`} aria-live="polite">
       <UnitTag id={id} tamanho={grande ? 'xl' : 'lg'} />
-      <button type="button" onClick={onAlterar} className="h-10 rounded-lg border border-[#B9C3CA] bg-white px-[14px] text-[14px] hover:bg-[#EEF2F4]">Alterar</button>
+      <button type="button" onClick={onAlterar} className="h-[44px] rounded-lg border border-[#B9C3CA] bg-white px-[14px] text-[14px] hover:bg-[#EEF2F4] lg:h-10">Alterar</button>
     </div>
   );
 }
@@ -188,11 +188,11 @@ export const TowerUnitPicker = forwardRef<TowerUnitPickerHandle, {
           <span className={`${rotulo} pt-1.5`}>Unidade</span>
           <div className="flex min-w-0 flex-1 flex-col gap-3">
             <GradeAndares bloco={bloco} numero={numero} onEscolher={escolherUnidade} variante={variante} desabilitado={desabilitado} />
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <label htmlFor="campo-unidade" className="text-[13px] text-[#56616B]">
                 Ou digite o apartamento{numeros.length > 0 && numeros.length <= 6 ? ` (${numeros[0]} a ${numeros[numeros.length - 1]})` : ''}
               </label>
-              <input ref={unidadeRef} id="campo-unidade" className="input !h-9 !w-[88px] font-mono" inputMode="numeric" maxLength={maxDigitos} autoComplete="off"
+              <input ref={unidadeRef} id="campo-unidade" className="input !h-[44px] !w-[88px] lg:!h-9 font-mono" inputMode="numeric" maxLength={maxDigitos} autoComplete="off"
                 disabled={desabilitado} placeholder="ex.: 32" value={digitado}
                 onChange={(e) => {
                   const v = e.target.value.replace(/\D/g, '').slice(0, maxDigitos);

@@ -65,9 +65,9 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
       {ficha.error && <Alert tom="vermelho" role="alert">{mensagemErro(ficha.error)}</Alert>}
       {f && (
         <div className="flex flex-col gap-5">
-          <div className="flex items-center gap-[14px]">
+          <div className="flex flex-wrap items-center gap-[14px]">
             <Avatar nome={f.pessoa.nome} tamanho={44} />
-            <div className="flex-1">
+            <div className="min-w-0 flex-1">
               <p className="text-[18px] font-semibold">{f.pessoa.nome}</p>
               <p className="text-[14px] text-[#33424B]"><span className="font-mono">{f.pessoa.documentoMascarado}</span>{f.pessoa.telefone ? <> · {formatarTelefone(f.pessoa.telefone)}</> : f.pessoa.telefoneMascarado ? <> · {f.pessoa.telefoneMascarado}</> : null}{f.pessoa.empresa && <> · {f.pessoa.empresa}{f.pessoa.servico ? ` (${f.pessoa.servico})` : ''}</>}</p>
             </div>
@@ -91,7 +91,7 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
               <p className="font-semibold">Anonimizar {f.pessoa.nome}? Nome, CPF, telefone, empresa e serviço serão removidos, e a trilha de alterações dessa pessoa será redigida. Não há como desfazer.</p>
               <p className="text-[14px]">Ficam retidos os eventos de acesso (só pelo id) até completar 3 anos, por exercício regular de direitos. Pessoa com vínculo válido não pode ser anonimizada.</p>
               {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
-              <div className="flex gap-[10px]"><Button variante="perigo" onClick={() => void anonimizar()}>Confirmar anonimização</Button><Button onClick={() => setAnonimizando(false)}>Cancelar</Button></div>
+              <div className="flex flex-wrap gap-[10px]"><Button variante="perigo" onClick={() => void anonimizar()}>Confirmar anonimização</Button><Button onClick={() => setAnonimizando(false)}>Cancelar</Button></div>
             </div>
           )}
           {editando && <EditarCadastro pessoa={f.pessoa} onCancelar={() => setEditando(false)}
@@ -102,7 +102,7 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
             {f.vinculos.length === 0 ? <p className="text-[#56616B]">Sem vínculos.</p> : (
               <div className="rounded-[10px] border border-[#DCE1E5]">
                 {f.vinculos.map((v) => (
-                  <div key={v.id} className="grid min-h-12 grid-cols-[100px_minmax(0,1fr)_120px] items-center gap-3 border-b border-[#EEF1F3] px-4 py-2 last:border-b-0">
+                  <div key={v.id} className="grid min-h-12 grid-cols-1 gap-1 sm:grid-cols-[100px_minmax(0,1fr)_120px] sm:items-center sm:gap-3 border-b border-[#EEF1F3] px-4 py-2 last:border-b-0">
                     <span className="font-mono font-semibold">{v.unidadeCodigo}</span><span className="text-[14px]">{ROTULO_VINCULO[v.tipo]}</span><SeloVinculo status={v.status} />
                   </div>
                 ))}
@@ -118,7 +118,7 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
             ) : f.eventos.length === 0 ? <p className="text-[#56616B]">Sem acessos registrados.</p> : (
               <div className="rounded-[10px] border border-[#DCE1E5]" title={`Atualizado em ${fmtDataHora(agora())}`}>
                 {f.eventos.map((e) => (
-                  <div key={e.id} className="grid min-h-12 grid-cols-[110px_120px_minmax(0,1fr)] items-center gap-3 border-b border-[#EEF1F3] px-4 py-2 last:border-b-0">
+                  <div key={e.id} className="grid min-h-12 grid-cols-1 gap-1 sm:grid-cols-[110px_120px_minmax(0,1fr)] sm:items-center sm:gap-3 border-b border-[#EEF1F3] px-4 py-2 last:border-b-0">
                     <span className="font-mono text-[14px]">{quandoCurto(e.ocorridoEm, agora())}</span>
                     <span className="truncate font-mono font-semibold">{e.unidadeRotulo ?? '—'}</span>
                     <span className="flex min-w-0 items-center gap-2"><Badge tom={chipDoEvento(e).tom} icone={chipDoEvento(e).icone}>{chipDoEvento(e).texto}</Badge><span className="truncate text-[14px]">{textoAutorizacao(e)}</span></span>
@@ -155,8 +155,8 @@ function EditarCadastro({ pessoa, onCancelar, onSalvo }: { pessoa: Pessoa; onCan
     } catch (err) { setErro(mensagemErro(err)); }
   }
   return (
-    <form onSubmit={salvar} aria-label="Editar cadastro" className="grid grid-cols-2 gap-[14px] rounded-[10px] border border-[#DCE1E5] p-4">
-      <Field label="Nome completo" className="col-span-2"><input className="input" autoFocus value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
+    <form onSubmit={salvar} aria-label="Editar cadastro" className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 rounded-[10px] border border-[#DCE1E5] p-4">
+      <Field label="Nome completo" className="sm:col-span-2"><input className="input" autoFocus value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
       <Field label={pessoa.semCpf ? 'CPF (informar tira a pessoa de “sem CPF”)' : 'Novo CPF (só para corrigir)'} dica={`Atual: ${pessoa.documentoMascarado}. O número não é guardado.`}>
         <input className="input font-mono" inputMode="numeric" placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(e.target.value)} />
       </Field>
@@ -167,8 +167,8 @@ function EditarCadastro({ pessoa, onCancelar, onSalvo }: { pessoa: Pessoa; onCan
           <Field label="Serviço"><input className="input" value={servico} onChange={(e) => setServico(e.target.value)} /></Field>
         </>
       )}
-      {erro && <Alert tom="vermelho" role="alert" className="col-span-2">{erro}</Alert>}
-      <div className="col-span-2 flex gap-[10px]"><Button type="submit" variante="primario">Salvar correção</Button><Button onClick={onCancelar}>Cancelar</Button></div>
+      {erro && <Alert tom="vermelho" role="alert" className="sm:col-span-2">{erro}</Alert>}
+      <div className="flex flex-wrap gap-[10px] sm:col-span-2"><Button type="submit" variante="primario">Salvar correção</Button><Button onClick={onCancelar}>Cancelar</Button></div>
     </form>
   );
 }

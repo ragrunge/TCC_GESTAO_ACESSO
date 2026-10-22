@@ -73,15 +73,15 @@ export function CadastroPage() {
     <div className="flex flex-col gap-5">
       <PageHeader titulo="Pessoas" descricao="Moradores com vínculo e pessoas cadastradas na portaria. Clique para abrir a ficha da pessoa."
         acoes={podeCriar && <Button variante="primario" onClick={() => setNovo(true)}>Nova pessoa</Button>} />
-      <div className="flex items-end gap-3">
-        <Field label="Buscar por nome, documento ou unidade" className="w-96"><input className="input" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="Buscar por nome, documento ou unidade" className="w-full sm:w-96"><input className="input" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
         <Field label="Tipo"><select className="input" value={cat} onChange={(e) => setCat(e.target.value as typeof cat)}>
           <option value="todas">Todos</option>{(Object.keys(ROTULO_CATEGORIA) as CategoriaPessoa[]).map((c) => <option key={c} value={c}>{ROTULO_CATEGORIA[c]}</option>)}
         </select></Field>
         <p className="pb-2.5 text-[14px] text-[#56616B]" aria-live="polite">{contagem}</p>
       </div>
       {erro && <Alert tom="vermelho" role="alert">{mensagemErro(erro)}</Alert>}
-      <Lista legenda="Pessoas cadastradas" colunas={COLUNAS}>
+      <Lista legenda="Pessoas cadastradas" colunas={COLUNAS} empilhar>
         <ListaCab rotulos={['Nome', 'Vínculo ou tipo', 'Unidade', 'Status']} />
         {linhas.map((p) => {
           const l = linhaDe(p);
@@ -118,8 +118,8 @@ function NovaPessoaModal({ onClose, onFeito }: { onClose: () => void; onFeito: (
   return (
     <Modal titulo="Nova pessoa" largura={560} gap={14} onClose={onClose}
       rodape={<><Button type="submit" form="f-pessoa" variante="primario" grande className="flex-1">Cadastrar</Button><Button grande onClick={onClose}>Cancelar</Button></>}>
-      <form id="f-pessoa" onSubmit={salvar} className="grid grid-cols-2 gap-[14px]">
-        <Field label="Nome completo" className="col-span-2"><input data-autofocus className="input" value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} /></Field>
+      <form id="f-pessoa" onSubmit={salvar} className="grid grid-cols-1 gap-[14px] sm:grid-cols-2">
+        <Field label="Nome completo" className="sm:col-span-2"><input data-autofocus className="input" value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} /></Field>
         <Field label="CPF" dica="Só o CPF é aceito. Fica guardado mascarado, com um hash para busca.">
           <input className="input font-mono" inputMode="numeric" placeholder="000.000.000-00" disabled={f.semCpf} required={!f.semCpf} value={f.documento ?? ''} onChange={(e) => setF({ ...f, documento: e.target.value })} />
         </Field>
@@ -127,13 +127,13 @@ function NovaPessoaModal({ onClose, onFeito }: { onClose: () => void; onFeito: (
         <Field label="Tipo"><select className="input" value={f.categoria} onChange={(e) => setF({ ...f, categoria: e.target.value as CategoriaPessoa, semCpf: e.target.value === 'morador' ? false : f.semCpf })}><option value="morador">Morador</option><option value="visitante">Visitante</option><option value="prestador">Prestador</option></select></Field>
         {f.categoria === 'prestador' && <><Field label="Empresa"><input className="input" value={f.empresa ?? ''} onChange={(e) => setF({ ...f, empresa: e.target.value })} /></Field><Field label="Serviço"><input className="input" value={f.servico ?? ''} onChange={(e) => setF({ ...f, servico: e.target.value })} /></Field></>}
         {f.categoria !== 'morador' && (
-          <label className="col-span-2 flex cursor-pointer items-start gap-3 rounded-lg border border-[#B9C3CA] p-3">
+          <label className="sm:col-span-2 flex cursor-pointer items-start gap-3 rounded-lg border border-[#B9C3CA] p-3">
             <input type="checkbox" className="mt-1" checked={!!f.semCpf} onChange={(e) => setF({ ...f, semCpf: e.target.checked, documento: '' })} />
             <span><span className="font-medium">Pessoa sem CPF</span><span className="block text-[13px] text-[#56616B]">Exceção: só entra por exceção do porteiro, com justificativa. Nome e telefone continuam obrigatórios.</span></span>
           </label>
         )}
-        <div className="col-span-2 rounded-lg bg-[#E3F0F2] px-3 py-[10px] text-[14px] text-[#0B4450]">Morador cadastrado aqui ainda não tem acesso: peça o vínculo na tela da unidade. Foto é opcional e a recusa não impede o cadastro (RN-10).</div>
-        {erro && <Alert tom="vermelho" role="alert" className="col-span-2">{erro}</Alert>}
+        <div className="sm:col-span-2 rounded-lg bg-[#E3F0F2] px-3 py-[10px] text-[14px] text-[#0B4450]">Morador cadastrado aqui ainda não tem acesso: peça o vínculo na tela da unidade. Foto é opcional e a recusa não impede o cadastro (RN-10).</div>
+        {erro && <Alert tom="vermelho" role="alert" className="sm:col-span-2">{erro}</Alert>}
       </form>
     </Modal>
   );

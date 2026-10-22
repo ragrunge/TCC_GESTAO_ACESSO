@@ -42,7 +42,12 @@ export function paraApiError(err: unknown): ApiError {
   if (err instanceof ApiError) return err;
   if (!axios.isAxiosError(err)) return new ApiError(0, 'ERRO_DESCONHECIDO', 'Erro inesperado.');
   const r = err.response;
-  if (!r) return new ApiError(0, 'FALHA_DE_REDE', 'Não foi possível falar com o servidor. Verifique a conexão e tente novamente.');
+  if (!r) {
+    const semRede = typeof navigator !== 'undefined' && navigator.onLine === false;
+    return new ApiError(0, 'FALHA_DE_REDE', semRede
+      ? 'Sem conexão — o sistema precisa de internet para registrar.'
+      : 'Não foi possível falar com o servidor. Verifique a conexão e tente novamente.');
+  }
   const corpo = (r.data && typeof r.data === 'object' ? r.data : {}) as { code?: unknown; message?: unknown; details?: unknown };
   const codigo = typeof corpo.code === 'string' ? corpo.code : `HTTP_${r.status}`;
   let mensagem = typeof corpo.message === 'string' && corpo.message ? corpo.message : mensagemPorStatus(r.status);

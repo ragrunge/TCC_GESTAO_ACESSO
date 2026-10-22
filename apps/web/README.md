@@ -148,7 +148,8 @@ numéricas: a torre N virou a N-ésima letra (T4-32 -> D-32), e os números que 
 - A exportação `.jsonl` não é assinada: é um "arquivo de hashes para verificação"; a âncora externa é o selo diário (spec 4.6).
 - Importação lê **CSV** e **.xlsx** (primeira planilha; biblioteca `read-excel-file`).
 - Sem notificação à unidade e sem integração com hardware.
-- Layout para desktop (≥ 1280 px); sem versão mobile.
+- Responsivo a partir de 360 px (mobile-first, breakpoints do Tailwind). Abaixo de `lg` (1024 px) o menu vira gaveta. Tabelas administrativas (histórico, relatórios, importação, usuários em tablet) rolam na horizontal dentro do cartão; listas operacionais (encomendas, ocorrências, pessoas no condomínio, usuários, pessoas, funcionários) viram cartões no celular (`<Lista empilhar>`). Atalhos F2/F3/F4 só existem com teclado.
+- PWA instalável (`vite-plugin-pwa` 1.3.0, `registerType: 'prompt'`): o service worker guarda **só o shell do build**. Nada de `/api` no cache (LGPD; a trilha é append-only) e não há fila offline: sem rede o sistema avisa "Sem conexão" e não registra. Versão nova: aviso "Nova versão disponível — Atualizar". O manifest é `public/site.webmanifest`; os ícones maskable saem de `public/favicon.svg` (ver `icon-maskable-*.png`). O SW só existe no build (`npm run build && npm run preview`), não no `npm run dev`.
 
 ## Decisões e desvios da spec
 

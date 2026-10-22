@@ -6,7 +6,7 @@ export interface Aba<T extends string> { id: T; rotulo: ReactNode }
 export function Tabs<T extends string>({ abas, ativa, onChange, rotulo }: { abas: Aba<T>[]; ativa: T; onChange: (id: T) => void; rotulo: string }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   return (
-    <div role="tablist" aria-label={rotulo} className="flex gap-1 border-b border-[#E6EAED] px-4">
+    <div role="tablist" aria-label={rotulo} className="flex gap-1 overflow-x-auto border-b border-[#E6EAED] px-2 sm:px-4">
       {abas.map((a, i) => (
         <button
           key={a.id}
@@ -22,7 +22,7 @@ export function Tabs<T extends string>({ abas, ativa, onChange, rotulo }: { abas
             onChange(abas[prox].id);
             refs.current[prox]?.focus();
           }}
-          className={`h-[48px] border-b-[3px] px-[14px] font-semibold ${a.id === ativa ? 'border-[#0B5563] text-[#0B5563]' : 'border-transparent text-[#56616B] hover:text-ink'}`}
+          className={`h-[48px] shrink-0 whitespace-nowrap border-b-[3px] px-[14px] font-semibold ${a.id === ativa ? 'border-[#0B5563] text-[#0B5563]' : 'border-transparent text-[#56616B] hover:text-ink'}`}
         >
           {a.rotulo}
         </button>

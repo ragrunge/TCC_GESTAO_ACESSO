@@ -117,7 +117,7 @@ export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onC
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-[14px]">
+      <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2">
         <div className="flex flex-col gap-0.5"><span className={rot}>Registrado por</span><span className="font-semibold">{ev.operadorNome}</span></div>
         <div className="flex flex-col gap-0.5"><span className={rot}>Autorizado por</span><span className="font-semibold">{textoAutorizacao(ev)}</span></div>
         <div className="flex flex-col gap-0.5"><span className={rot}>Meio de autorização</span><span className="font-medium">{textoMeioLongo(ev)}</span></div>
@@ -128,7 +128,7 @@ export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onC
       {ev.valoresOriginais && ev.correcao && (
         <div className="flex flex-col gap-2 rounded-lg border border-[#A9D2D8] bg-[#E3F0F2] px-[14px] py-3 text-[14px] text-[#0B4450]">
           <div className="font-semibold">Corrigido por {ev.correcao.operadorNome} ({ev.correcao.codigo}). Os valores acima já são os corrigidos; o registro original permanece inalterado.</div>
-          <table className="w-full text-left">
+          <table className="w-full break-words text-left">
             <thead><tr className="text-[13px] text-[#56616B]"><th className="font-semibold">Campo</th><th className="font-semibold">Original</th><th className="font-semibold">Corrigido</th></tr></thead>
             <tbody>
               {linhasCorrecao(ev, catalogo.codigo).map(([campo, antes, depois]) => <tr key={campo}><td className="pr-2 align-top">{campo}</td><td className="pr-2 align-top line-through">{antes}</td><td className="align-top font-semibold">{depois}</td></tr>)}
@@ -174,7 +174,7 @@ export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onC
             <fieldset className="flex flex-col gap-3 rounded-lg border border-dashed border-[#C5CDD3] p-3">
               <legend className="px-1 text-[13px] font-medium text-[#56616B]">Valores corretos (preencha só o que mudou)</legend>
               <Field label="Unidade de destino"><input className="input font-mono" placeholder="D-32" value={vUnidade} onChange={(e) => setVUnidade(e.target.value)} /></Field>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Data real"><input type="date" className="input" value={vData} onChange={(e) => setVData(e.target.value)} /></Field>
                 <Field label="Hora real"><input type="time" className="input" value={vHora} onChange={(e) => setVHora(e.target.value)} /></Field>
               </div>
@@ -182,7 +182,7 @@ export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onC
               {ev.autorizadoPorTipo && <PessoaPicker rotulo="Quem autorizou (pessoa correta)" valor={vAutorizador} onChange={setVAutorizador} />}
             </fieldset>
             {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
-            <div className="flex gap-[10px]"><Button variante="primario" disabled={!justificativaValida(just)} onClick={() => void corrigir()}>Gravar correção</Button><Button onClick={() => setCorrigindo(false)}>Cancelar</Button></div>
+            <div className="flex flex-wrap gap-[10px]"><Button variante="primario" disabled={!justificativaValida(just)} onClick={() => void corrigir()}>Gravar correção</Button><Button onClick={() => setCorrigindo(false)}>Cancelar</Button></div>
           </div>
         ) : <Button pequeno className="self-start" onClick={() => setCorrigindo(true)}>Registrar correção…</Button>
       )}

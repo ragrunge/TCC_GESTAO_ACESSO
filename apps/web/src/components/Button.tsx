@@ -29,7 +29,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   { variante = 'secundario', icone: Icone, atalho, carregando, grande, pequeno, className = '', children, disabled, type = 'button', ...resto }, ref,
 ) {
-  const tamanho = grande ? 'h-[48px] px-[18px] text-[15px]' : pequeno ? 'h-[40px] px-[14px] text-[14px]' : 'h-[44px] px-[18px] text-[15px]';
+  const tamanho = grande ? 'h-[48px] px-[18px] text-[15px]' : pequeno ? 'h-[44px] px-[14px] text-[14px] lg:h-[40px]' : 'h-[44px] px-[18px] text-[15px]';
   const bloqueado = disabled || carregando;
   return (
     <button

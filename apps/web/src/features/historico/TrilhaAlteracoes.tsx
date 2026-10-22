@@ -35,9 +35,9 @@ export function TrilhaAlteracoes() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-end gap-3 rounded-[10px] border border-[#DCE1E5] bg-white px-5 py-4">
+      <div className="flex flex-wrap items-end gap-3 rounded-[10px] border border-[#DCE1E5] bg-white px-4 py-4 sm:px-5">
         <label className="flex flex-col gap-1 text-[13px] font-medium">Ação
-          <select className="input !h-10 !px-[10px] !text-[14px]" value={acao} onChange={(e) => setAcao(e.target.value)}>
+          <select className="input !h-[44px] !px-[10px] !text-[14px] lg:!h-10" value={acao} onChange={(e) => setAcao(e.target.value)}>
             <option value="">Todas</option>{acoes.map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
         </label>

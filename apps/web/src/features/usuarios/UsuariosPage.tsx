@@ -49,7 +49,7 @@ export function UsuariosPage() {
     setRedefinir(null);
     void executar(() => acoes.redefinirAcesso.mutateAsync(u.id));
   }
-  const botao = 'h-10 rounded-lg border px-3 text-[14px] bg-white';
+  const botao = 'h-[44px] rounded-lg lg:h-10 border px-3 text-[14px] bg-white';
 
   return (
     <div className="flex flex-col gap-5">
@@ -59,14 +59,14 @@ export function UsuariosPage() {
         </>} />
       {lista.error && <Alert tom="vermelho" role="alert">{mensagemErro(lista.error)}</Alert>}
       {lista.isPending && podeGerenciar && <p className="text-[14px] text-[#56616B]">Carregando usuários…</p>}
-      <Lista legenda="Operadores do sistema" colunas={COLUNAS}>
+      <Lista legenda="Operadores do sistema" colunas={COLUNAS} empilhar>
         <ListaCab rotulos={['Nome', 'Perfil', 'Status', 'Último acesso', 'Ações']} />
         {(lista.data ?? []).map((u) => (
           <ListaLinha key={u.id} minH={56} padY={8}>
             <Cel className="flex flex-col"><span className="font-medium">{u.nome}{u.id === eu?.id && <span className="ml-2 text-[12px] font-normal text-[#56616B]">(você)</span>}</span><span className="font-mono text-[13px] text-[#56616B]">{u.login}</span>
               {(() => { const a = avisoSenhaTemporaria(u, agora); return a && <span className={`text-[13px] font-medium ${a.vencida ? 'text-[#B42318]' : 'text-[#B54708]'}`}>{a.texto}</span>; })()}</Cel>
             <Cel className="text-[14px]">{u.id === eu?.id || (u.papel === 'sindico' && !gerenciaSindico) ? ROTULO_PAPEL[u.papel] : (
-              <select aria-label={`Papel de ${u.nome}`} className="h-10 rounded-lg border border-[#B9C3CA] bg-white px-2 text-[14px]" value={u.papel}
+              <select aria-label={`Papel de ${u.nome}`} className="h-[44px] max-w-full rounded-lg border border-[#B9C3CA] bg-white px-2 text-[14px] lg:h-10" value={u.papel}
                 disabled={acoes.alterarPapel.isPending}
                 onChange={(e) => { const p = e.target.value as Papel; void executar(() => acoes.alterarPapel.mutateAsync({ id: u.id, papel: p }), `${u.nome} agora é ${ROTULO_PAPEL[p]}.`); }}>
                 {papeisPermitidos.map((p) => <option key={p} value={p}>{ROTULO_PAPEL[p]}</option>)}
@@ -74,7 +74,7 @@ export function UsuariosPage() {
             )}</Cel>
             <Cel><Badge tom={u.ativo ? 'verde' : 'neutro'}>{u.ativo ? 'Ativo' : 'Inativo'}</Badge></Cel>
             <Cel className="text-[14px]">{u.id === eu?.id ? 'Agora (sessão atual)' : u.ultimoAcesso ? fmtDataHora(u.ultimoAcesso) : 'Nunca'}</Cel>
-            <Cel className="flex gap-2">
+            <Cel className="col-span-2 flex flex-wrap gap-2 md:col-span-1">
               {u.papel === 'sindico' && !gerenciaSindico ? <span className="self-center text-[13px] text-[#56616B]">Só o síndico gerencia</span> : <>
               {/* A própria senha se troca informando a atual; a API recusa redefinir a si mesmo (AUTO_REDEFINICAO). */}
               {u.ativo && u.id === eu?.id && <Link to="/trocar-senha" className={`${botao} inline-flex items-center border-[#B9C3CA] hover:bg-[#EEF2F4]`}>Trocar minha senha</Link>}
@@ -138,7 +138,7 @@ function NovoUsuarioModal({ onClose, onSalvar }: { onClose: () => void; onSalvar
           <div role="radiogroup" aria-labelledby="rot-perfil" className="flex flex-wrap gap-1.5">
             {(Object.keys(ROTULO_PAPEL) as Papel[]).filter((p) => p !== 'sindico' || gerenciaSindico).map((p) => (
               <button key={p} type="button" role="radio" aria-checked={f.papel === p} onClick={() => setF({ ...f, papel: p })}
-                className={`h-10 rounded-full border px-[14px] text-[14px] ${f.papel === p ? 'border-[#0B5563] bg-[#0B5563] text-white' : 'border-[#B9C3CA] bg-white text-ink hover:bg-[#EEF2F4]'}`}>{ROTULO_PAPEL[p]}</button>
+                className={`h-[44px] rounded-full border px-[14px] text-[14px] lg:h-10 ${f.papel === p ? 'border-[#0B5563] bg-[#0B5563] text-white' : 'border-[#B9C3CA] bg-white text-ink hover:bg-[#EEF2F4]'}`}>{ROTULO_PAPEL[p]}</button>
             ))}
           </div>
         </div>
@@ -175,8 +175,8 @@ function SenhaTemporariaModal({ senha, onClose }: { senha: SenhaExibida; onClose
       </div>
       <div className="flex flex-col gap-1.5">
         <span id="rot-senha-temp" className="text-[14px] font-medium">Senha temporária</span>
-        <div className="flex items-center gap-2">
-          <output aria-labelledby="rot-senha-temp" className="flex-1 select-all rounded-lg border border-[#B9C3CA] bg-[#F6F8F9] px-[14px] py-[10px] font-mono text-[18px] tracking-[0.04em]">
+        <div className="flex flex-wrap items-center gap-2">
+          <output aria-labelledby="rot-senha-temp" className="min-w-0 flex-1 select-all break-all rounded-lg border border-[#B9C3CA] bg-[#F6F8F9] px-[14px] py-[10px] font-mono text-[18px] tracking-[0.04em]">
             {senha.senhaTemporaria}
           </output>
           <Button onClick={() => void copiar(senha.senhaTemporaria, 'senha')}><Copy className="mr-1.5 inline h-4 w-4" aria-hidden />{copiado === 'senha' ? 'Copiada' : 'Copiar'}</Button>

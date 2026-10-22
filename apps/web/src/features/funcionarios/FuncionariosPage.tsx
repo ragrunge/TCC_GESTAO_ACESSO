@@ -35,7 +35,7 @@ export function FuncionariosPage() {
       <PageHeader titulo="Funcionários" descricao="Funcionários do condomínio entram por Escala, só nos dias e horários cadastrados. Turno que atravessa a meia-noite vale no dia do início."
         acoes={podeGerenciar && <Button variante="primario" onClick={() => setNovo(true)}>Novo funcionário</Button>} />
       {lista.error && <Alert tom="vermelho" role="alert">{mensagemErro(lista.error)}</Alert>}
-      <Lista legenda="Funcionários do condomínio" colunas={COLUNAS}>
+      <Lista legenda="Funcionários do condomínio" colunas={COLUNAS} empilhar>
         <ListaCab rotulos={['Nome', 'Função', 'Escala', 'Situação', '']} />
         {dados.map((f) => (
           <ListaLinha key={f.pessoaId} minH={56} padY={8}>
@@ -46,7 +46,7 @@ export function FuncionariosPage() {
               <Badge tom={f.ativo ? 'verde' : 'neutro'} tamanho="sm">{f.ativo ? 'Ativo' : 'Inativo'}</Badge>
               {f.ativo && f.emEscalaAgora && <Badge tom="petroleo" tamanho="sm">Em escala agora</Badge>}
             </Cel>
-            <Cel>{podeGerenciar && <Button pequeno aria-label={`Editar ${f.pessoa.nome}`} onClick={() => setEditando(f)}>Editar</Button>}</Cel>
+            <Cel className="col-span-2 md:col-span-1">{podeGerenciar && <Button pequeno aria-label={`Editar ${f.pessoa.nome}`} onClick={() => setEditando(f)}>Editar</Button>}</Cel>
           </ListaLinha>
         ))}
         {!lista.isLoading && dados.length === 0 && <Vazio>Nenhum funcionário cadastrado.</Vazio>}
@@ -80,18 +80,18 @@ function FuncionarioModal({ atual, onClose, onFeito }: { atual?: FuncionarioView
   return (
     <Modal titulo={atual ? `Editar ${atual.pessoa.nome}` : 'Novo funcionário'} largura={640} gap={14} onClose={onClose}
       rodape={<><Button type="submit" form="f-func" variante="primario" grande className="flex-1">{atual ? 'Salvar' : 'Cadastrar funcionário'}</Button><Button grande onClick={onClose}>Cancelar</Button></>}>
-      <form id="f-func" onSubmit={salvar} className="grid grid-cols-2 gap-[14px]">
+      <form id="f-func" onSubmit={salvar} className="grid grid-cols-1 gap-[14px] sm:grid-cols-2">
         {!atual && (
           <>
-            <Field label="Nome completo" className="col-span-2"><input data-autofocus className="input" value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
+            <Field label="Nome completo" className="sm:col-span-2"><input data-autofocus className="input" value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
             <Field label="CPF" dica="Obrigatório; guardado mascarado."><input className="input font-mono" inputMode="numeric" placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(e.target.value)} /></Field>
             <Field label="Telefone"><input className="input" inputMode="tel" placeholder="(11) 9____-____" value={telefone} onChange={(e) => setTelefone(e.target.value)} /></Field>
           </>
         )}
-        <Field label="Função" className="col-span-2"><input {...(atual ? { 'data-autofocus': true } : {})} className="input" value={funcao} onChange={(e) => setFuncao(e.target.value)} placeholder="Zelador, vigia, jardineiro…" /></Field>
-        <fieldset className="col-span-2"><legend className="mb-1.5 text-[14px] font-medium">Dias da escala</legend>
+        <Field label="Função" className="sm:col-span-2"><input {...(atual ? { 'data-autofocus': true } : {})} className="input" value={funcao} onChange={(e) => setFuncao(e.target.value)} placeholder="Zelador, vigia, jardineiro…" /></Field>
+        <fieldset className="sm:col-span-2"><legend className="mb-1.5 text-[14px] font-medium">Dias da escala</legend>
           <div className="flex flex-wrap gap-2">{DIAS_SEMANA_ABREV.map((n, i) => (
-            <label key={n} className={`flex h-10 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-[14px] ${dia(i) ? 'border-[#0B5563] bg-[#E3F0F2]' : 'border-[#B9C3CA] bg-white'}`}>
+            <label key={n} className={`flex h-[44px] cursor-pointer items-center gap-1.5 rounded-full border px-3 lg:h-10 text-[14px] ${dia(i) ? 'border-[#0B5563] bg-[#E3F0F2]' : 'border-[#B9C3CA] bg-white'}`}>
               <input type="checkbox" checked={dia(i)} onChange={(e) => setEscala({ ...escala, diasSemana: e.target.checked ? [...escala.diasSemana, i].sort() : escala.diasSemana.filter((x) => x !== i) })} />{n}
             </label>))}</div>
         </fieldset>
@@ -99,12 +99,12 @@ function FuncionarioModal({ atual, onClose, onFeito }: { atual?: FuncionarioView
         <Field label="Fim do turno" dica={hhmmAtravessaMeiaNoite(escala) ? 'Atravessa a meia-noite: a madrugada conta como o dia do início.' : undefined}>
           <input type="time" className="input" value={escala.horaFim} onChange={(e) => setEscala({ ...escala, horaFim: e.target.value })} />
         </Field>
-        <label className="col-span-2 flex cursor-pointer items-center gap-3 rounded-lg border border-[#B9C3CA] p-3">
+        <label className="sm:col-span-2 flex cursor-pointer items-center gap-3 rounded-lg border border-[#B9C3CA] p-3">
           <input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} />
           <span><span className="font-medium">Ativo</span><span className="block text-[13px] text-[#56616B]">Inativo não entra por escala; o histórico é mantido.</span></span>
         </label>
-        {erroEscala && <Alert tom="ambar" className="col-span-2">{erroEscala}</Alert>}
-        {erro && <Alert tom="vermelho" role="alert" className="col-span-2">{erro}</Alert>}
+        {erroEscala && <Alert tom="ambar" className="sm:col-span-2">{erroEscala}</Alert>}
+        {erro && <Alert tom="vermelho" role="alert" className="sm:col-span-2">{erro}</Alert>}
       </form>
     </Modal>
   );

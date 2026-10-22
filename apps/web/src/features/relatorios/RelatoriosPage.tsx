@@ -11,7 +11,7 @@ import { mensagemErro, useAsync } from '../../app/useAsync';
 import { baixarArquivo } from '../historico/download';
 
 const PETROLEO = '#0B5563';
-const secao = 'flex flex-col gap-3 rounded-[10px] border border-[#DCE1E5] bg-white px-[22px] py-[18px]';
+const secao = 'flex min-w-0 flex-col gap-3 rounded-[10px] border border-[#DCE1E5] bg-white px-4 py-[18px] sm:px-[22px]';
 
 /** Barras horizontais (HTML/CSS). Os valores aparecem como texto, então não dependem de cor. */
 function Barras({ itens, cor, rotuloVazio = 'Sem dados no período.' }: { itens: { rotulo: string; valor: number; cor?: string }[]; cor?: string; rotuloVazio?: string }) {
@@ -20,7 +20,7 @@ function Barras({ itens, cor, rotuloVazio = 'Sem dados no período.' }: { itens:
   return (
     <ul className="flex flex-col gap-3">
       {itens.map((i) => (
-        <li key={i.rotulo} className="grid grid-cols-[170px_minmax(0,1fr)_48px] items-center gap-[10px]">
+        <li key={i.rotulo} className="grid grid-cols-[100px_minmax(0,1fr)_40px] items-center gap-[10px] sm:grid-cols-[170px_minmax(0,1fr)_48px]">
           <span className="truncate text-[14px]">{i.rotulo}</span>
           <span className="h-[14px] rounded-[3px] bg-[#EEF2F4]" aria-hidden><span className="block h-full rounded-[3px]" style={{ width: `${(i.valor / max) * 100}%`, background: i.cor ?? cor ?? PETROLEO }} /></span>
           <span className="text-right font-mono text-[14px]">{i.valor}</span>
@@ -49,7 +49,7 @@ export function RelatoriosPage() {
   const rel = useAsync(() => api.relatorios.resumo(filtro), [JSON.stringify(filtro)]);
   const r = rel.data;
   const campo = 'flex flex-col gap-1 text-[13px] font-medium';
-  const entrada = 'input !h-10 !px-[10px] !text-[14px]';
+  const entrada = 'input !h-[44px] !px-[10px] !text-[14px] lg:!h-10';
   const limpar = () => { setDe(padraoDe()); setAte(toInputDate(agora())); setUnidade(''); setCategoria(''); setMeio(''); };
   async function exportarCsv() {
     try {
@@ -69,7 +69,7 @@ export function RelatoriosPage() {
           <Button variante="contorno" onClick={() => void exportarCsv()}>Exportar CSV</Button>
           <Button variante="primario" onClick={() => window.print()}>Exportar PDF</Button>
         </>} />
-      <form className="grid grid-cols-5 items-end gap-x-4 gap-y-3 rounded-[10px] border border-[#DCE1E5] bg-white px-5 py-4" onSubmit={(e) => e.preventDefault()} aria-label="Filtros do relatório">
+      <form className="grid grid-cols-1 items-end gap-x-4 gap-y-3 rounded-[10px] border border-[#DCE1E5] bg-white px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-3 xl:grid-cols-5" onSubmit={(e) => e.preventDefault()} aria-label="Filtros do relatório">
         <div className={campo}>Período
           <span className="flex gap-1.5">
             <input type="date" aria-label="De" className={`${entrada} min-w-0 flex-1`} value={de} onChange={(e) => setDe(e.target.value)} />
@@ -86,13 +86,13 @@ export function RelatoriosPage() {
         <label className={campo}>Meio de autorização
           <select className={entrada} value={meio} onChange={(e) => setMeio(e.target.value)}><option value="">Todos</option>{(Object.keys(ROTULO_MEIO) as MeioAutorizacao[]).map((m) => <option key={m} value={m}>{ROTULO_MEIO[m]}</option>)}</select>
         </label>
-        <button type="button" onClick={limpar} className="h-10 px-3 text-left text-[14px] font-semibold text-[#0B5563] hover:underline">Limpar filtros</button>
+        <button type="button" onClick={limpar} className="h-[44px] px-3 text-left text-[14px] font-semibold text-[#0B5563] hover:underline lg:h-10">Limpar filtros</button>
       </form>
       {rel.error && <Alert tom="vermelho" role="alert">{rel.error}</Alert>}
       {r && (
         <>
           <section className="rounded-[10px] border border-[#DCE1E5] bg-white px-[22px] py-[18px]">
-            <div className="flex items-baseline justify-between gap-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
               <h2 className="text-[16px] font-semibold">Acessos por dia</h2>
               <span className="text-[14px] text-[#56616B]">{r.totais.entradas} acessos no período · {r.totais.excecoes} exceções · {r.totais.negados} negados · {r.totais.recusados} recusados · {r.totais.retroativos} retroativos · fins de semana em tom claro</span>
             </div>
@@ -105,12 +105,12 @@ export function RelatoriosPage() {
                 })}
               </div>
               <div className="mt-1.5 flex gap-1" aria-hidden>
-                {r.acessosPorDia.map((d, i) => <span key={d.dia} className="flex-1 whitespace-nowrap text-[11px] text-[#56616B]">{r.acessosPorDia.length <= 31 || i % 7 === 0 ? String(partes(d.dia).dia).padStart(2, '0') : ''}</span>)}
+                {r.acessosPorDia.map((d, i) => <span key={d.dia} className={`min-w-0 flex-1 whitespace-nowrap text-[11px] text-[#56616B] ${i % 7 === 0 ? '' : 'hidden sm:block'}`}>{r.acessosPorDia.length <= 31 || i % 7 === 0 ? String(partes(d.dia).dia).padStart(2, '0') : ''}</span>)}
               </div>
               <figcaption className="sr-only">Entradas por dia: {r.acessosPorDia.map((d) => `${fmtDataCurta(d.dia)} ${d.entradas}`).join('; ')}</figcaption>
             </figure>
           </section>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <section className={secao}><h2 className="text-[16px] font-semibold">Acessos por meio de autorização</h2><Barras itens={r.acessosPorMeio.map((m) => ({ rotulo: ROTULO_MEIO_CURTO[m.meio], valor: m.total, cor: m.meio === 'excecao_porteiro' ? '#DC6803' : PETROLEO }))} /></section>
             <section className={secao}><h2 className="text-[16px] font-semibold">Liberações por exceção, por responsável</h2><Barras cor="#DC6803" itens={r.excecoesPorPorteiro.map((e) => ({ rotulo: e.operador, valor: e.total }))} rotuloVazio="Nenhuma exceção no período." /></section>
             <section className={secao}><h2 className="text-[16px] font-semibold">Encomendas pendentes por idade</h2><Barras itens={r.encomendasPorIdade.map((e, i) => ({ rotulo: e.faixa, valor: e.total, cor: cores[i] ?? PETROLEO }))} /></section>

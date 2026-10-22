@@ -18,7 +18,7 @@ import { AutorizacaoEvento, destaqueEvento, quandoCurto } from '../common/evento
 import { EventoGaveta } from '../historico/EventoGaveta';
 
 const COLUNAS = '90px minmax(0,1.5fr) 80px 110px minmax(0,1.8fr) minmax(0,1fr)';
-const TECLA = 'rounded-md border px-[10px] py-[6px] font-mono text-[16px] font-semibold';
+const TECLA = 'hidden rounded-md border px-[10px] py-[6px] font-mono text-[16px] font-semibold lg:block';
 
 export function PainelPage() {
   const api = useApi();
@@ -61,8 +61,8 @@ export function PainelPage() {
     { rotulo: 'Encomendas aguardando', valor: r?.encomendasPendentes, sub: (() => { const n = encs.data?.atrasadas ?? 0; return n > 0 ? `${n} há mais de ${encs.data!.diasAtraso} dias →` : 'Ver encomendas →'; })(), para: '/encomendas' },
     { rotulo: 'Ocorrências abertas', valor: r?.ocorrenciasAbertas, sub: 'Ver ocorrências →', para: '/ocorrencias' },
   ];
-  const cartaoCls = 'flex flex-col gap-1.5 rounded-[10px] border border-[#DCE1E5] bg-white px-5 py-[18px] text-left text-ink hover:border-[#0B5563]';
-  const acaoCls = 'flex h-[112px] items-center justify-between rounded-xl px-7 text-left';
+  const cartaoCls = 'flex flex-col gap-1.5 rounded-[10px] border border-[#DCE1E5] bg-white px-4 py-[14px] text-left text-ink hover:border-[#0B5563] md:px-5 md:py-[18px]';
+  const acaoCls = 'flex h-[88px] items-center justify-between gap-3 rounded-xl px-5 text-left md:h-[112px] md:px-7';
 
   return (
     <div className="flex flex-col gap-6">
@@ -74,7 +74,7 @@ export function PainelPage() {
         </>} />
 
       {podeRegistrar && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
           <Link to="/entrada" className={`${acaoCls} bg-[#0B5563] !text-white hover:bg-[#08434E]`}>
             <span className="flex flex-col gap-1"><span className="text-[22px] font-semibold">Nova entrada</span><span className="text-[14px] text-[#CFE6EA]">Visitante, prestador ou funcionário</span></span>
             <kbd className={`${TECLA} border-white/45`}>F2</kbd>
@@ -94,15 +94,15 @@ export function PainelPage() {
         <div role="region" aria-label="Pendências do síndico" className="flex flex-col gap-2 rounded-lg border border-[#FEC84B] bg-[#FEF0C7] px-4 py-3 text-[#7A2E0E]">
           <div className="font-semibold">Restrições para todo o condomínio aguardando sua aprovação</div>
           {pendentes.data!.map((p) => (
-            <div key={p.id} className="flex items-center gap-3 text-[14px]">
-              <span className="flex-1"><strong>{p.pessoaNome}</strong> · {p.motivo} <span className="text-[13px]">— pedido por {p.solicitadaPorNome}, cadastrada por {p.cadastradaPorNome}</span></span>
+            <div key={p.id} className="flex flex-wrap items-center gap-3 text-[14px]">
+              <span className="min-w-[200px] flex-1"><strong>{p.pessoaNome}</strong> · {p.motivo} <span className="text-[13px]">— pedido por {p.solicitadaPorNome}, cadastrada por {p.cadastradaPorNome}</span></span>
               <Button pequeno variante="primario" onClick={() => aprovar(p.id)}>Aprovar</Button>
             </div>
           ))}
         </div>
       )}
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         {cartoes.map((c) => (
           <Link key={c.rotulo} to={c.para} className={cartaoCls}>
             <span className="text-[14px] text-[#56616B]">{c.rotulo}</span>
@@ -118,7 +118,7 @@ export function PainelPage() {
       </div>
 
       <section className="rounded-[10px] border border-[#DCE1E5] bg-white">
-        <div className="flex items-center justify-between border-b border-[#E6EAED] px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-[#E6EAED] px-4 py-4 md:px-5">
           <h2 className="text-[17px] font-semibold">Últimas movimentações</h2>
           <span className="text-[13px] text-[#56616B]">Clique em uma linha para ver o registro completo</span>
         </div>
@@ -146,7 +146,7 @@ export function PainelPage() {
           rodape={<Button className="ml-auto" data-autofocus onClick={() => setPreviasAbertas(false)}>Fechar</Button>}>
           <div className="flex flex-col">
             {(previas.data ?? []).map((a) => (
-              <div key={a.id} className="grid grid-cols-[minmax(0,1fr)_80px_150px_100px] items-center gap-3 border-b border-[#EEF1F3] py-[10px]">
+              <div key={a.id} className="grid grid-cols-1 gap-1 border-b border-[#EEF1F3] py-[10px] sm:grid-cols-[minmax(0,1fr)_80px_150px_100px] sm:items-center sm:gap-3">
                 <span className="flex flex-col"><span className="font-medium">{a.pessoaNome}</span><span className="text-[13px] text-[#56616B]">Autorizado por {a.solicitadaPorNome}</span></span>
                 <span className="font-mono font-semibold">{a.unidadeRotulo}</span>
                 <span className="text-[14px]">{descreverJanela(a)}</span>
@@ -169,7 +169,7 @@ export function PainelPage() {
             <Button grande onClick={() => setTurno(false)}>Cancelar</Button>
           </>}>
           <p className="text-[#56616B]">Resumo do turno de {usuario!.nome} até {fmtHora(agora)}. Cada operador usa o próprio login: ao confirmar, sua sessão é encerrada.</p>
-          <div className="grid grid-cols-2 gap-[10px]">
+          <div className="grid grid-cols-1 gap-[10px] sm:grid-cols-2">
             {[
               ['Pessoas ainda no condomínio', r?.pessoasDentro], ['Encomendas aguardando', r?.encomendasPendentes],
               ['Ocorrências abertas', r?.ocorrenciasAbertas], ['Exceções hoje', r?.excecoesHoje],

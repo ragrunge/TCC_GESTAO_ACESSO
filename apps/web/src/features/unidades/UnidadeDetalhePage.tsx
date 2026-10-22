@@ -83,11 +83,11 @@ export function UnidadeDetalhe({ id }: { id: string }) {
 
   const cartao = 'flex flex-col gap-[10px] rounded-[10px] border border-[#DCE1E5] bg-white px-[18px] py-[14px]';
   const vazio = 'text-[14px] text-[#56616B]';
-  const link = 'text-[13px] font-semibold text-[#0B5563] hover:underline';
+  const link = 'inline-flex min-h-[44px] items-center px-1 text-[13px] font-semibold lg:min-h-0 text-[#0B5563] hover:underline';
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <h1 className="text-[30px] font-semibold">{catalogo.agrupamento} {d?.unidade.bloco} · Apartamento {d?.unidade.numero}</h1>
+        <h1 className="text-[24px] font-semibold sm:text-[30px]">{catalogo.agrupamento} {d?.unidade.bloco} · Apartamento {d?.unidade.numero}</h1>
         <div className="flex flex-wrap gap-2">
           {d && ativa && podePrevia && <Button variante="primario" onClick={() => setModo('previa')}>Nova autorização prévia</Button>}
           {d && ativa && podeRestricao && <Button onClick={() => setModo('restricao')}>Nova restrição</Button>}
@@ -106,7 +106,7 @@ export function UnidadeDetalhe({ id }: { id: string }) {
             <h2 className="border-b border-[#E6EAED] px-5 py-[14px] text-[16px] font-semibold">Moradores</h2>
             {d.vinculos === null && <div className="px-5 py-4"><SecaoEmBreve titulo="Moradores">Vínculos da unidade: disponível em breve na API real.</SecaoEmBreve></div>}
             {d.vinculos?.map((v) => (
-              <div key={v.id} className="grid min-h-[52px] grid-cols-[minmax(0,1fr)_220px_120px] items-center gap-3 border-b border-[#EEF1F3] px-5 py-[10px] last:border-b-0">
+              <div key={v.id} className="grid min-h-[52px] grid-cols-1 gap-1 sm:grid-cols-[minmax(0,1fr)_220px_120px] sm:items-center sm:gap-3 border-b border-[#EEF1F3] px-5 py-[10px] last:border-b-0">
                 <span className="truncate font-medium">{v.pessoaNome}</span>
                 <span className="truncate text-[14px]">{ROTULO_VINCULO[v.tipo]}
                   {v.status === 'legado' && v.prazoRegularizacao ? <span className="text-[#56616B]"> · regularizar até {fmtData(v.prazoRegularizacao)}</span>
@@ -117,7 +117,7 @@ export function UnidadeDetalhe({ id }: { id: string }) {
             {d.vinculos?.length === 0 && <div className="px-5 py-4 text-[#56616B]">Nenhum vínculo cadastrado.</div>}
           </section>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <section className={cartao}>
               <div className="flex items-center justify-between gap-2"><h2 className="text-[16px] font-semibold">Veículos</h2>
                 {podeVeiculo && <button type="button" className={link} onClick={() => setModo('veiculo')}>+ Novo</button>}</div>
@@ -175,7 +175,7 @@ export function UnidadeDetalhe({ id }: { id: string }) {
               const c = chipDoEvento(e);
               return (
                 <button key={e.id} type="button" onClick={() => setEvento(e)}
-                  className="grid min-h-12 w-full grid-cols-[110px_minmax(0,1fr)_170px_minmax(0,1fr)_130px] items-center gap-3 border-b border-[#EEF1F3] bg-white px-5 py-[9px] text-left hover:bg-[#F5F8F9]">
+                  className="grid min-h-12 w-full grid-cols-2 items-center gap-x-3 gap-y-1 md:grid-cols-[110px_minmax(0,1fr)_170px_minmax(0,1fr)_130px] border-b border-[#EEF1F3] bg-white px-5 py-[9px] text-left hover:bg-[#F5F8F9]">
                   <span className="font-mono text-[14px]">{quandoCurto(e.ocorridoEm, agora())}</span>
                   <span className="truncate font-medium">{e.pessoaNome}</span>
                   <span><Badge tom={c.tom}>{c.texto}</Badge></span>
@@ -230,7 +230,7 @@ export function EditarUnidadeModal({ id, bloco, numero, onClose, onFeito }: {
   return (
     <Modal titulo={id ? 'Editar número da unidade' : 'Nova unidade'} onClose={onClose} largura={480} rodape={rodapeForm(onClose, 'f-un', id ? 'Salvar' : 'Cadastrar unidade')}>
       <form id="f-un" onSubmit={salvar} className="flex flex-col gap-[14px]">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label={agrupamento}><input data-autofocus className="input font-mono uppercase" autoComplete="off" value={b} onChange={(e) => setB(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3))} /></Field>
           <Field label="Apartamento"><input className="input font-mono" inputMode="numeric" value={n} onChange={(e) => setN(e.target.value.replace(/\D/g, '').slice(0, 4))} /></Field>
         </div>
@@ -270,7 +270,7 @@ function VinculoModal({ unidade, onClose, onFeito }: { unidade: string; onClose:
       <UnidadeTitulo unidade={unidade} />
       <form id="f-vinc" onSubmit={salvar} className="flex flex-col gap-[14px]">
         <PessoaPicker rotulo="Pessoa" valor={pessoa} onChange={setPessoa} autoFocus />
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Tipo de vínculo"><select className="input" value={tipo} onChange={(e) => setTipo(e.target.value as TipoVinculo)}>{(Object.keys(ROTULO_VINCULO) as TipoVinculo[]).map((t) => <option key={t} value={t}>{ROTULO_VINCULO[t]}</option>)}</select></Field>
           <Field label="Início da vigência"><input type="date" className="input" value={ini} onChange={(e) => setIni(e.target.value)} /></Field>
           <Field label="Fim da vigência" dica={tipo === 'inquilino' ? 'Obrigatório para inquilino.' : 'Em branco = indeterminada.'}><input type="date" className="input" value={fim} onChange={(e) => setFim(e.target.value)} /></Field>
@@ -319,11 +319,11 @@ function PreviaModal({ unidade, onClose, onFeito }: { unidade: string; onClose: 
         <Field label="Válida até (obrigatório)" dica="Não existe autorização por prazo indeterminado (RN-07)."><input type="date" className="input" required value={ate} min={toInputDate(agora())} onChange={(e) => setAte(e.target.value)} /></Field>
         <fieldset><legend className="mb-1.5 text-[14px] font-medium">Dias da semana (nenhum marcado = todos os dias)</legend>
           <div className="flex gap-2">{DIAS_SEMANA_ABREV.map((n, i) => (
-            <label key={n} className={`flex h-10 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-[14px] ${dias.includes(i) ? 'border-[#0B5563] bg-[#E3F0F2]' : 'border-[#B9C3CA] bg-white'}`}>
+            <label key={n} className={`flex h-[44px] cursor-pointer items-center gap-1.5 rounded-full lg:h-10 border px-3 text-[14px] ${dias.includes(i) ? 'border-[#0B5563] bg-[#E3F0F2]' : 'border-[#B9C3CA] bg-white'}`}>
               <input type="checkbox" checked={dias.includes(i)} onChange={(e) => setDias(e.target.checked ? [...dias, i] : dias.filter((x) => x !== i))} />{n}
             </label>))}</div>
         </fieldset>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Horário inicial"><input type="time" className="input" value={hi} onChange={(e) => setHi(e.target.value)} /></Field>
           <Field label="Horário final"><input type="time" className="input" value={hf} onChange={(e) => setHf(e.target.value)} /></Field>
         </div>

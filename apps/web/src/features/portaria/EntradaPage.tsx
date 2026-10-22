@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Check, Clock, History, Plus, Search } from 'lucide-react';
 import { useApi, ehApiError, type Autorizador, type AutorizacaoView, type NovaPessoaInput, type PessoaBusca, type RestricaoView } from '../../api';
@@ -395,12 +395,12 @@ export function EntradaPage() {
           ? 'Contingência (UC08): lance o acesso anotado no papel durante a queda do sistema, com a data e a hora reais.'
           : 'Pessoa, unidade e quem autorizou. O registro não pode ser editado depois de confirmado.'} />
 
-      <div className="grid grid-cols-[minmax(0,1fr)_380px] items-start gap-5">
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="flex flex-col gap-4">
           {retroativo && (
             <section className="rounded-[10px] border border-[#A9D2D8] bg-[#F0F8F9] p-5">
               <h2 className="mb-[14px] flex items-center gap-2 text-[17px] font-semibold"><History className="h-5 w-5 text-[#0B5563]" aria-hidden />Data e hora reais do acesso</h2>
-              <div className="grid grid-cols-3 gap-[14px]">
+              <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-3">
                 <Field label="Data real do acesso"><input type="date" className="input" value={dataReal} max={toInputDate(agora)} onChange={(e) => setDataReal(e.target.value)} /></Field>
                 <Field label="Hora real do acesso" erro={horaReal && !retroValido ? 'Deve ser anterior ao momento atual.' : undefined}>
                   <input type="time" className="input" value={horaReal} max={dataReal === toInputDate(agora) ? toInputTime(agora) : undefined} onChange={(e) => setHoraReal(e.target.value)} />
@@ -432,13 +432,13 @@ export function EntradaPage() {
                     {sugestoes.map((p, i) => (
                       <li key={p.id} id={`sug-${p.id}`} role="option" aria-selected={i === idx}>
                         <button type="button" tabIndex={-1} onClick={() => void escolherPessoa(p)} onMouseEnter={() => setIdx(i)}
-                          className={`grid min-h-[56px] w-full grid-cols-[44px_minmax(0,1fr)_150px_110px_190px] items-center gap-3 rounded-lg border px-[10px] py-[6px] text-left hover:bg-[#EEF5F6] ${
+                          className={`grid min-h-[56px] w-full grid-cols-[44px_minmax(0,1fr)] items-center gap-y-0.5 md:grid-cols-[44px_minmax(0,1fr)_150px_110px_190px] gap-3 rounded-lg border px-[10px] py-[6px] text-left hover:bg-[#EEF5F6] ${
                             i === idx ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#E1E6EA] bg-white'}`}>
                           <Avatar nome={p.nome} />
                           <span className="truncate font-semibold">{p.nome}</span>
-                          <span className="font-mono text-[14px] text-[#33424B]">{p.documentoMascarado}</span>
-                          <span className="truncate text-[14px]">{rotuloPessoa(p)}</span>
-                          <span className="truncate text-[13px] text-[#56616B]">Último: {p.ultimoAcesso}</span>
+                          <span className="col-start-2 font-mono text-[14px] text-[#33424B] md:col-start-auto">{p.documentoMascarado}</span>
+                          <span className="col-start-2 truncate text-[14px] md:col-start-auto">{rotuloPessoa(p)}</span>
+                          <span className="col-start-2 truncate text-[13px] text-[#56616B] md:col-start-auto">Último: {p.ultimoAcesso}</span>
                         </button>
                       </li>
                     ))}
@@ -455,11 +455,11 @@ export function EntradaPage() {
             )}
 
             {novoModo && !pessoa && (
-              <form onSubmit={cadastrarNova} className="grid grid-cols-2 gap-[14px]">
-                <Field label="Nome completo" className="col-span-2"><input className="input" autoFocus required value={np.nome} onChange={(e) => setNp({ ...np, nome: e.target.value })} /></Field>
+              <form onSubmit={cadastrarNova} className="grid grid-cols-1 gap-[14px] sm:grid-cols-2">
+                <Field label="Nome completo" className="sm:col-span-2"><input className="input" autoFocus required value={np.nome} onChange={(e) => setNp({ ...np, nome: e.target.value })} /></Field>
                 <Field label="CPF" dica="Só CPF. Guardado mascarado, com hash para busca."><input className="input font-mono" inputMode="numeric" placeholder="000.000.000-00" disabled={np.semCpf} required={!np.semCpf} value={np.documento} onChange={(e) => setNp({ ...np, documento: e.target.value })} /></Field>
                 <Field label="Telefone (obrigatório)"><input className="input" inputMode="tel" required placeholder="(11) 9____-____" value={np.telefone} onChange={(e) => setNp({ ...np, telefone: e.target.value })} /></Field>
-                <label className="col-span-2 flex cursor-pointer items-start gap-3 rounded-lg border border-[#B9C3CA] p-3">
+                <label className="sm:col-span-2 flex cursor-pointer items-start gap-3 rounded-lg border border-[#B9C3CA] p-3">
                   <input type="checkbox" className="mt-1" checked={np.semCpf} onChange={(e) => setNp({ ...np, semCpf: e.target.checked, documento: '' })} />
                   <span><span className="font-medium">Pessoa sem CPF</span><span className="block text-[13px] text-[#56616B]">Exceção: nome e telefone continuam obrigatórios e a pessoa só entra por exceção do porteiro, com justificativa.</span></span>
                 </label>
@@ -474,13 +474,13 @@ export function EntradaPage() {
                     <Field label="Serviço"><input className="input" value={np.servico} onChange={(e) => setNp({ ...np, servico: e.target.value })} /></Field>
                   </>
                 )}
-                <div className="col-span-2 flex items-center gap-[14px] rounded-lg border border-dashed border-[#C5CDD3] p-3">
+                <div className="flex flex-wrap items-center gap-[14px] rounded-lg border border-dashed border-[#C5CDD3] p-3 sm:col-span-2">
                   <label htmlFor="foto-np" className="sr-only">Foto (opcional)</label>
                   <input id="foto-np" type="file" accept="image/*" className="!min-h-0 text-[14px]" onChange={(e) => setNp({ ...np, foto: e.target.files?.[0]?.name ?? '' })} />
                   <span className="text-[14px] text-[#56616B]">Opcional — a recusa não impede o cadastro</span>
                 </div>
-                {erroNp && <Alert tom="vermelho" role="alert" className="col-span-2">{erroNp}</Alert>}
-                <div className="col-span-2 flex gap-[10px]">
+                {erroNp && <Alert tom="vermelho" role="alert" className="sm:col-span-2">{erroNp}</Alert>}
+                <div className="flex flex-wrap gap-[10px] sm:col-span-2">
                   <Button type="submit" variante="primario">Usar este cadastro</Button>
                   <Button onClick={() => { setNovoModo(false); setTimeout(() => buscaRef.current?.focus(), 0); }}>Voltar à busca</Button>
                 </div>
@@ -509,7 +509,7 @@ export function EntradaPage() {
                     {(['unidade', 'area_comum'] as const).map((d) => (
                       <button key={d} type="button" role="radio" aria-checked={destino === d}
                         onClick={() => { setDestino(d); setBloco(null); setNumero(null); setAreaId(''); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setRestricao(null); }}
-                        className={`h-10 rounded-full border px-4 text-[14px] font-medium ${destino === d ? 'border-[#0B5563] bg-[#0B5563] text-white' : 'border-[#B9C3CA] bg-white hover:bg-[#EEF2F4]'}`}>
+                        className={`h-[44px] rounded-full border px-4 text-[14px] font-medium ${destino === d ? 'border-[#0B5563] bg-[#0B5563] text-white' : 'border-[#B9C3CA] bg-white hover:bg-[#EEF2F4]'}`}>
                         {d === 'unidade' ? 'Unidade' : 'Área comum'}
                       </button>
                     ))}
@@ -521,7 +521,7 @@ export function EntradaPage() {
                     <div role="radiogroup" aria-labelledby="rot-area" className="flex flex-wrap gap-2">
                       {catalogo.areasComuns.filter((a) => a.ativo).map((a) => (
                         <button key={a.id} type="button" role="radio" aria-checked={areaId === a.id} onClick={() => { setAreaId(a.id); setRestricao(null); }}
-                          className={`h-11 rounded-lg border-2 px-4 font-medium ${areaId === a.id ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#DCE1E5] bg-white hover:border-[#9AA7B0]'}`}>{a.nome}</button>
+                          className={`h-11 rounded-lg border-2 px-4 font-medium max-lg:h-[44px] ${areaId === a.id ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#DCE1E5] bg-white hover:border-[#9AA7B0]'}`}>{a.nome}</button>
                       ))}
                     </div>
                     <span className="text-[13px] text-[#56616B]">Na área comum a entrada é por autorização prévia da administração ou por exceção do porteiro (RF-36).</span>
@@ -559,7 +559,7 @@ export function EntradaPage() {
 
                   {semCpf && <Alert tom="ambar" titulo="Pessoa cadastrada sem CPF">Só pode entrar por exceção do porteiro, com justificativa. Interfone, morador presente e autorização prévia ficam desabilitados.</Alert>}
 
-                  <fieldset ref={grupoMeioRef} className="grid gap-[10px]" style={{ gridTemplateColumns: `repeat(${Math.max(meiosVisiveis.length, 1)}, minmax(0, 1fr))` }}>
+                  <fieldset ref={grupoMeioRef} className="grid grid-cols-1 gap-[10px] sm:grid-cols-2 lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" style={{ '--n': Math.max(meiosVisiveis.length, 1) } as CSSProperties}>
                     <legend className="sr-only">Meio de autorização</legend>
                     {meiosVisiveis.map((m) => {
                       const bloqueioSemCpf = semCpf && m !== 'excecao_porteiro';
@@ -585,7 +585,7 @@ export function EntradaPage() {
                         : (
                           <div role="radiogroup" aria-labelledby="rot-morador" className="flex flex-wrap gap-2">
                             {autorizadores.map((a) => (
-                              <label key={a.pessoa.id} className={`flex h-11 cursor-pointer items-center gap-2 rounded-lg border-2 px-4 [&:has(:focus-visible)]:outline [&:has(:focus-visible)]:outline-[3px] [&:has(:focus-visible)]:outline-offset-2 [&:has(:focus-visible)]:outline-[#0B5563] ${
+                              <label key={a.pessoa.id} className={`flex h-11 cursor-pointer items-center gap-2 rounded-lg border-2 px-4 max-lg:h-[44px] [&:has(:focus-visible)]:outline [&:has(:focus-visible)]:outline-[3px] [&:has(:focus-visible)]:outline-offset-2 [&:has(:focus-visible)]:outline-[#0B5563] ${
                                 residenteId === a.pessoa.id ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#DCE1E5] bg-white hover:border-[#9AA7B0]'}`}>
                                 <input type="radio" name="morador" className="sr-only" checked={residenteId === a.pessoa.id} onChange={() => setResidenteId(a.pessoa.id)} />
                                 <span className="font-medium">{a.pessoa.nome}</span>
@@ -616,7 +616,7 @@ export function EntradaPage() {
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {SUGESTOES_EXCECAO.map((s) => (
-                          <button key={s} type="button" onClick={() => setJustificativa(s)} className="h-9 rounded-full border border-[#F5B54A] bg-white px-3 text-[14px] text-[#7A2E0E] hover:bg-[#FFF8E6]">{s}</button>
+                          <button key={s} type="button" onClick={() => setJustificativa(s)} className="h-[44px] rounded-full border border-[#F5B54A] lg:h-9 bg-white px-3 text-[14px] text-[#7A2E0E] hover:bg-[#FFF8E6]">{s}</button>
                         ))}
                       </div>
                       <label htmlFor="just" className="flex flex-col gap-1.5 text-[14px] font-medium text-[#7A2E0E]">Justificativa (obrigatória, mínimo {MIN_JUSTIFICATIVA} caracteres)
@@ -638,7 +638,7 @@ export function EntradaPage() {
           </CartaoPasso>
         </div>
 
-        <aside aria-label="Resumo do registro" className="sticky top-0 flex flex-col gap-[14px] rounded-[10px] border border-[#DCE1E5] bg-white p-5">
+        <aside aria-label="Resumo do registro" className="flex xl:sticky xl:top-0 xl:self-start flex-col gap-[14px] rounded-[10px] border border-[#DCE1E5] bg-white p-5">
           <h2 className="text-[17px] font-semibold">Resumo do registro</h2>
           <div className="flex flex-col gap-0.5"><span className={rotuloResumo}>Pessoa</span><span className="font-semibold">{pessoa?.nome ?? '—'}</span></div>
           <div className="flex flex-col gap-0.5"><span className={rotuloResumo}>{emArea ? 'Área comum' : 'Unidade'}</span>
@@ -677,7 +677,7 @@ export function EntradaPage() {
           </>}>
           <div className="text-[18px] font-semibold">{pessoa.nome}</div>
           <div className="flex flex-col gap-0.5"><span className="text-[13px] text-[#56616B]">Motivo registrado pelo morador</span><span className="text-[17px] font-semibold text-[#912018]">“{pr.motivo}”</span></div>
-          <div className="grid grid-cols-2 gap-[14px]">
+          <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2">
             <div className="flex flex-col gap-0.5"><span className="text-[13px] text-[#56616B]">Restrição solicitada por</span><span className="font-medium">{pr.solicitadaPorNome ?? 'Administração'}</span></div>
             <div className="flex flex-col gap-0.5"><span className="text-[13px] text-[#56616B]">Cadastrada no sistema por</span><span className="font-medium">{pr.cadastradaPorNome} · {fmtData(pr.cadastradaEm)} {fmtHora(pr.cadastradaEm)}</span></div>
           </div>

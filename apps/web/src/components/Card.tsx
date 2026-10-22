@@ -7,7 +7,7 @@ export function Card({ titulo, acoes, children, className = '', semPadding, ...r
   return (
     <section className={`rounded-[10px] border border-[#DCE1E5] bg-white ${className}`} {...resto}>
       {(titulo || acoes) && (
-        <header className="flex items-center justify-between gap-3 border-b border-[#E6EAED] px-5 py-[14px]">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E6EAED] px-5 py-[14px]">
           <h2 className="text-[16px] font-semibold">{titulo}</h2>
           {acoes}
         </header>

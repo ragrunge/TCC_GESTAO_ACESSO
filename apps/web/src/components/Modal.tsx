@@ -10,10 +10,11 @@ export const temModalAberto = () => abertos > 0;
 const FOCAVEIS = 'a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 /** Foco preso, Esc fecha, devolve o foco ao fechar. */
-function useArmadilhaDeFoco(ref: RefObject<HTMLDivElement>, onClose: () => void) {
+export function useArmadilhaDeFoco(ref: RefObject<HTMLElement>, onClose: () => void, ativo = true) {
   const fecharRef = useRef(onClose);
   fecharRef.current = onClose;
   useEffect(() => {
+    if (!ativo) return;
     abertos++;
     const anterior = document.activeElement as HTMLElement | null;
     const el = ref.current!;
@@ -36,7 +37,7 @@ function useArmadilhaDeFoco(ref: RefObject<HTMLDivElement>, onClose: () => void)
       anterior?.focus?.();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ativo]);
 }
 
 /**
@@ -52,22 +53,22 @@ export function Modal({ titulo, onClose, children, rodape, tom = 'neutro', largu
   useArmadilhaDeFoco(ref, onClose);
   const alerta = tom === 'vermelho';
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(12,22,28,0.58)] p-6">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(12,22,28,0.58)] p-4 sm:p-6">
       <div ref={ref} role={role ?? (alerta ? 'alertdialog' : 'dialog')} aria-modal="true" aria-labelledby={tituloId} tabIndex={-1}
-        style={{ width: largura }}
-        className={`flex max-h-[calc(100vh-48px)] max-w-full flex-col overflow-hidden rounded-xl bg-white shadow-[0_24px_64px_rgba(0,0,0,0.3)] ${
+        style={{ width: `min(${largura}px, calc(100vw - 32px))` }}
+        className={`flex max-h-[calc(100vh-32px)] max-h-[calc(100dvh-32px)] max-w-full flex-col overflow-hidden rounded-xl bg-white shadow-[0_24px_64px_rgba(0,0,0,0.3)] ${
           alerta ? 'border-[3px] border-[#B42318]' : tom === 'petroleo' ? 'border-[3px] border-[#0B5563]' : ''
         }`}>
         {alerta && (
-          <div className="flex items-center gap-4 bg-[#B42318] px-7 py-6 text-white">
-            <Ban className="h-[52px] w-[52px] shrink-0" strokeWidth={2.2} aria-hidden />
-            <h2 id={tituloId} className="text-[24px] font-bold uppercase leading-[1.2] tracking-[0.01em]">{titulo}</h2>
+          <div className="flex items-center gap-3 bg-[#B42318] px-4 py-4 text-white sm:gap-4 sm:px-7 sm:py-6">
+            <Ban className="h-10 w-10 shrink-0 sm:h-[52px] sm:w-[52px]" strokeWidth={2.2} aria-hidden />
+            <h2 id={tituloId} className="text-[19px] font-bold uppercase sm:text-[24px] leading-[1.2] tracking-[0.01em]">{titulo}</h2>
           </div>
         )}
-        <div style={{ gap }} className={`flex flex-col overflow-y-auto ${alerta ? 'px-7 py-6' : tom === 'petroleo' ? 'p-8' : 'px-7 py-6'}`}>
+        <div style={{ gap }} className={`flex flex-col overflow-y-auto ${alerta ? 'px-4 py-5 sm:px-7 sm:py-6' : tom === 'petroleo' ? 'p-5 sm:p-8' : 'px-4 py-5 sm:px-7 sm:py-6'}`}>
           {!alerta && <h2 id={tituloId} className={tituloOculto ? 'sr-only' : 'text-[20px] font-semibold'}>{titulo}</h2>}
           {children}
-          {rodape && <div className="mt-1 flex gap-[10px]">{rodape}</div>}
+          {rodape && <div className="mt-1 flex flex-wrap gap-[10px]">{rodape}</div>}
         </div>
       </div>
     </div>,
@@ -82,7 +83,7 @@ export function Gaveta({ titulo, onClose, children, tituloId = 'gaveta-titulo' }
   return createPortal(
     <div className="fixed inset-0 z-[70] flex justify-end bg-[rgba(12,22,28,0.45)]" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby={tituloId} tabIndex={-1}
-        className="flex h-full w-[560px] max-w-full flex-col gap-[18px] overflow-auto bg-white px-7 py-6 shadow-[-12px_0_40px_rgba(0,0,0,0.18)]">
+        className="flex h-full w-[560px] max-w-full flex-col gap-[18px] overflow-auto bg-white px-4 py-5 sm:px-7 sm:py-6 shadow-[-12px_0_40px_rgba(0,0,0,0.18)]">
         <h2 id={tituloId} className="sr-only">{titulo}</h2>
         {children}
       </div>

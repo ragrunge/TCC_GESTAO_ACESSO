@@ -57,7 +57,7 @@ export function ImportacaoPage() {
       {!rel && !res && (
         <>
           <button type="button" onClick={() => inputRef.current?.click()}
-            className="flex h-60 flex-col items-center justify-center gap-[10px] rounded-xl border-2 border-dashed border-[#9AA7B0] bg-white hover:border-[#0B5563] hover:bg-[#F5FAFB]">
+            className="flex min-h-60 flex-col items-center justify-center gap-[10px] rounded-xl px-4 py-6 text-center border-2 border-dashed border-[#9AA7B0] bg-white hover:border-[#0B5563] hover:bg-[#F5FAFB]">
             <Upload className="h-9 w-9 text-[#0B5563]" strokeWidth={1.8} aria-hidden />
             <span className="text-[18px] font-semibold">Selecionar arquivo .csv ou .xlsx</span>
             <span className="text-[14px] text-[#56616B]">Colunas esperadas: nome, CPF, bloco (ou torre), unidade, tipo de vínculo, telefone. O CPF não é guardado em claro; linha sem CPF entra como legado, a regularizar.</span>
@@ -68,22 +68,22 @@ export function ImportacaoPage() {
 
       {rel && (
         <>
-          <div className="flex items-center justify-between gap-4 rounded-[10px] border border-[#DCE1E5] bg-white px-[18px] py-[14px]">
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-[10px] border border-[#DCE1E5] bg-white px-[18px] py-[14px]">
             <div className="flex flex-col"><span className="font-mono font-semibold">{rel.arquivo}</span>
               <span className="text-[14px] text-[#56616B]">{rel.lidas} linhas lidas · {rel.importaveis} válidas · {rel.rejeitadas} rejeitadas · {rel.avisos} avisos</span></div>
             <Button pequeno onClick={reiniciar}>Trocar arquivo</Button>
           </div>
-          <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] items-start gap-4">
+          <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
             <section className="rounded-[10px] border border-[#DCE1E5] bg-white">
               <h2 className="border-b border-[#E6EAED] px-5 py-[14px] text-[16px] font-semibold">Pré-visualização</h2>
-              <div role="table" aria-label="Pré-visualização das primeiras linhas da planilha">
-                <div role="row" style={{ gridTemplateColumns: COL }} className="grid gap-[10px] border-b border-[#E6EAED] px-5 py-[10px] text-[13px] font-semibold text-[#56616B]">
+              <div role="table" aria-label="Pré-visualização das primeiras linhas da planilha" className="overflow-x-auto">
+                <div role="row" style={{ gridTemplateColumns: COL }} className="grid min-w-[640px] gap-[10px] border-b border-[#E6EAED] px-5 py-[10px] text-[13px] font-semibold text-[#56616B]">
                   <span role="columnheader">Nome</span><span role="columnheader">Documento</span><span role="columnheader">{agrupamento}</span><span role="columnheader">Un.</span><span role="columnheader">Vínculo</span><span role="columnheader">Situação</span>
                 </div>
                 {linhas.slice(0, 8).map((l) => {
                   const ps = problemasDaLinha(l.linha);
                   return (
-                    <div role="row" key={l.linha} style={{ gridTemplateColumns: COL }} className="grid items-center gap-[10px] border-b border-[#EEF1F3] px-5 py-2 text-[14px]">
+                    <div role="row" key={l.linha} style={{ gridTemplateColumns: COL }} className="grid min-w-[640px] items-center gap-[10px] border-b border-[#EEF1F3] px-5 py-2 text-[14px]">
                       <span className="truncate">{l.nome}</span>
                       <span className="font-mono text-[13px]">{l.documento ? l.documento.replace(/\d(?=.{4})/g, '•') : '—'}</span>
                       <span className="font-mono">{l.bloco}</span><span className="font-mono">{l.unidade}</span><span>{l.tipo}</span>

@@ -62,7 +62,7 @@ export function TrocarSenhaPage() {
   const problemas = erroLocal ? [erroLocal] : troca.error ? problemasDe(troca.error) : [];
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-canvas p-12">
+    <main className="flex min-h-screen items-center justify-center bg-canvas px-4 py-8 sm:p-12">
       <div className="flex w-full max-w-[440px] flex-col gap-5">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-[9px] bg-[#0B5563] font-bold text-white" aria-hidden>RP</div>

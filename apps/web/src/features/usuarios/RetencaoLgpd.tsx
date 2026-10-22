@@ -74,7 +74,7 @@ export function RetencaoLgpd() {
           <div className="flex flex-col gap-3 rounded-[10px] border-2 border-[#B54708] bg-[#FFFAEB] p-4 text-[#7A2E0E]">
             <p className="font-semibold">Aplicar a retenção agora? A anonimização e os descartes não podem ser desfeitos.</p>
             {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
-            <div className="flex gap-[10px]">
+            <div className="flex flex-wrap gap-[10px]">
               <Button variante="perigo" carregando={rodando} onClick={() => void aplicar()}>Confirmar retenção</Button>
               <Button onClick={() => setConfirmando(false)}>Cancelar</Button>
             </div>

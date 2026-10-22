@@ -78,7 +78,7 @@ export function EncomendasPage() {
           abas={[{ id: 'aguardando', rotulo: `Aguardando retirada (${nAguardando})` }, { id: 'entregue', rotulo: `Entregues (${resumo.data?.entregues ?? 0})` }]} />
         {lista.error && <div className="p-4"><Alert tom="vermelho" role="alert">{mensagemErro(lista.error)}</Alert></div>}
         {aba === 'aguardando' ? (
-          <Lista legenda="Encomendas aguardando retirada" colunas={COL_AGUARDANDO} className="!rounded-none !border-0">
+          <Lista legenda="Encomendas aguardando retirada" colunas={COL_AGUARDANDO} empilhar className="!rounded-none !border-0">
             <ListaCab rotulos={['Unidade', 'Destinatário', 'Transportadora', 'Rastreio', 'Recebida em', 'Recebida por', '']} />
             {dados.map((e) => {
               const dias = diasDesde(e.recebidaEm, agora);
@@ -98,19 +98,19 @@ export function EncomendasPage() {
                   </Cel>
                   <Cel className="flex flex-col gap-0.5 text-[14px]"><span>{e.recebidaPorNome}</span>
                     {e.autorizacoes.length > 0 && <span className="text-[12px] text-[#0B4450]">Autorizado: {e.autorizacoes.map((a) => a.pessoaNome).join(', ')}</span>}</Cel>
-                  <Cel className="flex flex-col gap-1">{podeOperar && (
+                  <Cel className="col-span-2 flex flex-col gap-1 md:col-span-1">{podeOperar && (
                     <button type="button" onClick={() => setEntregando(e)} aria-label={`Entregar encomenda ${e.codigo}`}
-                      className="h-10 w-full rounded-lg border border-[#B9C3CA] bg-white text-[14px] font-medium hover:border-[#0B5563] hover:text-[#0B5563]">Entregar</button>
+                      className="h-[44px] w-full rounded-lg border border-[#B9C3CA] bg-white text-[14px] font-medium hover:border-[#0B5563] hover:text-[#0B5563]">Entregar</button>
                   )}{podeAutorizar && (
                     <button type="button" onClick={() => setAutorizando(e)} aria-label={`Autorizar retirada da encomenda ${e.codigo}`}
-                      className="text-[12.5px] font-semibold text-[#0B5563] hover:underline">Autorizar retirada</button>
+                      className="flex min-h-[44px] items-center justify-center text-[12.5px] font-semibold text-[#0B5563] hover:underline lg:min-h-0">Autorizar retirada</button>
                   )}</Cel>
                 </ListaLinha>
               );
             })}
           </Lista>
         ) : (
-          <Lista legenda="Encomendas entregues" colunas={COL_ENTREGUES} className="!rounded-none !border-0">
+          <Lista legenda="Encomendas entregues" colunas={COL_ENTREGUES} empilhar className="!rounded-none !border-0">
             <ListaCab rotulos={['Unidade', 'Destinatário', 'Transportadora', 'Entregue a', 'Entregue em', 'Entregue por']} />
             {dados.map((e) => (
               <ListaLinha key={e.id} minH={52} padY={8}>
@@ -197,16 +197,16 @@ function ReceberModal({ onClose, onFeito }: { onClose: () => void; onFeito: (e: 
       <Modal titulo="Conferir a unidade de destino" tituloOculto tom="petroleo" largura={620} gap={18} onClose={() => setEtapa('form')}>
         <div className="flex flex-col gap-[18px] text-center">
           <div className="text-[18px] text-[#33424B]">Confirma que a encomenda é para</div>
-          <div className="font-mono text-[48px] font-bold tracking-[0.02em] text-[#0B3F49]">{catalogo.rotulo(unidade)}?</div>
+          <div className="font-mono text-[34px] font-bold sm:text-[48px] tracking-[0.02em] text-[#0B3F49]">{catalogo.rotulo(unidade)}?</div>
           <div className="text-[16px]">Destinatário: <strong>{f.destinatario}</strong> · {f.transportadora}</div>
           {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
-          <div className="mt-2 flex gap-[10px]">
+          <div className="mt-2 flex flex-col gap-[10px] sm:flex-row">
             <button type="button" data-autofocus disabled={salvando} onClick={() => void salvar()}
-              className="flex h-[52px] flex-1 items-center justify-center gap-[10px] rounded-lg bg-[#0B5563] text-[16px] font-semibold text-white hover:bg-[#08434E]">
+              className="flex h-[52px] sm:flex-1 items-center justify-center gap-[10px] rounded-lg bg-[#0B5563] text-[16px] font-semibold text-white hover:bg-[#08434E]">
               Sim, registrar <kbd className="rounded-[5px] border border-white/50 px-[7px] py-0.5 font-mono text-[13px]">Enter</kbd>
             </button>
             <button type="button" onClick={() => setEtapa('form')}
-              className="flex h-[52px] flex-1 items-center justify-center gap-[10px] rounded-lg border border-[#B9C3CA] bg-white text-[16px] hover:bg-[#EEF2F4]">
+              className="flex h-[52px] sm:flex-1 items-center justify-center gap-[10px] rounded-lg border border-[#B9C3CA] bg-white text-[16px] hover:bg-[#EEF2F4]">
               Voltar e corrigir <kbd className="rounded-[5px] border border-[#B9C3CA] px-[7px] py-0.5 font-mono text-[13px]">Esc</kbd>
             </button>
           </div>
@@ -224,7 +224,7 @@ function ReceberModal({ onClose, onFeito }: { onClose: () => void; onFeito: (e: 
             <div className="flex flex-wrap gap-2">
               {moradores.map((m) => (
                 <button key={m.pessoa.id} type="button" aria-pressed={f.destinatario === m.pessoa.nome} onClick={() => setF({ ...f, destinatario: m.pessoa.nome })}
-                  className={`flex h-11 items-center gap-2 rounded-lg border-2 px-[14px] ${f.destinatario === m.pessoa.nome ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#DCE1E5] bg-white hover:border-[#9AA7B0]'}`}>
+                  className={`flex h-11 items-center gap-2 rounded-lg border-2 px-[14px] max-lg:h-[44px] ${f.destinatario === m.pessoa.nome ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#DCE1E5] bg-white hover:border-[#9AA7B0]'}`}>
                   <span className="font-medium">{m.pessoa.nome}</span><span className="text-[13px] text-[#56616B]">{ROTULO_VINCULO[m.vinculo.tipo]}</span>
                 </button>
               ))}
@@ -237,14 +237,14 @@ function ReceberModal({ onClose, onFeito }: { onClose: () => void; onFeito: (e: 
           <div role="radiogroup" aria-labelledby="rot-transp" className="flex flex-wrap gap-1.5">
             {TRANSPORTADORAS.map((t) => (
               <button key={t} type="button" role="radio" aria-checked={f.transportadora === t} onClick={() => setF({ ...f, transportadora: t })}
-                className={`h-10 rounded-full border px-[14px] text-[14px] ${f.transportadora === t ? 'border-[#0B5563] bg-[#0B5563] text-white' : 'border-[#B9C3CA] bg-white text-ink hover:bg-[#EEF2F4]'}`}>{t}</button>
+                className={`h-[44px] rounded-full border px-[14px] text-[14px] lg:h-10 ${f.transportadora === t ? 'border-[#0B5563] bg-[#0B5563] text-white' : 'border-[#B9C3CA] bg-white text-ink hover:bg-[#EEF2F4]'}`}>{t}</button>
             ))}
           </div>
         </div>
         <Field label="Código de rastreio"><input className="input font-mono" value={f.codigoRastreio} onChange={(e) => setF({ ...f, codigoRastreio: e.target.value })} /></Field>
         {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
-        <div className="flex gap-[10px]">
-          <Button type="submit" variante="primario" grande className="flex-1" atalho="Enter">Continuar</Button>
+        <div className="flex flex-col gap-[10px] sm:flex-row">
+          <Button type="submit" variante="primario" grande className="sm:flex-1" atalho="Enter">Continuar</Button>
           <Button grande atalho="Esc" onClick={onClose}>Cancelar</Button>
         </div>
       </form>
@@ -319,10 +319,10 @@ function EntregarModal({ encomenda, onClose, onFeito }: { encomenda: EncomendaVi
             </div>
           )}
           {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
-          <div className="flex gap-[10px]">
+          <div className="flex flex-col gap-[10px] sm:flex-row">
             {temVinculo
-              ? <Button variante="primario" grande className="flex-1" atalho="Enter" data-autofocus carregando={salvando} onClick={() => void confirmar()}>Confirmar entrega</Button>
-              : <Button grande className="flex-1" data-autofocus onClick={() => setEscolhida(null)}>Buscar outra pessoa</Button>}
+              ? <Button variante="primario" grande className="sm:flex-1" atalho="Enter" data-autofocus carregando={salvando} onClick={() => void confirmar()}>Confirmar entrega</Button>
+              : <Button grande className="sm:flex-1" data-autofocus onClick={() => setEscolhida(null)}>Buscar outra pessoa</Button>}
             {temVinculo ? <Button grande onClick={() => setEscolhida(null)}>Trocar pessoa</Button> : <Button grande onClick={onClose}>Fechar</Button>}
           </div>
         </>
@@ -349,7 +349,7 @@ function AutorizarRetiradaModal({ encomenda, onClose, onFeito }: { encomenda: En
   }
   return (
     <Modal titulo={`Autorizar retirada da encomenda ${encomenda.codigo}`} largura={620} onClose={onClose}
-      rodape={<><Button type="submit" form="f-aut-ret" variante="primario" grande className="flex-1">Autorizar retirada</Button><Button grande onClick={onClose}>Cancelar</Button></>}>
+      rodape={<><Button type="submit" form="f-aut-ret" variante="primario" grande className="sm:flex-1">Autorizar retirada</Button><Button grande onClick={onClose}>Cancelar</Button></>}>
       <UnitTag id={encomenda.unidadeId} tamanho="lg" />
       <form id="f-aut-ret" onSubmit={salvar} className="flex flex-col gap-[14px]">
         <Field label="Morador que autoriza (vínculo válido na unidade)">

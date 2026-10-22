@@ -40,8 +40,8 @@ export function UnidadesPage() {
   const inativos = new Set(doBloco.filter((u) => !u.ativo).map((u) => u.numero));
   const completas = new Set(resumos.filter((u) => u.cadastroCompleto && u.unidade.bloco === bloco).map((u) => u.unidade.numero));
   return (
-    <div className="grid grid-cols-[300px_minmax(0,1fr)] items-start gap-5">
-      <div className="sticky top-0 flex flex-col gap-3 rounded-[10px] border border-[#DCE1E5] bg-white p-4">
+    <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="flex flex-col xl:sticky xl:top-0 gap-3 rounded-[10px] border border-[#DCE1E5] bg-white p-4">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-[16px] font-semibold">Unidades</h2>
           {podeEditar && <Button onClick={() => setNova(true)}>Nova unidade</Button>}

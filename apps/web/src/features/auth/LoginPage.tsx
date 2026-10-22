@@ -33,8 +33,8 @@ export function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen grid-cols-[minmax(0,1fr)_560px] bg-canvas">
-      <div className="sobre-escuro flex flex-col justify-between gap-10 bg-[#10262C] px-16 py-14 text-white">
+    <div className="grid min-h-screen grid-cols-[minmax(0,1fr)] bg-canvas lg:grid-cols-[minmax(0,1fr)_560px]">
+      <div className="sobre-escuro flex flex-col justify-between gap-6 bg-[#10262C] px-6 py-8 text-white lg:gap-10 lg:px-16 lg:py-14">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-[9px] bg-[#0B5563] font-bold" aria-hidden>RP</div>
           <div className="leading-[1.25]">
@@ -43,13 +43,13 @@ export function LoginPage() {
           </div>
         </div>
         <div className="max-w-[540px]">
-          <div className="text-[42px] font-semibold leading-[1.12] tracking-[-0.02em] [text-wrap:pretty]">Condomínio Residencial do Parque</div>
-          <div className="mt-4 text-[17px] leading-[1.55] text-[#C8D3D7] [text-wrap:pretty]">Cada entrada fica registrada com quem autorizou e quem registrou.</div>
+          <div className="text-[28px] font-semibold leading-[1.15] sm:text-[34px] lg:text-[42px] lg:leading-[1.12] tracking-[-0.02em] [text-wrap:pretty]">Condomínio Residencial do Parque</div>
+          <div className="mt-3 text-[16px] leading-[1.5] lg:mt-4 lg:text-[17px] lg:leading-[1.55] text-[#C8D3D7] [text-wrap:pretty]">Cada entrada fica registrada com quem autorizou e quem registrou.</div>
         </div>
-        <div className="text-[13px] text-[#8DA2A9]">Projeto acadêmico · TCC de Sistemas de Informação</div>
+        <div className="hidden text-[13px] text-[#8DA2A9] lg:block">Projeto acadêmico · TCC de Sistemas de Informação</div>
       </div>
 
-      <main className="flex items-center justify-center bg-canvas p-12">
+      <main className="flex items-center justify-center bg-canvas px-4 py-8 sm:p-12">
         <div className="flex w-full max-w-[400px] flex-col gap-5">
           <form onSubmit={enviar} className="flex flex-col gap-4" noValidate>
             <h1 className="mb-1 text-[28px] font-semibold">Entrar</h1>
