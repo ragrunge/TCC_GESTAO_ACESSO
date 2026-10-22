@@ -125,7 +125,9 @@ test.describe.serial('API real: login, sessão e usuários', () => {
     await expect(page).toHaveURL(/\/painel$/);
     // encerra a sessão do mesmo cookie sem passar pela UI (como expiração ou revogação no servidor)
     expect((await page.request.post('/api/v1/auth/logout')).status()).toBe(204);
-    await page.getByRole('link', { name: 'Usuários' }).click();
+    // Uma consulta em segundo plano do painel pode receber o 401 antes do clique e já ter levado ao login (o link some):
+    // as duas ordens são o comportamento esperado.
+    await page.getByRole('link', { name: 'Usuários' }).click({ timeout: 5_000 }).catch(() => undefined);
     await expect(page).toHaveURL(/\/login$/);
     await expect(page.getByText('Sua sessão expirou. Entre novamente.')).toHaveCount(1);
   });
