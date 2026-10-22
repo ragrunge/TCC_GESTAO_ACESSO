@@ -312,7 +312,7 @@ function VinculoModal({ unidade, incluir, podeCadastrar, onClose, onFeito }: { u
   }
   const titulo = incluir ? 'Incluir morador' : 'Solicitar vínculo';
   return (
-    <Modal titulo={titulo} onClose={onClose} largura={600} rodape={rodapeForm(onClose, "f-vinc", "Solicitar vínculo")}>
+    <Modal titulo={titulo} onClose={onClose} largura={600} rodape={rodapeForm(onClose, "f-vinc", "Enviar solicitação")}>
       <UnidadeTitulo unidade={unidade} />
       <form id="f-vinc" onSubmit={salvar} className="flex flex-col gap-[14px]">
         <PessoaPicker rotulo="Pessoa" valor={pessoa} onChange={setPessoa} autoFocus onCadastrar={podeCadastrar ? setCadastrando : undefined} />

@@ -3,7 +3,7 @@
   "info": {
     "title": "API da Portaria Parque",
     "version": "0.1.0",
-    "description": "Controle de acesso do Condomínio Residencial do Parque (TCC). Gerada dos metadados do Nest e dos schemas Zod: não editar à mão.\n\nSucesso sempre em `{data}` (listas por cursor: `{data, pagination:{cursor, hasNextPage}}`); erro em `Erro`.\n\nAutenticação por cookie de sessão HttpOnly/SameSite=Strict: chame `POST /auth/login` e reaproveite o cookie.\n\nAs respostas de sucesso estão documentadas só como envelope genérico (o conteúdo de `data` não é descrito)."
+    "description": "Controle de acesso e gestão de portaria de condomínios (TCC). Gerada dos metadados do Nest e dos schemas Zod: não editar à mão.\n\nSucesso sempre em `{data}` (listas por cursor: `{data, pagination:{cursor, hasNextPage}}`); erro em `Erro`.\n\nAutenticação por cookie de sessão HttpOnly/SameSite=Strict: chame `POST /auth/login` e reaproveite o cookie.\n\nAs respostas de sucesso estão documentadas só como envelope genérico (o conteúdo de `data` não é descrito)."
   },
   "servers": [
     {

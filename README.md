@@ -1,6 +1,6 @@
 # Portaria Parque — monorepo
 
-Sistema de controle de acesso e gestão de portaria do Condomínio Residencial do Parque (TCC, Sistemas de Informação).
+Sistema de controle de acesso e gestão de portaria do condomínio estudado (TCC, Sistemas de Informação).
 
 ## Estrutura
 

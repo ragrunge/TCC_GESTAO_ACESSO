@@ -1,6 +1,6 @@
 # Portaria Parque — front-end do sistema de controle de acesso e gestão de portaria
 
-Aplicação React (Vite + TypeScript estrito + Tailwind) do Condomínio Residencial do Parque, produto do TCC de Sistemas de
+Aplicação React (Vite + TypeScript estrito + Tailwind) do condomínio estudado, produto do TCC de Sistemas de
 Informação. É só cliente: todos os dados e regras vêm da API NestJS (`apps/api`), pelo cliente HTTP em `src/api/http`.
 Não existe mais modo de demonstração (API simulada, banco no `localStorage` ou relógio simulado): a hora da tela é a
 do navegador. Requisitos, especificação e protótipo de referência estão em `../../docs/01_requisitos.md`,

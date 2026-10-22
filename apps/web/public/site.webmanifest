@@ -1,7 +1,7 @@
 {
   "name": "Portaria Parque",
   "short_name": "Portaria",
-  "description": "Controle de acesso e portaria do Condomínio Residencial do Parque",
+  "description": "Controle de acesso e portaria para condomínios",
   "lang": "pt-BR",
   "id": "/",
   "start_url": "/",

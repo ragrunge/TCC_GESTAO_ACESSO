@@ -239,7 +239,7 @@ export function gerarOpenApiComRelatorio(app: INestApplication, opcoes: OpcoesOp
       title: 'API da Portaria Parque',
       version: opcoes.versao ?? '0.0.0',
       description: [
-        'Controle de acesso do Condomínio Residencial do Parque (TCC). Gerada dos metadados do Nest e dos schemas Zod: não editar à mão.',
+        'Controle de acesso e gestão de portaria de condomínios (TCC). Gerada dos metadados do Nest e dos schemas Zod: não editar à mão.',
         'Sucesso sempre em `{data}` (listas por cursor: `{data, pagination:{cursor, hasNextPage}}`); erro em `Erro`.',
         'Autenticação por cookie de sessão HttpOnly/SameSite=Strict: chame `POST /auth/login` e reaproveite o cookie.',
         'As respostas de sucesso estão documentadas só como envelope genérico (o conteúdo de `data` não é descrito).',

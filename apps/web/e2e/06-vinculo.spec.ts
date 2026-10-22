@@ -19,7 +19,7 @@ test.describe('6. Vínculo', () => {
     await modal.getByLabel('Pessoa', { exact: true }).fill('Larissa Gomes');
     await modal.getByRole('button', { name: /Larissa Gomes/ }).click();
     await modal.getByRole('combobox', { name: 'Tipo de vínculo' }).selectOption({ label: 'Dependente' });
-    await modal.getByRole('button', { name: 'Solicitar vínculo' }).click();
+    await modal.getByRole('button', { name: 'Enviar solicitação' }).click();
     await expect(toast(page, /Vínculo solicitado\. Fica pendente/)).toBeVisible();
 
     // Aparece na fila de pendentes da administração
@@ -43,7 +43,7 @@ test.describe('6. Vínculo', () => {
     await modal.getByLabel('Pessoa', { exact: true }).fill('Yuri Menor');
     await modal.getByRole('button', { name: /Yuri Menor Dependente/ }).click();
     await modal.getByRole('combobox', { name: 'Tipo de vínculo' }).selectOption({ label: 'Dependente' });
-    await modal.getByRole('button', { name: 'Solicitar vínculo' }).click();
+    await modal.getByRole('button', { name: 'Enviar solicitação' }).click();
     await expect(toast(page, /Vínculo solicitado/)).toBeVisible();
 
     await page.goto('/vinculos');
@@ -70,7 +70,7 @@ test.describe('6. Vínculo', () => {
     const modal = page.getByRole('dialog', { name: 'Solicitar vínculo' });
     await modal.getByLabel('Pessoa', { exact: true }).fill('Ximena Sem');
     await modal.getByRole('button', { name: /Ximena Sem Documento/ }).click();
-    await modal.getByRole('button', { name: 'Solicitar vínculo' }).click();
+    await modal.getByRole('button', { name: 'Enviar solicitação' }).click();
     await expect(toast(page, /Vínculo solicitado/)).toBeVisible();
 
     // 3) Na fila, a aprovação é barrada: aviso "Cadastro incompleto" e botão Aprovar desabilitado

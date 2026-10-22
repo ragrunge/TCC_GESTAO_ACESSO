@@ -79,7 +79,7 @@ test.describe.serial('API real: pessoas, vínculos, conferência e legado', () =
     await modal.getByLabel('Pessoa', { exact: true }).fill(NOME);
     await modal.getByRole('button', { name: new RegExp(NOME) }).click();
     await modal.getByRole('combobox', { name: 'Tipo de vínculo' }).selectOption({ label: 'Dependente' });
-    await modal.getByRole('button', { name: 'Solicitar vínculo' }).click();
+    await modal.getByRole('button', { name: 'Enviar solicitação' }).click();
     await expect(toast(page, /Vínculo solicitado/)).toBeVisible();
 
     // 3) Fila: sem conferência, Aprovar fica desabilitado; com ela, aprova

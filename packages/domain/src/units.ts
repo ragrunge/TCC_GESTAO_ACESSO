@@ -30,7 +30,7 @@ export interface ConfigEstrutura {
   ausentes: readonly string[];
 }
 
-/** Condomínio Residencial do Parque: 9 blocos (A a I), térreo e 4 andares, 4 apartamentos por andar. */
+/** Condomínio do estudo de caso: 9 blocos (A a I), térreo e 4 andares, 4 apartamentos por andar. */
 export const ESTRUTURA_PADRAO: ConfigEstrutura = {
   agrupamento: 'Bloco',
   blocos: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'],

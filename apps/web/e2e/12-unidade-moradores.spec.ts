@@ -22,7 +22,7 @@ test.describe('12. Moradores na tela da unidade', () => {
     // volta ao vínculo com a pessoa criada já escolhida
     const vinc = page.getByRole('dialog', { name: 'Incluir morador' });
     await expect(vinc.getByText('Zulmira Inexistente')).toBeVisible();
-    await vinc.getByRole('button', { name: 'Solicitar vínculo' }).click();
+    await vinc.getByRole('button', { name: 'Enviar solicitação' }).click();
     await expect(toast(page, /Vínculo solicitado\. Fica pendente/)).toBeVisible();
     await expect(page.getByRole('link', { name: 'Vínculos', exact: true }).first()).toBeVisible();
     await expect(page.getByText(/fica pendente até a aprovação em/)).toBeVisible();

@@ -171,7 +171,7 @@ export function Layout() {
           <div className="grid h-[34px] w-[34px] place-items-center rounded-lg bg-[#0B5563] text-[14px] font-bold text-white" aria-hidden>RP</div>
           <div className="leading-[1.2]">
             <div className="text-[14px] font-semibold text-white">Portaria Parque</div>
-            <div className="text-[12px] text-[#9FB1B7]">Residencial do Parque</div>
+            <div className="text-[12px] text-[#9FB1B7]">{usuario!.condominio?.nome ?? 'Controle de acesso'}</div>
           </div>
         </div>
         {GRUPOS.map((g) => {
@@ -202,7 +202,7 @@ export function Layout() {
             className="grid h-[44px] w-[44px] shrink-0 place-items-center rounded-lg border border-[#C5CDD3] hover:bg-[#EEF2F4] lg:hidden">
             <Menu className="h-5 w-5" aria-hidden />
           </button>
-          <div className="min-w-0 flex-1 truncate font-semibold lg:flex-none lg:whitespace-nowrap">{usuario!.condominio?.nome ?? 'Condomínio Residencial do Parque'}</div>
+          <div className="min-w-0 flex-1 truncate font-semibold lg:flex-none lg:whitespace-nowrap">{usuario!.condominio?.nome ?? 'Portaria Parque'}</div>
           <div className="order-last w-full lg:order-none lg:flex lg:w-auto lg:flex-1"><BuscaGlobal onPessoa={setFichaId} /></div>
           <div className="flex items-center gap-5 lg:ml-auto">
             <Relogio />
