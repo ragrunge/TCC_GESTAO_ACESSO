@@ -271,6 +271,11 @@ export interface EventoView extends EventoAcesso {
   autorizadoPorNomeCorrigido: string | null;
   /** Entrada por autorização prévia cadastrada sem solicitante (conta como exceção). */
   autorizacaoSemSolicitante: boolean;
+  /**
+   * Prazo de permanência vigente (tabela `permanencia`, fora da cadeia de hash). Só na listagem de presentes
+   * (`GET /acessos/presentes`); nulo para morador, funcionário e entradas anteriores à migração 0011.
+   */
+  permanencia?: PermanenciaView | null;
 }
 
 export interface Encomenda {
@@ -377,4 +382,22 @@ export interface RegistroAlteracao {
   depois: Record<string, unknown> | null;
   /** Preenchido pela redação LGPD (única alteração permitida, como `lgpd_redigir_audit_pessoa`). */
   redigidoEm?: number | null;
+}
+
+// ----- Tempo de permanência (prazo por tipo de visita, spec §14 2026-10-23) ----------------------------------------
+// Fica FORA da cadeia de hash: tabela `permanencia` (append-only, à parte do evento_acesso). Só visitante e prestador.
+
+export type TipoVisita = 'visita' | 'entrega' | 'transporte_app' | 'servico';
+export const TIPOS_VISITA: readonly TipoVisita[] = ['visita', 'entrega', 'transporte_app', 'servico'];
+export const ROTULO_TIPO_VISITA: Record<TipoVisita, string> = {
+  visita: 'Visita', entrega: 'Entregador', transporte_app: 'Motorista de app', servico: 'Serviço',
+};
+
+/** Prazo vigente de uma entrada (a linha mais recente da `permanencia`). */
+export interface PermanenciaView {
+  tipoVisita: TipoVisita;
+  /** Epoch ms. */
+  prazoAte: number;
+  /** Quantas prorrogações já foram feitas (0 = só o prazo da entrada). */
+  prorrogacoes: number;
 }
