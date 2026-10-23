@@ -376,7 +376,7 @@ jobs:
           banco="$(cat "$d/banco")"
           export PGPASSWORD="$POSTGRES_PASSWORD"
           m="$(psql -U postgres -d postgres -tAc "select format('%s|%s|%s|%s|%s', pg_get_userbyid(datdba), has_database_privilege('app_rw','$banco','CONNECT'), has_database_privilege('app_plataforma','$banco','CONNECT'), has_database_privilege('app_provisionador','$banco','CONNECT'), has_database_privilege('public','$banco','CONNECT')) from pg_database where datname = '$banco'")"
-          [ "$m" = "app_migrator|true|false|false|false" ] || falha "dono/CONNECT do banco novo fora do padrão: $m"
+          [ "$m" = "app_migrator|t|f|f|f" ] || falha "dono/CONNECT do banco novo fora do padrão: $m"
           st="$(psql -U postgres -d plataforma -tAc "select status from condominio where codigo = 'ci-novo'")"
           [ "$st" = "ativo" ] || falha "condomínio novo não ficou ativo ($st)"
           # O laço de migração do deploy passa a incluir o banco novo (ativo).
