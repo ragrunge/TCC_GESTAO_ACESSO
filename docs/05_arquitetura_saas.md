@@ -9,6 +9,10 @@
 > reescrita; a versão anterior fica marcada como substituída), módulos por condomínio (SAAS-19) e a referência de UX do
 > app do Master (§6.2). Provisionamento de condomínio novo implementado (CLI `provisionar-condominio`, SAAS-10 e §5.2;
 > passo a passo em `docs/deploy.md`, seção 16).
+> **v0.4 (2026-10-23): F5, entrega 1 implementada** (código, sem deploy): app do Master (`apps/plataforma`), login do
+> Master com senha + TOTP, sessão e cookie próprios, lista de condomínios, criação pela tela via serviço provisionador e
+> módulos. O que entrou e as decisões tomadas onde o doc deixava margem: §5.3. Deploy manual: `docs/deploy.md`, seção 18.
+> A entrega 2 (SAAS-09, "Master vê tudo" auditado) e o `ModuloGuard` (SAAS-19) ficam para depois.
 > Complementa `01_requisitos.md` (v0.3) e `02_especificacao_tecnica.md` (v0.1); não os altera.
 > O condomínio real do estudo de caso é chamado aqui de **condomínio-piloto**.
 
@@ -248,7 +252,8 @@ plataforma apontando para usuários em N bancos).
 - **Origem separada:** front do Master em outro projeto Vercel (`<nome>-plataforma.vercel.app`), com o mesmo rewrite
   para a mesma API. Cada origem tem seu próprio pote de cookies: XSS no app do condomínio não usa a sessão do Master,
   e vice-versa.
-- Cookie `__Host-portaria_plataforma`, `SameSite=Strict`, inatividade de 15 min e máximo de 8 h.
+- Cookie `__Host-portaria_plataforma`, `SameSite=Strict`, inatividade de 15 min e máximo de 8 h. (Implementado em
+  2026-10-23 como `__Secure-portaria_plataforma` com `Path=/api/v1/plataforma`: o prefixo `__Host-` exige `Path=/`; ver §5.3.)
 - **TOTP obrigatório** (RFC 6238, implementável com `node:crypto` sem dependência nova), segredo cifrado pela chave
   mestra, 10 códigos de recuperação com hash argon2id. WebAuthn fica para depois.
 - Limite de tentativas próprio, no banco `plataforma`.
@@ -357,6 +362,9 @@ igual à da entrada) e a senha do síndico é regerada (a anterior nunca foi mos
 `ja_provisionado`, nada muda. `--nova-senha-sindico` gera outra temporária para o síndico que ainda não entrou.
 **Rollback** de um provisionamento abandonado (`DROP DATABASE`, apagar as duas chaves e a linha `provisionando`):
 `docs/deploy.md` §16.3. Ativo não tem rollback: é fim de contrato (SAAS-11).
+
+(2026-10-23, F5 entrega 1: a tela do Master cria condomínio sem quebrar a regra abaixo. A API repassa o pedido ao
+**serviço provisionador**, um container à parte com o mesmo `provisionar()` da CLI, ligado só sob demanda; §5.3.)
 
 A API não cria banco: `CREATEDB` num processo exposto à internet amplia o estrago de uma invasão. Onboarding é raro e
 pode ser manual nas primeiras dezenas.
@@ -762,6 +770,81 @@ para existir, sem a tela do Master: SAAS-10 (passos e retomada), `configuracao` 
 **Ficou para depois:** tela do Master (cadastro, contrato, módulos, UX em §6.2); `ModuloGuard` (SAAS-19); UPDATE da
 `configuracao` por tela; `recriar-estrutura` por condomínio com JSON (SAAS-06); acesso do Master auditado (SAAS-09).
 
+### 5.3 F5, entrega 1: app do Master (2026-10-23, código; deploy em `docs/deploy.md` §18)
+
+**Entrou:**
+- **Banco `plataforma`, migração `drizzle-plataforma/0003_master_auth.sql`** (só *expand*; as tabelas da §4.1 já
+  existiam vazias): `master_usuario` ganha `totp_mestra_versao`, `totp_ultimo_passo` (anti-replay), `deve_trocar_senha`,
+  `senha_temporaria_expira_em`, `ultimo_acesso` e CHECKs (formato do e-mail, tamanho do segredo cifrado, temporária só com
+  troca pendente); `master_sessao` ganha `motivo_revogacao` e índice por usuário; `plataforma_login_limite` ganha o tipo
+  `master_ip`. Sem GRANT novo (os da 0000 são por tabela) e sem DELETE para `app_plataforma`.
+- **API, módulo `src/master/`** (só o pool `app_plataforma` e a chave mestra; teste de arquitetura: nenhum arquivo dali
+  injeta `DB`/`CONDOMINIO`/`PG_POOL`/`REGISTRO_BANCOS`): `POST /plataforma/auth/login`, `GET /plataforma/auth/me`,
+  `POST /plataforma/auth/logout`, `POST /plataforma/auth/trocar-senha`, `GET /plataforma/condominios`,
+  `POST /plataforma/condominios`, `PATCH /plataforma/condominios/:id/modulos`. Guarda global estática `PlataformaGuard` +
+  decorators `@PlataformaPublica/@PlataformaAutenticada/@PlataformaAcao` (matriz `MATRIZ_PLATAFORMA` em
+  `@portaria/domain/rbac-plataforma`: `master` tudo, `suporte` só lista). As guardas de condomínio passam a ignorar a
+  política `{ tipo: 'plataforma' }` (duas linhas em `auth/guards.ts`; o fluxo de auth do condomínio não mudou), e o
+  middleware de condomínio não resolve condomínio nenhum em `/api/v1/plataforma/*` (`plataforma.ts`).
+- **Trilha da plataforma** (`plataforma_audit`, append-only desde a 0000): `auth.login`, `auth.login_falha` (com o motivo;
+  o e-mail digitado nunca), `auth.bloqueio`, `auth.logout`, `auth.trocar_senha(_falha)`, `acesso.negado`,
+  `condominio.provisionar` (ator = Master, `origem: plataforma`, na MESMA transação da ativação), `condominio.provisionar_falha`,
+  `condominio.modulos` (antes/depois, na mesma transação do UPDATE), `master.criar`, `master.reemitir_credencial` (CLI).
+- **CLI `criar-usuario-plataforma`** (bootstrap): cria com senha temporária e segredo TOTP, recusa e-mail repetido,
+  `--reemitir-totp` e `--nova-senha`; serviço `usuario-plataforma-cli` (perfil `plataforma`, `logging: none`).
+- **Serviço provisionador** (`src/cli/servidor-provisionador.ts`, serviço `provisionador`, perfil `provisionar`).
+- **Front `apps/plataforma`**: login, troca obrigatória, "Licenças" (cards, busca, filtro por situação), novo
+  condomínio (prévia das unidades com o `gerarUnidades` do domain; senha do síndico uma vez, "Já copiei, fechar"),
+  módulos. `vercel.json` próprio (rewrite para a mesma API, CSP estrita, `noindex`, previews desligados).
+- **Testes:** `test/master-totp.test.ts` (vetores das RFCs 4226/6238, janela, replay, segredo cifrado),
+  `test/master-api.test.ts` (login, erros indistinguíveis, replay, bloqueio, cookies cruzados nos dois sentidos,
+  inatividade, troca obrigatória, criação com provisionamento real sobre PGlite, senha uma vez e fora dos logs, módulos,
+  papel suporte), `test/master-cli.test.ts` (CLI como `app_plataforma`, serviço provisionador: token, 400/413/422/500,
+  um pedido por vez), testes do front e o e2e `apps/plataforma/e2e` (Playwright sobre a API em PGlite). CI:
+  `testes-web.yml` (build, testes e e2e do `apps/plataforma`) e `testes-postgres.yml` (smoke da CLI e do provisionador
+  com roles reais).
+
+**Decisões onde o doc deixava margem (menor risco):**
+- **Login em UM passo** (e-mail + senha + código no mesmo envio). Em dois passos, "senha certa, agora o código" confirma
+  a senha a quem não tem o celular, e o meio do caminho exige uma pré-sessão (outro token, outra tabela, outra rota).
+  Toda falha (e-mail inexistente, inativo, senha errada, código errado ou reutilizado) dá a mesma resposta, com o mesmo
+  argon2 (fictício para inexistente) e o mesmo limite. A senha temporária vencida só é revelada a quem acerta senha e código.
+- **TOTP** com `node:crypto` (sem dependência nova): SHA1, 6 dígitos, 30 s, janela ±1. **Anti-replay** por
+  `totp_ultimo_passo`: só um passo MAIOR que o último aceito vale, gravado num `UPDATE ... WHERE totp_ultimo_passo < passo`
+  atômico na transação que cria a sessão (dois logins simultâneos com o mesmo código: um vence).
+- **Segredo TOTP cifrado** com AES-256-GCM pela chave mestra (mesmo padrão do envelope das chaves e do cofre dos
+  anexos), AAD `portaria:totp:<master_usuario_id>`, coluna = nonce || cifrado || tag, versão da mestra em coluna própria.
+  Rotação da mestra: re-cifrar as linhas (como `condominio_chave`).
+- **Sessão:** inatividade 15 min e máximo 8 h (SAAS-08), token de 256 bits, só o SHA-256 no banco, `totp_confirmado_em`
+  obrigatório para valer. Troca de senha revoga as outras sessões; reemissão de credencial pela CLI revoga todas.
+- **Cookie** `__Secure-portaria_plataforma` (dev/e2e: `portaria_plataforma`), `HttpOnly`, `Secure`, `SameSite=Strict`,
+  **`Path=/api/v1/plataforma`**, sem `Domain`. O doc previa `__Host-`, que exige `Path=/`; o caminho restrito foi
+  preferido porque o navegador nem envia o cookie da plataforma às rotas de condomínio. Com o `.vercel.app` na Public
+  Suffix List, nenhum subdomínio vizinho consegue plantar cookie para o host, que é o que o `__Host-` evitaria. A guarda
+  de cada lado só lê o próprio nome, e os tokens estão em tabelas de bancos diferentes: cookie cruzado = 401 (testado
+  nos dois sentidos, inclusive trocando o valor de nome).
+- **Limite de tentativas:** o algoritmo da 0008 do condomínio (par login+IP bloqueia, IP bloqueia, login sozinho só
+  atrasa), na tabela da plataforma, com chaves HMAC de subchave HKDF da chave mestra. Os mesmos números de `config.login`.
+- **E-mail é o login** do Master (a coluna `email` da 0000; SAAS-09 já previa o e-mail como identificação na trilha).
+- **Criação de condomínio pela tela sem dar `CREATEDB` à API.** O pedido pedia "reutilizar `provisionar.ts`" e o doc
+  dizia "a API não cria banco". As duas coisas cabem num **serviço provisionador**: container separado, só na rede
+  interna, ligado à mão (perfil) enquanto há onboarding, que roda o mesmo `provisionar()` da CLI e aceita uma única
+  operação autenticada por token (`PROVISIONADOR_TOKEN`, tempo constante). A API não recebe as senhas de
+  `app_provisionador` nem de `app_migrator` (dono de todos os bancos e das trilhas): invadir a API dá, no máximo, a
+  capacidade de pedir um condomínio novo enquanto o serviço está ligado, e isso fica na trilha da plataforma. Alternativa
+  descartada: dar as duas senhas à API (uma RCE viraria adulteração de trilha e `DROP DATABASE`).
+- **Senha do síndico** volta uma vez na resposta do POST (`Cache-Control: no-store`), não é logada nem vai à trilha; no
+  front, não passa pelo React Query (o `useMutation` guardaria o resultado no cache de mutações) e some ao fechar o modal.
+  Reenviar a mesma entrada responde `ja_provisionado` sem senha (a CLI `--nova-senha-sindico` gera outra).
+- **Módulos:** PATCH com a lista inteira (normalizada na ordem de `MODULOS`); sem mudança, sem linha na trilha;
+  condomínio encerrado/excluído recusa. A recusa de rota no condomínio (`ModuloGuard`) continua para depois.
+- **Códigos de recuperação** (`master_codigo_recuperacao`, SAAS-08) **não** entraram: a recuperação nesta entrega é a CLI
+  `--reemitir-totp` na VPS (exige shell, que é o controle certo para poucos Masters).
+
+**Ficou para depois:** entrega 2 (SAAS-09: leitura auditada dos dados do condomínio, tela "Acessos da plataforma");
+`ModuloGuard` e `modulos` em `/auth/me`; contrato (`condominio_contrato`) e tipo do condomínio na tela; métricas
+(`condominio_metrica`); códigos de recuperação; WebAuthn; limite global por IP para os logins de condomínio (SAAS-14).
+
 ---
 
 ## 6. Impacto
@@ -940,6 +1023,9 @@ Nada disso exige mudança agora, exceto não criar unicidade ou trigger que impe
 | R13 | Master olha dado sem necessidade (art. 6º, III) ou sem cláusula contratual (art. 39) | Cláusula no contrato de cada condomínio antes da F8; acesso só com chamado; registro visível ao controlador |
 | R14 | Senha do `app_provisionador` vazada: com `SET ROLE app_migrator` no banco `postgres`, pode `DROP DATABASE` de condomínio | Mesmo alcance da senha do `app_migrator`, que já está no mesmo `.env`; LOGIN só enquanto houver provisionamento a fazer (`ALTER ROLE ... NOLOGIN` entre um cliente e outro, se o ritmo for baixo); backup diário |
 | R15 | Provisionamento interrompido deixa banco e chaves de um condomínio que não existe para a API | Status `provisionando` ignorado por API, migração e backup; retomada idempotente; rollback em `docs/deploy.md` §16.3 |
+| R16 | Serviço provisionador ligado e API invadida: o invasor pede condomínios novos (com o token, que a API tem) | Serviço desligado fora do onboarding (perfil); uma operação só (criar), nada de excluir ou mexer em condomínio existente; um pedido por vez; trilha `condominio.provisionar` com o Master como ator |
+| R17 | Resposta do POST perdida depois da ativação (timeout da Vercel ou rede): a senha do síndico não chega ao Master | Retomada responde `ja_provisionado` sem senha; nova senha pela CLI `--nova-senha-sindico` (`docs/deploy.md` §18.5) |
+| R18 | Saída da CLI `criar-usuario-plataforma` (senha temporária e segredo TOTP) capturada por ferramenta que grava o terminal | Runbook manda rodar em terminal comum, nunca pelo `!` do Claude Code; `logging: none`; reemissão pela CLI revoga sessões |
 
 ---
 

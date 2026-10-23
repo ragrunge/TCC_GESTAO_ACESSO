@@ -930,3 +930,147 @@ provisionado depois já nasce com ela.
 - **Rollback da imagem:** compatível. A API anterior não lê nem grava a tabela; entradas feitas por ela ficam sem
   prazo. Desfazer a 0011 (DROP) não é necessário e apagaria os prazos e as prorrogações (a trilha
   `permanencia.prorrogar` no `audit_log` fica).
+
+---
+
+## 18. App do Master, F5 entrega 1 (migração `drizzle-plataforma/0003`): deploy MANUAL
+
+Desenho em `docs/05_arquitetura_saas.md` §5.3 (SAAS-07/08). Código: `apps/api/src/master/` (rotas `/api/v1/plataforma/*`),
+`apps/api/src/cli/criar-usuario-plataforma.ts`, `apps/api/src/cli/servidor-provisionador.ts` e o front `apps/plataforma`
+(outro projeto Vercel). Muda compose, Dockerfile e `.env.producao.example`: o `deploy-vps.sh` sai com código 2.
+
+**O que muda em produção:**
+
+- migração `drizzle-plataforma/0003_master_auth.sql`, só *expand*, aplicada pelo serviço `migrate` (laço de sempre):
+  colunas novas em `master_usuario` e `master_sessao` (tabelas vazias até aqui) e o tipo `master_ip` no limite de login
+  da plataforma. Nenhum banco de condomínio muda; `evento_acesso`, a cadeia e a trilha do condomínio não são tocados.
+  `master_usuario.totp_mestra_versao` é NOT NULL sem default: se alguém tiver inserido Master à mão, a migração falha
+  (de propósito) e o deploy para antes da API nova;
+- a API ganha as rotas `/api/v1/plataforma/*` (login com senha + TOTP, sessão própria, lista de condomínios, criação,
+  módulos). O login, o cookie e as guardas do condomínio continuam iguais;
+- dois serviços novos no compose, **fora do `up`** (perfis): `provisionador` (perfil `provisionar`, chamado pela tela
+  "Novo condomínio") e `usuario-plataforma-cli` (perfil `plataforma`, bootstrap do Master).
+
+### 18.1 Deploy da API (uma vez)
+
+```bash
+cd /opt/tcc-portaria
+sudo systemctl start tcc-portaria-backup.service                         # 1. backup antes
+TAG_ANTERIOR="$(sed -n 's/^API_TAG=//p' .env)"; echo "$TAG_ANTERIOR"      #    anotar para o rollback
+git fetch && git checkout --detach origin/main                            # 2. código e imagens
+sed -i "s|^API_TAG=.*|API_TAG=$(git rev-parse --short HEAD)|" .env
+tok() { openssl rand -base64 48 | tr -d '/+=\n'; }                        # 3. token API <-> provisionador, gerado aqui
+grep -q '^PROVISIONADOR_TOKEN=.' .env || { sed -i '/^PROVISIONADOR_TOKEN=$/d' .env; printf 'PROVISIONADOR_TOKEN=%s\n' "$(tok)" >> .env; }
+grep -q '^PROVISIONADOR_URL=.' .env || { sed -i '/^PROVISIONADOR_URL=$/d' .env; printf 'PROVISIONADOR_URL=http://provisionador:3200\n' >> .env; }
+docker compose build && docker compose up -d --wait                       # 4. migrate (plataforma 0003) e API
+```
+
+Conferir:
+
+- `docker compose logs migrate | grep migrar-bancos` termina em `ok (plataforma + N condomínio(s))`;
+- `docker compose exec -T db psql -U postgres -d plataforma -tAc "select count(*) from drizzle.__drizzle_migrations"` = 4;
+- `curl -s -o /dev/null -w '%{http_code}\n' https://<vps>/api/v1/plataforma/auth/me` = `401` (rota no ar, sem sessão);
+- a portaria do piloto entra e "Verificar integridade" dá `ok`, como antes.
+
+`PROVISIONADOR_URL`/`PROVISIONADOR_TOKEN` vazias deixam a criação pela tela desligada (503); a CLI da seção 16 continua
+valendo. Com elas preenchidas mas o serviço parado, a tela também responde 503 ("O provisionador não respondeu").
+
+### 18.2 Bootstrap do primeiro Master (terminal comum)
+
+> **Rodar num terminal SSH comum, NUNCA pelo `!` do Claude Code nem por ferramenta que grave a saída.** A saída traz a
+> senha temporária e o segredo TOTP (a URI `otpauth://`): pelo `!` ela entraria no histórico da conversa e nos
+> servidores do provedor do assistente. O serviço roda com `logging: none` e `--rm`.
+
+```bash
+cd /opt/tcc-portaria
+docker compose --profile plataforma run --rm usuario-plataforma-cli --email <e-mail> --nome "<nome>"   # papel master
+```
+
+- Saída: senha temporária (72 h, troca obrigatória no primeiro login), o segredo em base32 (para digitar no aplicativo
+  autenticador) e a URI `otpauth://totp/...` (para gerar o QR localmente, fora da VPS, se preferir). Nada disso fica
+  guardado em claro: o segredo vai cifrado pela chave mestra (`master_usuario.totp_cifrado`), a senha só como argon2id.
+  A CLI não imprime QR em ASCII: exigiria uma biblioteca nova na imagem da API só para isso.
+- E-mail já cadastrado: `RECUSADO`, código 1, nada muda. Funcionário de suporte (só consulta): `--papel suporte`.
+- Celular perdido: `... usuario-plataforma-cli --email <e-mail> --reemitir-totp` (segredo novo, sessões encerradas).
+  Senha esquecida: `--nova-senha` (temporária nova, troca obrigatória). Os dois juntos valem. Fica em `plataforma_audit`
+  (`master.reemitir_credencial`).
+- Primeiro acesso: no app da plataforma, e-mail + senha temporária + código do aplicativo, e em seguida a troca de senha.
+
+### 18.3 Projeto Vercel do app do Master (o usuário faz no painel)
+
+Projeto **novo**, separado do `apps/web` (origem própria: um XSS de um app não alcança a sessão do outro, SAAS-08):
+
+1. Add New → Project → o mesmo repositório; **Root Directory: `apps/plataforma`**; Framework: Vite (build
+   `npm run build`, saída `dist`; instalação pelo workspace da raiz, como no projeto do `apps/web`).
+2. Nome do projeto: `<nome>-plataforma` (a URL fica `<nome>-plataforma.vercel.app`).
+3. Environment Variables (Production): `VITE_API_URL=/api/v1`.
+4. O `apps/plataforma/vercel.json` já traz o rewrite `/api/:caminho*` para a MESMA API (mesma origem para o navegador:
+   sem CORS), CSP estrita, `X-Robots-Tag: noindex` e **previews desligados** (`"**": false`). Conferir no painel que não
+   há preview ativo (Deployments → Preview): um preview falaria com a API de produção (mesmos limites da seção 6).
+5. Domínio: só o `.vercel.app` por enquanto. Não reaproveitar o domínio do `apps/web`.
+
+A API não precisa de CORS para isso (rewrite = mesma origem): `CORS_ORIGENS` continua vazia.
+
+### 18.4 nginx: limite do login da plataforma (documentado; NÃO aplicado)
+
+Acrescentar ao arquivo do site da seção 5.1 (zona no topo, `location` dentro do `server` 443), com `nginx -t` antes do
+`reload`. Mais apertado que o do condomínio (poucos usuários, nenhum atrás do NAT de uma guarita):
+
+```nginx
+limit_req_zone $binary_remote_addr zone=tcc_plat_login:10m rate=10r/m;
+
+    # Login do Master: 10/min por IP de conexão, rajada de 5. Regex sem diferenciar maiúsculas: o Express casa a rota
+    # sem diferenciar (/API/V1/PLATAFORMA/AUTH/LOGIN chega ao mesmo handler) e um `location =` deixaria essa grafia sem limite.
+    location ~* ^/api/v1/plataforma/auth/login/?$ {
+        limit_req zone=tcc_plat_login burst=5 nodelay;
+        proxy_pass http://127.0.0.1:3100;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+    # Criação de condomínio pela tela: CREATE DATABASE + migrações levam alguns segundos (o cliente espera até 150 s).
+    location ~* ^/api/v1/plataforma/condominios/?$ {
+        limit_req zone=tcc_api burst=10 nodelay;
+        proxy_pass http://127.0.0.1:3100;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 150s;
+    }
+```
+
+O `location = /api/v1/auth/login` da seção 5.1 tem a mesma brecha de maiúsculas (o limite da aplicação continua
+valendo nos dois casos); trocar por `~*` na próxima mexida no nginx.
+
+### 18.5 Criar condomínio pela tela
+
+1. Backup (`sudo systemctl start tcc-portaria-backup.service`) e ligar o provisionador:
+   `docker compose --profile provisionar up -d provisionador`.
+2. No app da plataforma: Licenças → Novo condomínio → preencher (os campos do JSON da seção 16.2) → Criar. A senha
+   temporária do síndico aparece **uma vez** ("Já copiei, fechar"); entregar por canal fora do sistema.
+3. Desligar: `docker compose stop provisionador` (o CREATEDB e a senha do `app_migrator` só ficam num processo vivo
+   enquanto há onboarding a fazer).
+
+Falhou no meio (rede, timeout, provisionador derrubado): o condomínio fica `provisionando`, como na CLI; reenviar o
+MESMO formulário retoma. Se a resposta se perdeu depois da ativação (a senha não chegou à tela), reenviar responde
+`ja_provisionado` sem senha: gerar outra com a CLI (`--nova-senha-sindico`, seção 16.3). Fica em `plataforma_audit`
+(`condominio.provisionar` com o Master como ator e `origem: plataforma`; `condominio.provisionar_falha`).
+
+Timeout da Vercel: o rewrite externo tem limite de tempo de resposta do lado da Vercel; um provisionamento costuma levar
+poucos segundos, mas se a Vercel cortar antes do fim, vale o parágrafo acima (retomar ou nova senha pela CLI).
+
+### 18.6 Rollback
+
+- **API:** imagem anterior (`API_TAG=$TAG_ANTERIOR`, `docker compose up -d --wait`). A 0003 fica: a imagem anterior não
+  lê as colunas novas nem usa as tabelas do Master. As sessões do Master deixam de valer (a imagem anterior não tem as
+  rotas); a portaria não é afetada.
+- **Desligar só o app do Master, sem trocar a API:** pausar o projeto Vercel `-plataforma` (Settings), esvaziar
+  `PROVISIONADOR_URL`/`PROVISIONADOR_TOKEN` (`docker compose up -d api`) e desativar os usuários
+  (`UPDATE master_usuario SET ativo = false`, como superusuário no banco `plataforma`): as sessões caem na próxima
+  requisição.
+- **Desfazer a 0003** não é necessário (só *expand*). Se exigido: com `master_usuario` vazia, como superusuário,
+  `DROP COLUMN` das colunas novas, o CHECK antigo de `plataforma_login_limite` de volta e a linha da 0003 fora de
+  `drizzle.__drizzle_migrations`.
