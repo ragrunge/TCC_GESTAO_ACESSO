@@ -26,8 +26,8 @@ import { NOME_BANCO, urlDoBanco } from '../database/registro-bancos';
 import * as schema from '../db/schema';
 import { carregarChaveMestra, type ChaveMestra, ErroChave } from '../saas/chave-mestra';
 import {
-  type Cluster, DONO_BANCO, type EntradaProvisionamento, ErroProvisionamento, type OpcoesProvisionamento, provisionar,
-  validarEntrada,
+  type Cluster, DONO_BANCO, type EntradaProvisionamento, ErroProvisionamento, type OpcoesProvisionamento, type Portas,
+  provisionar, validarEntrada,
 } from '../saas/provisionar';
 import type { DbPlataforma } from '../saas/registrar-piloto';
 import * as sp from '../saas/schema-plataforma';
@@ -142,6 +142,47 @@ export async function migrarComo(migratorBase: string, banco: string, pasta = PA
   }
 }
 
+/**
+ * As conexões de produção do provisionamento (uma por papel, cada uma no seu banco), compartilhadas pela CLI e pelo
+ * serviço provisionador (servidor-provisionador.ts). `portas()` conecta o cluster na primeira chamada.
+ */
+export function abrirPortas(amb: Ambiente) {
+  const cluster = new Client({ connectionString: amb.provisionador, connectionTimeoutMillis: 5000 });
+  cluster.on('error', () => undefined);
+  const plataforma = new Pool({ connectionString: amb.plataforma, max: 1, connectionTimeoutMillis: 5000 });
+  plataforma.on('error', () => undefined);
+  let conectado = false;
+  let dados: { banco: string; pool: Pool } | null = null;
+  return {
+    async portas(): Promise<Portas> {
+      if (!conectado) { await cluster.connect(); conectado = true; }
+      return {
+        plataforma: drizzle(plataforma, { schema: sp }) as unknown as DbPlataforma,
+        cluster: new ClusterPg(cluster),
+        migrar: (banco) => migrarComo(amb.migratorBase, banco),
+        dados: (banco) => {
+          if (!dados || dados.banco !== banco) {
+            if (dados) void dados.pool.end().catch(() => undefined);
+            dados = { banco, pool: new Pool({ connectionString: urlDoBanco(amb.rwBase, banco), max: 1, connectionTimeoutMillis: 5000 }) };
+            dados.pool.on('error', () => undefined);
+          }
+          return drizzle(dados.pool, { schema }) as unknown as Db;
+        },
+        mestra: amb.mestra,
+        hashSenha: (senha) => hash(senha, { memoryCost: PADROES_ARGON2.memoriaKib, timeCost: PADROES_ARGON2.iteracoes, parallelism: PADROES_ARGON2.paralelismo }),
+        gerarSenha: () => gerarSenhaTemporaria(),
+      };
+    },
+    async fechar() {
+      await cluster.end().catch(() => undefined);
+      await plataforma.end().catch(() => undefined);
+      const d = dados as { pool: Pool } | null;
+      if (d) await d.pool.end().catch(() => undefined);
+      dados = null;
+    },
+  };
+}
+
 async function lerStdin(): Promise<string> {
   if (process.stdin.isTTY) throw new ErroUso(`${USO}\n(stdin é um terminal: passe o JSON por redirecionamento, ex. < condominio.json)`);
   const partes: Buffer[] = [];
@@ -163,28 +204,9 @@ async function principal(): Promise<number> {
     return e instanceof ErroUso ? 2 : 1;
   }
 
-  const cluster = new Client({ connectionString: amb.provisionador, connectionTimeoutMillis: 5000 });
-  cluster.on('error', () => undefined);
-  const plataforma = new Pool({ connectionString: amb.plataforma, max: 1, connectionTimeoutMillis: 5000 });
-  plataforma.on('error', () => undefined);
-  let dados: { banco: string; pool: Pool } | null = null;
+  const conexoes = abrirPortas(amb);
   try {
-    await cluster.connect();
-    const r = await provisionar({
-      plataforma: drizzle(plataforma, { schema: sp }) as unknown as DbPlataforma,
-      cluster: new ClusterPg(cluster),
-      migrar: (banco) => migrarComo(amb.migratorBase, banco),
-      dados: (banco) => {
-        if (!dados || dados.banco !== banco) {
-          dados = { banco, pool: new Pool({ connectionString: urlDoBanco(amb.rwBase, banco), max: 1, connectionTimeoutMillis: 5000 }) };
-          dados.pool.on('error', () => undefined);
-        }
-        return drizzle(dados.pool, { schema }) as unknown as Db;
-      },
-      mestra: amb.mestra,
-      hashSenha: (senha) => hash(senha, { memoryCost: PADROES_ARGON2.memoriaKib, timeCost: PADROES_ARGON2.iteracoes, parallelism: PADROES_ARGON2.paralelismo }),
-      gerarSenha: () => gerarSenhaTemporaria(),
-    }, entrada, opcoes);
+    const r = await provisionar(await conexoes.portas(), entrada, opcoes);
 
     const { sindico, ...publico } = r;
     console.log(JSON.stringify(publico, null, 2));
@@ -216,11 +238,8 @@ async function principal(): Promise<number> {
       + 'com a MESMA entrada para retomar, ou desfaça pela docs/deploy.md, seção 16.');
     return 1;
   } finally {
+    await conexoes.fechar();
     amb.mestra.chave.fill(0);
-    await cluster.end().catch(() => undefined);
-    await plataforma.end().catch(() => undefined);
-    const d = dados as { pool: Pool } | null;
-    if (d) await d.pool.end().catch(() => undefined);
   }
 }
 

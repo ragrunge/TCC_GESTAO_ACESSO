@@ -18,6 +18,7 @@ import * as s from '../../src/db/schema';
 import { seedEstrutura } from '../../src/db/seed';
 import { seedUsuariosDev, USUARIOS_DEV } from '../../src/db/seed-usuarios';
 import { configurarApp } from '../../src/plataforma';
+import { PROVISIONADOR, type Provisionador } from '../../src/master/provisionador';
 import { ENVIO_ANCORA, type EnvioAncora, type ResumoSelo, SemDestinoAncora } from '../../src/selo/ancora';
 import type { CondominioResolvido } from '../../src/saas/condominio';
 import { ResolvedorCondominio } from '../../src/saas/resolvedor';
@@ -95,6 +96,8 @@ export interface OpcoesApi {
   demo?: boolean;
   /** Status do piloto na plataforma (padrão ativo). */
   statusPiloto?: 'ativo' | 'suspenso' | 'encerrado';
+  /** Provisionador do app do Master (padrão: o do ambiente, desligado nos testes). Recebe a plataforma e o registro. */
+  provisionador?: (c: { plataforma: Awaited<ReturnType<typeof novoBancoPlataforma>>; registro: RegistroDeTeste }) => Provisionador;
 }
 
 export async function novaApi(extra: Partial<Config> = {}, opcoes: OpcoesApi = {}) {
@@ -123,6 +126,7 @@ export async function novaApi(extra: Partial<Config> = {}, opcoes: OpcoesApi = {
     .overrideProvider(CONFIG).useValue(config)
     .overrideProvider(RELOGIO).useValue(relogio);
   if (opcoes.ancora) construtor = construtor.overrideProvider(ENVIO_ANCORA).useValue(opcoes.ancora);
+  if (opcoes.provisionador) construtor = construtor.overrideProvider(PROVISIONADOR).useValue(opcoes.provisionador({ plataforma, registro }));
   const mod = await construtor.compile();
   const app = mod.createNestApplication<NestExpressApplication>({ logger: false });
   configurarApp(app, config);
@@ -153,7 +157,7 @@ export async function novaApi(extra: Partial<Config> = {}, opcoes: OpcoesApi = {
 
   return {
     app: app as INestApplication, client, db, config, relogio, usuarios, http, entrar, como, USUARIOS_DEV,
-    plataforma, pilotoId, demo, servico, condominio,
+    plataforma, pilotoId, demo, servico, condominio, registro,
   };
 }
 

@@ -22,7 +22,8 @@ export class SessaoGuard implements CanActivate {
   ) {}
 
   async canActivate(c: ExecutionContext): Promise<boolean> {
-    if (politicaDe(this.reflector, c)?.tipo === 'publico') return true;
+    const tipo = politicaDe(this.reflector, c)?.tipo;
+    if (tipo === 'publico' || tipo === 'plataforma') return true; // plataforma: PlataformaGuard (src/master)
     const req = c.switchToHttp().getRequest<Request>();
     const valor = lerCookieSessao(req, this.config);
     if (!valor) throw erroApi(401, 'NAO_AUTENTICADO', 'Entre no sistema para continuar.');
@@ -47,7 +48,7 @@ export class PapelGuard implements CanActivate {
 
   canActivate(c: ExecutionContext): boolean {
     const politica = politicaDe(this.reflector, c);
-    if (politica?.tipo === 'publico') return true;
+    if (politica?.tipo === 'publico' || politica?.tipo === 'plataforma') return true;
     const req = c.switchToHttp().getRequest<Request>();
     const usuario = req.auth?.usuario;
     if (!usuario) throw erroApi(401, 'NAO_AUTENTICADO', 'Entre no sistema para continuar.');

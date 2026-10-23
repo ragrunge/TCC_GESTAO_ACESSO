@@ -3,9 +3,9 @@
 //    serviços seguem com `@Inject(DB) db` e não sabem de condomínio: cada condomínio tem a sua instância de cada serviço.
 //    Na subárvore "sem condomínio", `DB` lança no primeiro uso (falha fechada) e `PG_POOL` é null.
 //  - `REGISTRO_BANCOS`: os pools `app_rw`, um por banco de condomínio (database/registro-bancos.ts).
-//  - `PLATAFORMA_DB` (pool `app_plataforma`) e a chave mestra: declarados aqui, mas NÃO exportados. Só o
-//    ResolvedorCondominio e o RegistroAnonimizacoes (só a tabela lgpd_anonimizacao, só ids) os injetam (teste de
-//    arquitetura em test/saas-isolamento.test.ts).
+//  - `PLATAFORMA_DB` (pool `app_plataforma`) e a chave mestra: declarados aqui. Só o ResolvedorCondominio, o
+//    RegistroAnonimizacoes (só a tabela lgpd_anonimizacao, só ids) e o módulo do Master (src/master) os injetam (teste
+//    de arquitetura em test/saas-isolamento.test.ts).
 import { Global, Inject, Module, type OnApplicationShutdown, Scope } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import type { ExtractTablesWithRelations } from 'drizzle-orm';
@@ -82,7 +82,9 @@ export const dbSemCondominio = (): Db => new Proxy({} as Db, {
       useFactory: (c: CondominioResolvido | null, r: RegistroBancos): Pool | null => (c ? r.pool(c.banco) : null),
     },
   ],
-  exports: [DB, PG_POOL, CONDOMINIO, ESTRUTURA, REGISTRO_BANCOS, ResolvedorCondominio, RegistroAnonimizacoes],
+  // PLATAFORMA_DB e CHAVE_MESTRA saem daqui só para o módulo do Master (src/master, F5): o teste de arquitetura
+  // (test/saas-isolamento.test.ts) limita quem cita os dois símbolos.
+  exports: [DB, PG_POOL, CONDOMINIO, ESTRUTURA, REGISTRO_BANCOS, ResolvedorCondominio, RegistroAnonimizacoes, PLATAFORMA_DB, CHAVE_MESTRA],
 })
 export class DatabaseModule implements OnApplicationShutdown {
   constructor(

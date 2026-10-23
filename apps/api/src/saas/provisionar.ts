@@ -135,6 +135,11 @@ export interface Portas {
 export interface OpcoesProvisionamento {
   /** Condomínio já ativo: gera outra senha temporária para o síndico que ainda não entrou nenhuma vez. */
   novaSenhaSindico?: boolean;
+  /**
+   * Quem pediu pela tela do Master (F5, entrega 1): vira o ator da linha `condominio.provisionar` de `plataforma_audit`
+   * (gravada na MESMA transação da ativação) e `detalhes.origem = 'plataforma'`. Ausente: CLI (`origem = 'cli'`, ator nulo).
+   */
+  masterUsuarioId?: string;
 }
 
 export interface ResultadoProvisionamento {
@@ -353,9 +358,9 @@ export async function provisionar(p: Portas, e: EntradaProvisionamento, o: Opcoe
       .where(and(eq(sp.condominio.id, reg.id), eq(sp.condominio.status, 'provisionando'))).returning({ id: sp.condominio.id });
     if (!ativado.length) throw new ErroProvisionamento('o condomínio saiu de provisionando durante a execução: conferir à mão');
     await tx.insert(sp.plataformaAudit).values({
-      acao: 'condominio.provisionar', condominioId: reg.id,
+      acao: 'condominio.provisionar', condominioId: reg.id, masterUsuarioId: o.masterUsuarioId ?? null,
       detalhes: {
-        origem: 'cli', banco: reg.banco, unidades, migracoes: migracoes.aplicadas, modulos: reg.modulos, retomado: !reg.novo,
+        origem: o.masterUsuarioId ? 'plataforma' : 'cli', banco: reg.banco, unidades, migracoes: migracoes.aplicadas, modulos: reg.modulos, retomado: !reg.novo,
         chaves: chaves.map(({ tipo, versao, mestraVersao }) => ({ tipo, versao, mestraVersao })),
       },
     });

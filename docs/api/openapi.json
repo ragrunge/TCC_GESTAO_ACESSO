@@ -26,6 +26,12 @@
       "name": "auth"
     },
     {
+      "name": "authmaster"
+    },
+    {
+      "name": "condominiosmaster"
+    },
+    {
       "name": "encomendas"
     },
     {
@@ -5228,6 +5234,563 @@
         }
       }
     },
+    "/plataforma/auth/login": {
+      "post": {
+        "tags": [
+          "authmaster"
+        ],
+        "operationId": "authmaster_login",
+        "summary": "POST /plataforma/auth/login",
+        "description": "Plataforma (Master). Pública: não exige sessão.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 254
+                  },
+                  "senha": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "codigo": {
+                    "type": "string",
+                    "pattern": "^\\d{6}$"
+                  }
+                },
+                "required": [
+                  "email",
+                  "senha",
+                  "codigo"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Arquivo (corpo binário, fora do envelope `{data}`).",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Erro400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Erro409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Erro429"
+          }
+        }
+      }
+    },
+    "/plataforma/auth/logout": {
+      "post": {
+        "tags": [
+          "authmaster"
+        ],
+        "operationId": "authmaster_logout",
+        "summary": "POST /plataforma/auth/logout",
+        "description": "Plataforma (Master): qualquer usuário da plataforma logado.",
+        "security": [
+          {
+            "sessaoPlataforma": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Sem conteúdo."
+          },
+          "400": {
+            "$ref": "#/components/responses/Erro400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Erro409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Erro429"
+          }
+        }
+      }
+    },
+    "/plataforma/auth/me": {
+      "get": {
+        "tags": [
+          "authmaster"
+        ],
+        "operationId": "authmaster_me",
+        "summary": "GET /plataforma/auth/me",
+        "description": "Plataforma (Master): qualquer usuário da plataforma logado.",
+        "security": [
+          {
+            "sessaoPlataforma": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sucesso: envelope `{data}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Erro400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Erro409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Erro429"
+          }
+        }
+      }
+    },
+    "/plataforma/auth/trocar-senha": {
+      "post": {
+        "tags": [
+          "authmaster"
+        ],
+        "operationId": "authmaster_trocarSenha",
+        "summary": "POST /plataforma/auth/trocar-senha",
+        "description": "Plataforma (Master): qualquer usuário da plataforma logado.",
+        "security": [
+          {
+            "sessaoPlataforma": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "senhaAtual": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "novaSenha": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "senhaAtual",
+                  "novaSenha"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sucesso: envelope `{data}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Erro400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Erro409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Erro429"
+          }
+        }
+      }
+    },
+    "/plataforma/condominios": {
+      "get": {
+        "tags": [
+          "condominiosmaster"
+        ],
+        "operationId": "condominiosmaster_listar",
+        "summary": "GET /plataforma/condominios",
+        "description": "Plataforma (Master). Permissão: `condominio.listar`",
+        "x-permissao": "condominio.listar",
+        "security": [
+          {
+            "sessaoPlataforma": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sucesso: envelope `{data}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Erro400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Erro409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Erro429"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "condominiosmaster"
+        ],
+        "operationId": "condominiosmaster_criar",
+        "summary": "POST /plataforma/condominios",
+        "description": "Plataforma (Master). Permissão: `condominio.criar`",
+        "x-permissao": "condominio.criar",
+        "security": [
+          {
+            "sessaoPlataforma": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "codigo": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{2,30}$"
+                  },
+                  "nome": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "cidade": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "uf": {
+                    "type": "string"
+                  },
+                  "plano": {
+                    "default": "padrao",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "estrutura": {
+                    "type": "object",
+                    "properties": {
+                      "agrupamento": {
+                        "type": "string",
+                        "enum": [
+                          "Bloco",
+                          "Torre"
+                        ]
+                      },
+                      "blocos": {
+                        "minItems": 1,
+                        "maxItems": 60,
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "andares": {
+                        "minItems": 1,
+                        "maxItems": 10,
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "finais": {
+                        "minItems": 1,
+                        "maxItems": 9,
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "ausentes": {
+                        "default": [],
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "agrupamento",
+                      "blocos",
+                      "andares",
+                      "finais"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "areasComuns": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "sindico": {
+                    "type": "object",
+                    "properties": {
+                      "nome": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 120
+                      },
+                      "login": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9._-]{2,39}$"
+                      }
+                    },
+                    "required": [
+                      "nome",
+                      "login"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "codigo",
+                  "nome",
+                  "cidade",
+                  "uf",
+                  "estrutura",
+                  "sindico"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Arquivo (corpo binário, fora do envelope `{data}`).",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Erro400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Erro409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Erro429"
+          }
+        }
+      }
+    },
+    "/plataforma/condominios/{id}/modulos": {
+      "patch": {
+        "tags": [
+          "condominiosmaster"
+        ],
+        "operationId": "condominiosmaster_modulos",
+        "summary": "PATCH /plataforma/condominios/{id}/modulos",
+        "description": "Plataforma (Master). Permissão: `condominio.modulos`",
+        "x-permissao": "condominio.modulos",
+        "security": [
+          {
+            "sessaoPlataforma": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "modulos": {
+                    "maxItems": 14,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "encomendas",
+                        "ocorrencias",
+                        "autorizacoes_previas",
+                        "importacao",
+                        "veiculos",
+                        "funcionarios",
+                        "relatorios"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "modulos"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sucesso: envelope `{data}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Erro400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Erro409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Erro429"
+          }
+        }
+      }
+    },
     "/relatorios/resumo": {
       "get": {
         "tags": [
@@ -7737,6 +8300,12 @@
   },
   "components": {
     "securitySchemes": {
+      "sessaoPlataforma": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Secure-portaria_plataforma",
+        "description": "Cookie da sessão do Master (app da plataforma), Path=/api/v1/plataforma, criado por `POST /plataforma/auth/login` (e-mail, senha e código TOTP). Nunca aceito nas rotas de condomínio, e o de condomínio nunca é aceito aqui. No modo local (http) o nome é `portaria_plataforma`."
+      },
       "sessao": {
         "type": "apiKey",
         "in": "cookie",

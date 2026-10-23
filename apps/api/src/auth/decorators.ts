@@ -10,6 +10,12 @@ export const POLITICA = 'portaria:politica';
 
 export type Politica =
   | { tipo: 'publico' }
+  /**
+   * Rota da PLATAFORMA (/plataforma/*, app do Master; src/master/). As guardas de condomínio não a atendem: quem
+   * autentica e autoriza é a PlataformaGuard, com cookie, sessão e tabela próprios (SAAS-07). Só os decorators de
+   * src/master/decorators.ts gravam este tipo.
+   */
+  | { tipo: 'plataforma' }
   | { tipo: 'autenticado'; permiteTrocaPendente: boolean }
   | { tipo: 'acao'; acao: AcaoRbac };
 

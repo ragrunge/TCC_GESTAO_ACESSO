@@ -9,6 +9,8 @@ import { RouteParamtypes } from '@nestjs/common/enums/route-paramtypes.enum';
 import { ModulesContainer } from '@nestjs/core';
 import { z } from 'zod';
 import { POLITICA, type Politica } from '../auth/decorators';
+import { CAMINHO_COOKIE_MASTER, nomeCookieMaster } from '../master/cookie-master';
+import { POLITICA_MASTER, type PoliticaMaster } from '../master/decorators';
 import { ZodPipe } from '../comum/zod.pipe';
 import { PREFIXO_GLOBAL } from '../plataforma';
 
@@ -201,12 +203,23 @@ export function gerarOpenApiComRelatorio(app: INestApplication, opcoes: OpcoesOp
         } else if (politica?.tipo === 'autenticado') {
           op.summary = rotulo;
           op.description = politica.permiteTrocaPendente ? 'Qualquer usuário logado (inclusive quem ainda deve trocar a senha).' : 'Qualquer usuário logado.';
+        } else if (politica?.tipo === 'plataforma') {
+          // App do Master (src/master): política própria em POLITICA_MASTER, sessão e cookie da plataforma.
+          const pm = (Reflect.getMetadata(POLITICA_MASTER, handler) ?? Reflect.getMetadata(POLITICA_MASTER, ctrl)) as PoliticaMaster | undefined;
+          op.summary = rotulo;
+          op.description = pm?.tipo === 'acao' ? `Plataforma (Master). Permissão: \`${pm.acao}\``
+            : pm?.tipo === 'publico' ? 'Plataforma (Master). Pública: não exige sessão.'
+              : 'Plataforma (Master): qualquer usuário da plataforma logado.';
+          if (pm?.tipo === 'acao') op['x-permissao'] = pm.acao;
         } else {
           op.summary = rotulo;
           if (politica?.tipo === 'publico') op.description = 'Pública: não exige sessão.';
           else rel.avisos.push(`${rotulo}: sem política (@Publico/@Autenticado/@Acao); a API nega por padrão`);
         }
-        if (politica && politica.tipo !== 'publico') op.security = [{ sessao: [] }];
+        if (politica?.tipo === 'plataforma') {
+          const pm = (Reflect.getMetadata(POLITICA_MASTER, handler) ?? Reflect.getMetadata(POLITICA_MASTER, ctrl)) as PoliticaMaster | undefined;
+          if (pm?.tipo !== 'publico') op.security = [{ sessaoPlataforma: [] }];
+        } else if (politica && politica.tipo !== 'publico') op.security = [{ sessao: [] }];
         if (parametros.length) op.parameters = parametros;
         if (requestBody) op.requestBody = requestBody;
         op.responses = respostas;
@@ -253,6 +266,10 @@ export function gerarOpenApiComRelatorio(app: INestApplication, opcoes: OpcoesOp
     paths: ordenarPaths,
     components: {
       securitySchemes: {
+        sessaoPlataforma: {
+          type: 'apiKey', in: 'cookie', name: nomeCookieMaster(true),
+          description: `Cookie da sessão do Master (app da plataforma), Path=${CAMINHO_COOKIE_MASTER}, criado por \`POST /plataforma/auth/login\` (e-mail, senha e código TOTP). Nunca aceito nas rotas de condomínio, e o de condomínio nunca é aceito aqui. No modo local (http) o nome é \`${nomeCookieMaster(false)}\`.`,
+        },
         sessao: {
           type: 'apiKey', in: 'cookie', name: COOKIE_PRODUCAO,
           description: `Cookie de sessão HttpOnly; SameSite=Strict, criado por \`POST /auth/login\`. Em produção (https) o nome é \`${COOKIE_PRODUCAO}\` (com Secure); no modo local (http) é \`${COOKIE_LOCAL}\` (sem Secure).`,
