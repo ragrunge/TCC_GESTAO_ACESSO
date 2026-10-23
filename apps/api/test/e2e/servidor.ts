@@ -32,7 +32,10 @@ import { configurarApp, PREFIXO_GLOBAL } from '../../src/plataforma';
 import { configDeTeste } from '../helpers/app';
 import { CHAVE_HMAC_TESTE, PASTA_MIGRACOES } from '../helpers/banco';
 import { novoBancoPlataforma } from '../helpers/plataforma';
-import { comSaas, KEK_TESTE, registrarCondominio, RegistroDeTeste } from '../helpers/saas';
+import { comSaas, KEK_TESTE, MESTRA_TESTE, registrarCondominio, RegistroDeTeste } from '../helpers/saas';
+import { provisionadorPglite } from '../helpers/provisionador';
+import { PROVISIONADOR } from '../../src/master/provisionador';
+import { semearMastersE2e } from './masters';
 import { semearDadosE2e, USUARIOS_E2E } from './dados';
 
 /** Senha de todos os usuários do e2e (fictícia, só deste modo). O playwright.config.ts manda a mesma em E2E_SENHA. */
@@ -115,9 +118,16 @@ export async function iniciarServidorE2e(o: OpcoesServidorE2e) {
   // Banco plataforma (SaaS, F2) com o piloto: o banco `portaria` do registro é o Proxy acima.
   const plataforma = await novoBancoPlataforma();
   await registrarCondominio(plataforma.db, { codigo: CODIGO_PILOTO_E2E, banco: 'portaria', hmac: CHAVE_HMAC_TESTE, kek: KEK_TESTE });
+  // App do Master (F5): usuários fictícios da plataforma e o provisionamento de verdade sobre PGlite (sem o sidecar).
+  const masterHash = await hash(senha, { memoryCost: config.argon2.memoriaKib, timeCost: 1, parallelism: 1 });
+  const semearMasters = () => semearMastersE2e(plataforma.db, masterHash);
+  await semearMasters();
+  const registro = new RegistroDeTeste(new Map([['portaria', db]]));
+  const provisionador = provisionadorPglite({ plataforma, registro, mestra: MESTRA_TESTE });
   const mod = await comSaas(Test.createTestingModule({ imports: [AppModule] }), {
-    plataforma: plataforma.db, registro: new RegistroDeTeste(new Map([['portaria', db]])), fecharPlataforma: () => plataforma.client.close(),
+    plataforma: plataforma.db, registro, fecharPlataforma: async () => { await provisionador.cluster.fechar(); await plataforma.client.close(); },
   })
+    .overrideProvider(PROVISIONADOR).useValue(provisionador)
     .overrideProvider(CONFIG).useValue(config)
     .overrideProvider(RELOGIO).useValue(relogioDoSistema)
     .compile();
@@ -133,7 +143,10 @@ export async function iniciarServidorE2e(o: OpcoesServidorE2e) {
     );
   };
   const http = app.getHttpAdapter().getInstance();
-  http.post('/__e2e/reset', rota(async () => { await trocarBanco(); return {}; }));
+  // O reset também devolve os usuários da plataforma ao estado semeado e zera o anti-replay do TOTP e os limites de login
+  // da plataforma (sem isso, dois logins do Master no mesmo intervalo de 30 s seriam recusados). Condomínios criados pelo
+  // e2e do app do Master ficam (códigos únicos por execução).
+  http.post('/__e2e/reset', rota(async () => { await trocarBanco(); await semearMasters(); return {}; }));
   // Adultera um evento sem recalcular o hash (o que um DBA mal-intencionado faria): a verificação da trilha deve apontar.
   // session_replication_role=replica desliga os triggers de imutabilidade só nesta transação do banco de teste.
   http.post('/__e2e/adulterar-evento', rota(async (req) => {

@@ -10,6 +10,8 @@
 # Fora do contexto de build da API
 apps/web/**
 !apps/web/package.json
+apps/plataforma/**
+!apps/plataforma/package.json
 docs
 diagramas
 prototipo

@@ -23,11 +23,12 @@ import { OcorrenciasModule } from './ocorrencias/ocorrencias.module';
 import { SeloModule } from './selo/selo.module';
 import { LgpdModule } from './lgpd/lgpd.module';
 import { JobsModule } from './jobs/agendador';
+import { MasterModule } from './master/master.module';
 
 @Module({
   imports: [ConfigModule, DatabaseModule, AuditoriaModule, AuthModule, UsuariosModule, UnidadesModule, PessoasModule, VinculosModule,
     FuncionariosModule, VeiculosModule, ImportacaoModule, AcessoModule, AuditoriaRotasModule, RelatoriosModule, EncomendasModule, OcorrenciasModule,
-    SeloModule, LgpdModule, JobsModule],
+    SeloModule, LgpdModule, JobsModule, MasterModule],
   controllers: [SaudeController],
   providers: [
     SaudeService,

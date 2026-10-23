@@ -1,4 +1,5 @@
-# Testes do front: typecheck, testes unitários, build e e2e (Playwright) contra a API REAL sobre PGlite em memória
+# Testes dos fronts (apps/web e apps/plataforma, o app do Master): typecheck, testes unitários, build e e2e (Playwright)
+# contra a API REAL sobre PGlite em memória
 # (`npm run dev:pglite -w apps/api`, subida pelo playwright.config.ts). Sem Docker, sem segredo e sem acesso à VPS:
 # o servidor de e2e recusa subir com PORTARIA_AMBIENTE=producao ou DATABASE_URL, e nada deste job fala com produção.
 name: Testes do web
@@ -8,6 +9,7 @@ on:
     branches: [main]
     paths:
       - 'apps/web/**'
+      - 'apps/plataforma/**'
       - 'apps/api/**'
       - 'packages/domain/**'
       - 'package-lock.json'
@@ -15,6 +17,7 @@ on:
   pull_request:
     paths:
       - 'apps/web/**'
+      - 'apps/plataforma/**'
       - 'apps/api/**'
       - 'packages/domain/**'
       - 'package-lock.json'
@@ -50,4 +53,11 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: E2E contra a API sobre PGlite
         working-directory: apps/web
+        run: npx playwright test
+      - name: Typecheck e build do app do Master (apps/plataforma)
+        run: npm run build -w apps/plataforma
+      - name: Testes unitários do app do Master
+        run: npm test -w apps/plataforma
+      - name: E2E do app do Master contra a API sobre PGlite
+        working-directory: apps/plataforma
         run: npx playwright test

@@ -89,7 +89,10 @@ describe('§6.1 item 1: id de outro condomínio se comporta como id inexistente 
     pessoas: ['pessoa', 'id'], restricoes: ['restricao', 'id'], unidades: ['unidade', 'id'], usuarios: ['usuario_sistema', 'id'],
     veiculos: ['veiculo', 'id'], vinculos: ['vinculo_unidade', 'id'],
   };
-  const rotas = Object.entries(openapi.paths).flatMap(([p, ops]) => Object.keys(ops).map((m) => [m, p] as const)).filter(([, p]) => p.includes('{'));
+  // Rotas do app do Master (/plataforma/*) não são de condomínio: nenhuma sessão de condomínio as alcança
+  // (test/master-api.test.ts, "cookie cruzado"), e o id delas é de condomínio na plataforma, não de registro do condomínio.
+  const rotas = Object.entries(openapi.paths).flatMap(([p, ops]) => Object.keys(ops).map((m) => [m, p] as const))
+    .filter(([, p]) => p.includes('{') && !p.startsWith('/plataforma/'));
 
   it('cobre todas as rotas com parâmetro do openapi.json', () => {
     expect(rotas.length).toBeGreaterThanOrEqual(40);
@@ -313,7 +316,13 @@ describe('§6.1 item 7: arquitetura', () => {
 
   it('só o DatabaseModule, o módulo da plataforma, o ResolvedorCondominio e o registro de anonimizações citam PLATAFORMA_DB', () => {
     const citam = fontes.filter((x) => /\bPLATAFORMA_DB\b/.test(x.texto)).map((x) => x.f).sort();
-    expect(citam).toEqual(['database/database.module.ts', 'saas/plataforma-db.ts', 'saas/registro-anonimizacao.ts', 'saas/resolvedor.ts']);
+    // App do Master (F5): só arquivos de src/master/, e nenhum deles injeta DB/CONDOMINIO de condomínio.
+    const doMaster = citam.filter((f) => f.startsWith('master/'));
+    expect(citam.filter((f) => !f.startsWith('master/'))).toEqual(['database/database.module.ts', 'saas/plataforma-db.ts', 'saas/registro-anonimizacao.ts', 'saas/resolvedor.ts']);
+    expect(doMaster.length).toBeGreaterThan(0);
+    for (const f of fontes.filter((x) => x.f.startsWith('master/'))) {
+      expect(/@Inject\((DB|CONDOMINIO|PG_POOL|REGISTRO_BANCOS)\)/.test(f.texto), `${f.f} injeta banco de condomínio`).toBe(false);
+    }
   });
 
   it('nenhuma classe do src guarda estado em campo estático (estado tem de ficar na instância, por condomínio)', () => {

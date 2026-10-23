@@ -9,6 +9,13 @@ import { ResolvedorCondominio } from './saas/resolvedor';
 /** Prefixo global da API (usado também pelo gerador de OpenAPI, para montar as URLs dos servidores). */
 export const PREFIXO_GLOBAL = 'api/v1';
 
+const PREFIXO_PLATAFORMA = `/${PREFIXO_GLOBAL}/plataforma`;
+/** `/api/v1/plataforma` e abaixo, sem diferenciar maiúsculas (como o roteamento do Express). */
+export const ehRotaPlataforma = (caminho: string) => {
+  const c = caminho.toLowerCase();
+  return c === PREFIXO_PLATAFORMA || c.startsWith(`${PREFIXO_PLATAFORMA}/`);
+};
+
 export function configurarApp(app: NestExpressApplication, config: Config) {
   app.setGlobalPrefix(PREFIXO_GLOBAL);
   // trust proxy: só com proxy de verdade na frente (TRUST_PROXY=n saltos). Sem proxy, X-Forwarded-For seria
@@ -21,7 +28,19 @@ export function configurarApp(app: NestExpressApplication, config: Config) {
   // SaaS (F2, SAAS-03): o condomínio da requisição é resolvido ANTES do roteamento do Nest, e a estratégia de contexto
   // o usa para escolher a subárvore de injeção (o banco e as chaves dele). Ver saas/contexto.ts.
   aplicarEstrategiaCondominio();
-  app.use(middlewareCondominio(app.get(ResolvedorCondominio), config, `/${PREFIXO_GLOBAL}/auth/login`));
+  // Rotas do Master (/plataforma/*, src/master): SEM condomínio, sempre. Nem cabeçalho X-Condominio nem cookie de
+  // condomínio escolhem banco ali: a requisição cai na subárvore "sem condomínio" (DB de condomínio falha fechado) e um
+  // 403 da plataforma nunca vai parar na trilha de um condomínio (FiltroExcecao). O Express casa rota sem diferenciar
+  // maiúsculas: a comparação também não diferencia.
+  const condominio = middlewareCondominio(app.get(ResolvedorCondominio), config, `/${PREFIXO_GLOBAL}/auth/login`);
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (ehRotaPlataforma(req.path)) {
+      req.condominio = null;
+      req.condominioStatus = null;
+      return next();
+    }
+    return condominio(req, res, next);
+  });
   app.use((_req: Request, res: Response, next: NextFunction) => {
     // Respostas da API carregam dado pessoal e, na redefinição, a senha temporária: nada em cache.
     res.setHeader('Cache-Control', 'no-store');

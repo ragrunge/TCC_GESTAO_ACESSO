@@ -6,7 +6,8 @@
 # (apps/api/scripts/migrar-bancos.mjs, o serviço `migrate` da F2) -> login do app_provisionador (como o runbook,
 # docs/deploy.md seção 16) -> npm run test:pg -> smoke das CLIs e dos privilégios (docs/deploy.md, seções 12.3, 13 e 16)
 # -> smoke da API multi-banco (boot com as chaves da plataforma e recusa com chave trocada) -> smoke da CLI
-# provisionar-condominio (condomínio novo, idempotência, laço de migração). Qualquer divergência falha o job com ::error::.
+# provisionar-condominio (condomínio novo, idempotência, laço de migração) -> smoke do app do Master (CLI do usuário da
+# plataforma e serviço provisionador). Qualquer divergência falha o job com ::error::.
 #
 # Sem segredo do repositório: o único valor fixo é a senha do superusuário de um Postgres que morre com o job; as demais
 # senhas e as chaves das CLIs são geradas no job, mascaradas no log e descartadas. Nada aqui fala com a VPS.
@@ -76,12 +77,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # psql (os .sh do bootstrap o usam), age (linha de base) e openssl (geração de senhas e chaves). O psql do Debian 12
+      # psql (os .sh do bootstrap o usam), age (linha de base), openssl (geração de senhas e chaves) e curl (provisionador). O psql do Debian 12
       # é o 15: fala com o servidor 17 e o bootstrap só usa SQL básico e \gexec.
       - name: Ferramentas do sistema
         run: |
           apt-get update -qq
-          apt-get install -y -qq --no-install-recommends postgresql-client age openssl ca-certificates
+          apt-get install -y -qq --no-install-recommends postgresql-client age openssl ca-certificates curl
           psql --version
           age --version
 
@@ -382,4 +383,58 @@ jobs:
           # O laço de migração do deploy passa a incluir o banco novo (ativo).
           node scripts/migrar-bancos.mjs > "$d/laco.txt" 2>&1 || { cat "$d/laco.txt"; falha "migrar-bancos.mjs falhou com o condomínio novo"; }
           grep -q "migrar-bancos: $banco" "$d/laco.txt" || falha "o laço de migração não incluiu $banco"
+          rm -rf "$d"
+
+      - name: Smoke do app do Master (CLI criar-usuario-plataforma e serviço provisionador, docs/deploy.md seção 18)
+        working-directory: apps/api
+        run: |
+          falha() { echo "::error::$*"; exit 1; }
+          export DATABASE_URL_PROVISIONADOR="postgres://app_provisionador:${APP_PROVISIONADOR_PASSWORD}@${PGHOST}:5432/postgres"
+          export MIGRATOR_URL_BASE="postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@${PGHOST}:5432"
+          export DATABASE_URL="postgres://app_rw:${APP_RW_PASSWORD}@${PGHOST}:5432/portaria"
+          export DATABASE_URL_PLATAFORMA="postgres://app_plataforma:${APP_PLATAFORMA_PASSWORD}@${PGHOST}:5432/plataforma"
+          export PORTARIA_CHAVE_MESTRA_VERSAO=1
+          export PROVISIONADOR_TOKEN="$(openssl rand -hex 32)"; echo "::add-mask::$PROVISIONADOR_TOKEN"
+          d="$RUNNER_TEMP/master"; mkdir -p "$d"
+          # 1. Bootstrap do Master como app_plataforma (GRANTs reais): cria; a 2a vez recusa (código 1) sem mudar nada.
+          node dist/cli/criar-usuario-plataforma.js --email master.ci@exemplo.test --nome "Master de CI" >"$d/c1.txt" 2>&1 || { cat "$d/c1.txt"; falha "criar-usuario-plataforma falhou"; }
+          grep -q "otpauth://totp/" "$d/c1.txt" || falha "a CLI não mostrou a URI otpauth"
+          grep -q "senha temporária:" "$d/c1.txt" || falha "a CLI não mostrou a senha temporária"
+          if node dist/cli/criar-usuario-plataforma.js --email MASTER.ci@exemplo.test --nome "Outro" >"$d/c2.txt" 2>&1; then falha "e-mail repetido foi aceito"; fi
+          grep -q "RECUSADO" "$d/c2.txt" || falha "a recusa do e-mail repetido não foi explicada"
+          node dist/cli/criar-usuario-plataforma.js --email master.ci@exemplo.test --reemitir-totp >"$d/c3.txt" 2>&1 || { cat "$d/c3.txt"; falha "reemissão do TOTP falhou"; }
+          export PGPASSWORD="$POSTGRES_PASSWORD"
+          m="$(psql -U postgres -d plataforma -tAc "select format('%s|%s|%s', deve_trocar_senha, totp_mestra_versao, (select count(*) from plataforma_audit where acao in ('master.criar','master.reemitir_credencial'))) from master_usuario where email = 'master.ci@exemplo.test'")"
+          [ "$m" = "t|1|2" ] || falha "master_usuario/trilha fora do esperado: $m"
+          mid="$(psql -U postgres -d plataforma -tAc "select id from master_usuario where email = 'master.ci@exemplo.test'")"
+          # 2. Serviço provisionador: sem token 401; com token cria o condomínio e devolve a senha do síndico UMA vez.
+          PORT=3299 node dist/cli/servidor-provisionador.js >"$d/srv.txt" 2>&1 &
+          srv=$!
+          for i in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:3299/ && break; sleep 1; done
+          s="$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:3299/provisionar -H 'content-type: application/json' -d '{}')"
+          [ "$s" = "401" ] || falha "provisionador sem token respondeu $s"
+          node -e '
+            const [mid] = process.argv.slice(1);
+            process.stdout.write(JSON.stringify({ masterUsuarioId: mid, entrada: {
+              codigo: "ci-tela", nome: "Condomínio pela tela", cidade: "Cidade Fictícia", uf: "SP",
+              estrutura: { agrupamento: "Bloco", blocos: ["A"], andares: [1], finais: [1, 2], ausentes: [] },
+              sindico: { nome: "Síndico Fictício", login: "sindico.tela" } } }));
+          ' "$mid" > "$d/pedido.json"
+          for n in 1 2; do
+            curl -s -X POST http://127.0.0.1:3299/provisionar -H 'content-type: application/json' -H "authorization: Bearer $PROVISIONADOR_TOKEN" --data-binary "@$d/pedido.json" >"$d/p$n.json"
+          done
+          kill "$srv" || true
+          node -e '
+            const fs = require("fs"); const d = process.argv[1];
+            const a = JSON.parse(fs.readFileSync(d + "/p1.json", "utf8")).resultado, b = JSON.parse(fs.readFileSync(d + "/p2.json", "utf8")).resultado;
+            if (a?.situacao !== "provisionado" || b?.situacao !== "ja_provisionado") throw new Error("situações " + a?.situacao + "/" + b?.situacao);
+            if (!a.sindico?.senhaTemporaria || b.sindico) throw new Error("senha do síndico fora do contrato");
+          ' "$d" || { cat "$d/p1.json" "$d/srv.txt"; falha "resposta do provisionador fora do contrato"; }
+          a="$(psql -U postgres -d plataforma -tAc "select format('%s|%s', a.master_usuario_id = '$mid', a.detalhes->>'origem') from plataforma_audit a join condominio c on c.id = a.condominio_id where c.codigo = 'ci-tela' and a.acao = 'condominio.provisionar'")"
+          [ "$a" = "t|plataforma" ] || falha "trilha do provisionamento pela tela fora do esperado: $a"
+          senha="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).resultado.sindico.senhaTemporaria)' "$d/p1.json")"
+          if grep -qF -- "$senha" "$d/srv.txt"; then falha "a senha do síndico apareceu no log do provisionador"; fi
+          for chave in "$PORTARIA_CHAVE_MESTRA" "$APP_PROVISIONADOR_PASSWORD" "$APP_MIGRATOR_PASSWORD" "$APP_RW_PASSWORD" "$APP_PLATAFORMA_PASSWORD" "$PROVISIONADOR_TOKEN"; do
+            if grep -rqF -- "$chave" "$d"; then falha "segredo apareceu na saída"; fi
+          done
           rm -rf "$d"

@@ -11,7 +11,7 @@
 // imagem `migrate` copia só ele (Dockerfile).
 import { sql } from 'drizzle-orm';
 import {
-  bigint, boolean, check, customType, date, inet, integer, jsonb, pgTable, primaryKey, smallint, text, timestamp,
+  bigint, boolean, check, customType, date, index, inet, integer, jsonb, pgTable, primaryKey, smallint, text, timestamp,
   uniqueIndex, uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -100,7 +100,15 @@ export const condominioChave = pgTable('condominio_chave', {
   check('condominio_chave_tamanho_ck', sql`length(chave_cifrada) BETWEEN 48 AND 144`),
 ]);
 
-/** Usuário da plataforma (SAAS-07): fora do RBAC de condomínio. 2FA obrigatório (`totp_cifrado` NOT NULL de propósito). */
+/** Papéis da plataforma (SAAS-07): fora do enum `papel` de condomínio. Matriz em @portaria/domain/rbac-plataforma. */
+export const PAPEIS_PLATAFORMA = ['master', 'suporte'] as const;
+
+/**
+ * Usuário da plataforma (SAAS-07): fora do RBAC de condomínio. 2FA obrigatório (`totp_cifrado` NOT NULL de propósito).
+ * O e-mail é o login. `totp_cifrado` = nonce (12) || cifrado || tag (16), AES-256-GCM pela chave mestra de versão
+ * `totp_mestra_versao`, AAD `portaria:totp:<id>` (src/master/segredo-totp.ts). `totp_ultimo_passo`: último passo de
+ * 30 s aceito (anti-replay: um código nunca vale duas vezes). Migração 0003 (entrega 1 da F5).
+ */
 export const masterUsuario = pgTable('master_usuario', {
   id: pk(),
   nome: text('nome').notNull(),
@@ -110,10 +118,20 @@ export const masterUsuario = pgTable('master_usuario', {
   papel: text('papel').notNull(),
   ativo: boolean('ativo').notNull().default(true),
   criadoEm: instante('criado_em').notNull().defaultNow(),
+  totpMestraVersao: smallint('totp_mestra_versao').notNull(),
+  totpUltimoPasso: bigint('totp_ultimo_passo', { mode: 'number' }),
+  deveTrocarSenha: boolean('deve_trocar_senha').notNull().default(true),
+  senhaTemporariaExpiraEm: instante('senha_temporaria_expira_em'),
+  ultimoAcesso: instante('ultimo_acesso'),
 }, (t) => [
   uniqueIndex('master_usuario_email_uq').on(sql`lower(${t.email})`),
   check('master_usuario_senha_ck', sql`senha_hash LIKE '$argon2id$%'`),
   check('master_usuario_papel_ck', sql`papel IN ('master', 'suporte')`),
+  check('master_usuario_email_ck', sql`email ~ '^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$' AND length(email) <= 254`),
+  // 12 de nonce + 20 do segredo (160 bits, RFC 4226) + 16 de tag = 48; folga para segredo maior.
+  check('master_usuario_totp_ck', sql`length(totp_cifrado) BETWEEN 44 AND 108 AND totp_mestra_versao > 0`),
+  check('master_usuario_totp_passo_ck', sql`totp_ultimo_passo IS NULL OR totp_ultimo_passo > 0`),
+  check('master_usuario_temporaria_ck', sql`deve_trocar_senha OR senha_temporaria_expira_em IS NULL`),
 ]);
 
 export const masterCodigoRecuperacao = pgTable('master_codigo_recuperacao', {
@@ -136,13 +154,20 @@ export const masterSessao = pgTable('master_sessao', {
   revogadaEm: instante('revogada_em'),
   totpConfirmadoEm: instante('totp_confirmado_em'),
   ip: inet('ip'),
+  /** Migração 0003. Nulo enquanto a sessão não foi revogada. */
+  motivoRevogacao: text('motivo_revogacao'),
 }, (t) => [
   uniqueIndex('master_sessao_token_uq').on(t.tokenHash),
+  index('master_sessao_usuario_idx').on(t.masterUsuarioId),
   check('master_sessao_token_hash_ck', sql`token_hash ~ '^[0-9a-f]{64}$'`),
   check('master_sessao_expira_ck', sql`expira_em > criada_em`),
+  check('master_sessao_revogacao_ck', sql`(revogada_em IS NULL) = (motivo_revogacao IS NULL) AND (motivo_revogacao IS NULL OR motivo_revogacao IN ('logout', 'troca_senha', 'credencial_reemitida', 'desativacao'))`),
 ]);
 
-/** Mesmo desenho de `login_limite`: limite global por IP (SAAS-14) e o do login do Master. */
+/**
+ * Mesmo desenho de `login_limite` (0008 do condomínio): `master` (por login: só gradua o atraso, nunca bloqueia),
+ * `master_ip` (par login+IP: bloqueia) e `ip` (bloqueia). Chaves: HMAC com subchave HKDF da chave mestra.
+ */
 export const plataformaLoginLimite = pgTable('plataforma_login_limite', {
   tipo: text('tipo').notNull(),
   chave: text('chave').notNull(),
@@ -152,7 +177,7 @@ export const plataformaLoginLimite = pgTable('plataforma_login_limite', {
   atualizadoEm: instante('atualizado_em').notNull().defaultNow(),
 }, (t) => [
   primaryKey({ name: 'plataforma_login_limite_pk', columns: [t.tipo, t.chave] }),
-  check('plataforma_login_limite_tipo_ck', sql`tipo IN ('ip', 'master')`),
+  check('plataforma_login_limite_tipo_ck', sql`tipo IN ('ip', 'master', 'master_ip')`),
   check('plataforma_login_limite_chave_ck', sql`chave ~ '^[0-9a-f]{64}$'`),
   check('plataforma_login_limite_falhas_ck', sql`falhas >= 0`),
 ]);

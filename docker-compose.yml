@@ -95,6 +95,46 @@ services:
     logging:
       driver: none
 
+  # App do Master (docs/deploy.md, seção 18): serviço provisionador chamado pela API em POST /plataforma/condominios.
+  #   docker compose --profile provisionar up -d provisionador
+  provisionador:
+    profiles: [provisionar]
+    image: portaria-api:${API_TARGET:-dev}
+    pull_policy: never
+    command: ["node", "dist/cli/servidor-provisionador.js"]
+    environment:
+      PORT: "3200"
+      PROVISIONADOR_TOKEN: ${PROVISIONADOR_TOKEN:-}
+      DATABASE_URL_PROVISIONADOR: postgres://app_provisionador:${APP_PROVISIONADOR_PASSWORD:-}@db:5432/postgres
+      MIGRATOR_URL_BASE: postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@db:5432
+      DATABASE_URL: postgres://app_rw:${APP_RW_PASSWORD}@db:5432/portaria
+      DATABASE_URL_PLATAFORMA: postgres://app_plataforma:${APP_PLATAFORMA_PASSWORD:-}@db:5432/plataforma
+      PORTARIA_CHAVE_MESTRA: ${PORTARIA_CHAVE_MESTRA:-}
+      PORTARIA_CHAVE_MESTRA_VERSAO: ${PORTARIA_CHAVE_MESTRA_VERSAO:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    logging:
+      driver: none
+
+  # Primeiro usuário da plataforma (Master): docker compose --profile plataforma run --rm usuario-plataforma-cli --email <e> --nome "<n>"
+  usuario-plataforma-cli:
+    profiles: [plataforma]
+    image: portaria-api:${API_TARGET:-dev}
+    pull_policy: never
+    entrypoint: ["node", "dist/cli/criar-usuario-plataforma.js"]
+    environment:
+      DATABASE_URL_PLATAFORMA: postgres://app_plataforma:${APP_PLATAFORMA_PASSWORD:-}@db:5432/plataforma
+      PORTARIA_CHAVE_MESTRA: ${PORTARIA_CHAVE_MESTRA:-}
+      PORTARIA_CHAVE_MESTRA_VERSAO: ${PORTARIA_CHAVE_MESTRA_VERSAO:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    logging:
+      driver: none
+
   api:
     build:
       context: .
@@ -113,6 +153,9 @@ services:
       PORTARIA_CHAVE_MESTRA: ${PORTARIA_CHAVE_MESTRA:?defina PORTARIA_CHAVE_MESTRA no .env}
       PORTARIA_CHAVE_MESTRA_VERSAO: ${PORTARIA_CHAVE_MESTRA_VERSAO:?defina PORTARIA_CHAVE_MESTRA_VERSAO no .env}
       SAAS_PILOTO_PADRAO: ${SAAS_PILOTO_PADRAO:-true}
+      # App do Master: serviço provisionador (perfil provisionar). Vazias = criação pela tela desligada (503).
+      PROVISIONADOR_URL: ${PROVISIONADOR_URL:-}
+      PROVISIONADOR_TOKEN: ${PROVISIONADOR_TOKEN:-}
       # Cada variável repassada uma a uma (nunca env_file com o .env inteiro: a API não recebe senha de superusuário).
       PORTARIA_AMBIENTE: ${PORTARIA_AMBIENTE:?defina PORTARIA_AMBIENTE (dev ou producao) no .env}
       COOKIE_SECURE: ${COOKIE_SECURE:?defina COOKIE_SECURE (true ou false) no .env}

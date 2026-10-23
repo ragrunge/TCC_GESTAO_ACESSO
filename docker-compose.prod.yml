@@ -165,6 +165,67 @@ services:
     logging:
       driver: none
 
+  # App do Master, F5 entrega 1 (docs/deploy.md, seção 18). Serviço provisionador: o MESMO provisionar() da CLI acima,
+  # atrás de um HTTP mínimo, chamado pela API em POST /plataforma/condominios. A API não tem as senhas de
+  # app_provisionador e app_migrator: só este container, que fica DESLIGADO (perfil) e só na rede interna `banco`, sem
+  # porta publicada. Ligar para criar condomínios pela tela e desligar depois:
+  #   docker compose --profile provisionar up -d provisionador   ...   docker compose stop provisionador
+  # Token compartilhado com a API (PROVISIONADOR_TOKEN). Sem log em disco: a resposta leva a senha do síndico (o
+  # serviço nunca a loga; o `logging: none` é a segunda rede).
+  provisionador:
+    profiles: [provisionar]
+    image: tcc-portaria-api:${API_TAG:-atual}
+    pull_policy: never
+    command: ["node", "dist/cli/servidor-provisionador.js"]
+    environment:
+      NODE_ENV: production
+      TZ: UTC
+      PORT: "3200"
+      PROVISIONADOR_TOKEN: ${PROVISIONADOR_TOKEN:-}
+      DATABASE_URL_PROVISIONADOR: postgres://app_provisionador:${APP_PROVISIONADOR_PASSWORD:-}@db:5432/postgres
+      MIGRATOR_URL_BASE: postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@db:5432
+      DATABASE_URL: postgres://app_rw:${APP_RW_PASSWORD}@db:5432/portaria
+      DATABASE_URL_PLATAFORMA: postgres://app_plataforma:${APP_PLATAFORMA_PASSWORD:-}@db:5432/plataforma
+      PORTARIA_CHAVE_MESTRA: ${PORTARIA_CHAVE_MESTRA:-}
+      PORTARIA_CHAVE_MESTRA_VERSAO: ${PORTARIA_CHAVE_MESTRA_VERSAO:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [banco]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    restart: "no"
+    logging:
+      driver: none
+
+  # Bootstrap do primeiro Master e reemissão de credencial (docs/deploy.md, seção 18). Rodar num TERMINAL COMUM, nunca
+  # pelo `!` do Claude Code: a saída traz a senha temporária e o segredo TOTP. Argumentos vão direto (entrypoint):
+  #   docker compose --profile plataforma run --rm usuario-plataforma-cli --email <e-mail> --nome "<nome>"
+  usuario-plataforma-cli:
+    profiles: [plataforma]
+    image: tcc-portaria-api:${API_TAG:-atual}
+    pull_policy: never
+    entrypoint: ["node", "dist/cli/criar-usuario-plataforma.js"]
+    environment:
+      NODE_ENV: production
+      TZ: UTC
+      DATABASE_URL_PLATAFORMA: postgres://app_plataforma:${APP_PLATAFORMA_PASSWORD:-}@db:5432/plataforma
+      PORTARIA_CHAVE_MESTRA: ${PORTARIA_CHAVE_MESTRA:-}
+      PORTARIA_CHAVE_MESTRA_VERSAO: ${PORTARIA_CHAVE_MESTRA_VERSAO:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [banco]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 192m
+    restart: "no"
+    logging:
+      driver: none
+
   api:
     build:
       context: .
@@ -185,6 +246,10 @@ services:
       PORTARIA_CHAVE_MESTRA_VERSAO: ${PORTARIA_CHAVE_MESTRA_VERSAO:?defina PORTARIA_CHAVE_MESTRA_VERSAO no .env}
       # Transição (SAAS-05): login sem código e cookie antigo = piloto. `false` ao fim da janela.
       SAAS_PILOTO_PADRAO: ${SAAS_PILOTO_PADRAO:-true}
+      # App do Master (F5): para onde a tela "Novo condomínio" manda o pedido (serviço provisionador acima, rede interna).
+      # Vazias: a tela responde 503 e a CLI provisionar-cli continua valendo.
+      PROVISIONADOR_URL: ${PROVISIONADOR_URL:-}
+      PROVISIONADOR_TOKEN: ${PROVISIONADOR_TOKEN:-}
       # Fixos em produção (não vêm do .env): a API recusa o boot com COOKIE_SECURE=false em producao.
       PORTARIA_AMBIENTE: producao
       COOKIE_SECURE: "true"
