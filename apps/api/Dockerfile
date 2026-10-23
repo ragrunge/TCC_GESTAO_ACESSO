@@ -11,8 +11,9 @@ COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
 # O package.json da API depende de @portaria/domain; o npm precisa ver o diretório do workspace.
 COPY packages/domain/package.json packages/domain/
-# O lockfile lista apps/web; o npm ci exige o package.json dele (o resto fica fora, ver .dockerignore).
+# O lockfile lista apps/web e apps/plataforma; o npm ci exige o package.json deles (o resto fica fora, ver .dockerignore).
 COPY apps/web/package.json apps/web/
+COPY apps/plataforma/package.json apps/plataforma/
 RUN npm ci -w apps/api --include-workspace-root --ignore-scripts
 
 FROM deps AS build
@@ -55,6 +56,7 @@ COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
 COPY packages/domain/package.json packages/domain/
 COPY apps/web/package.json apps/web/
+COPY apps/plataforma/package.json apps/plataforma/
 RUN npm ci -w apps/api --omit=dev --ignore-scripts && npm cache clean --force
 
 FROM node:22-alpine AS runtime
