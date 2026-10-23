@@ -11,6 +11,7 @@ import type {
   AutorizacaoPrevia, AutorizacaoRetirada, ConferenciaComprovante, EventoView, Funcionario, Pessoa, RegistroAlteracao, Restricao, Unidade, UsuarioSistema, Veiculo,
   VinculoUnidade,
 } from '@portaria/domain/types';
+import type { PermanenciaView } from '@portaria/domain/types';
 import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
 import { codigoCondominioValido, normalizarCodigoCondominio } from '@portaria/domain/condominio';
 import { brt, toInputDate } from '@portaria/domain/time';
@@ -493,6 +494,7 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
           autorizacaoPreviaId: i.autorizacaoPreviaId ?? undefined, justificativa: i.justificativa ?? undefined, retroativo: i.retroativo || undefined,
           ocorridoEm: i.retroativo && i.ocorridoEm ? Math.trunc(i.ocorridoEm) : undefined, observacao: i.observacao ?? undefined,
           formularioContingencia: i.retroativo ? i.formularioContingencia ?? undefined : undefined,
+          tipoVisita: i.tipoVisita ?? undefined,
         }))).data));
       },
       async registrarRecusa(i) {
@@ -537,6 +539,11 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
       // Todas as páginas; a ordem final é pela hora efetiva (a API pagina por seq).
       async presentes() {
         return (await todasAsPaginas<EventoView>('/acessos/presentes')).map(eventoDe).sort((a, b) => b.ocorridoEm - a.ocorridoEm);
+      },
+      async prorrogarPermanencia(entradaId) {
+        const p = dados<PermanenciaView & { eventoId: string }>((await http.post(`/eventos-acesso/${id(entradaId)}/permanencia/prorrogacoes`)).data);
+        if (!p || typeof p.prazoAte !== 'number' || typeof p.prorrogacoes !== 'number') throw respostaInvalida();
+        return p;
       },
     },
     encomendas: {

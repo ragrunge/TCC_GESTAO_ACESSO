@@ -5,6 +5,7 @@ import type {
   Papel, Pessoa, RegistroAlteracao, Restricao, StatusOcorrencia, StatusVinculo, TipoEvento, TipoOcorrencia, TipoVinculo, Unidade,
   UsuarioSistema, ValoresCorrecao, VinculoUnidade, Veiculo, TipoComprovante, Funcionario, MudancaStatusOcorrencia,
 } from '@portaria/domain/types';
+import type { PermanenciaView, TipoVisita } from '@portaria/domain/types';
 import type { EstadoAutorizacao } from '@portaria/domain/rules';
 import type { ResultadoIntegridade } from '@portaria/domain/hashChain';
 import type { Agrupamento } from '@portaria/domain/units';
@@ -63,6 +64,8 @@ export interface NovoEventoInput {
   observacao?: string | null;
   /** Nº do formulário de papel: obrigatório quando `retroativo`. */
   formularioContingencia?: string | null;
+  /** Prazo de permanência: só visitante/prestador (padrão no servidor: visita / serviço). */
+  tipoVisita?: TipoVisita | null;
 }
 
 /** UC02 A4: o morador recusou a visita (interfone ou morador presente). */
@@ -462,6 +465,8 @@ export interface Api {
     correcoesDe(id: string): Promise<EventoView[]>;
     obter(id: string): Promise<EventoView>;
     presentes(): Promise<EventoView[]>;
+    /** "+1h" no prazo de permanência (tabela à parte; o evento não muda). */
+    prorrogarPermanencia(entradaId: string): Promise<PermanenciaView & { eventoId: string }>;
   };
   encomendas: {
     /** Lista inteira (percorre as páginas). As telas usam `listarPagina`. */

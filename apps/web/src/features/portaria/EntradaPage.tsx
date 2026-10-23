@@ -16,6 +16,8 @@ import { Avatar } from '../../components/UnitTag';
 import {
   ROTULO_CATEGORIA, ROTULO_MEIO, ROTULO_PAPEL, type CategoriaPessoa, type Funcionario, type MeioAutorizacao,
 } from '@portaria/domain/types';
+import { PRAZO_PADRAO_MIN, temPrazoPermanencia, tipoVisitaPadrao } from '@portaria/domain/rules';
+import { ROTULO_TIPO_VISITA, TIPOS_VISITA, type TipoVisita } from '@portaria/domain/types';
 import {
   descreverHorario, descreverJanela, escalaVigente, estadoAutorizacaoPrevia, justificativaValida, meiosAceitos, MIN_JUSTIFICATIVA,
   podeConfirmarEntrada, type DadosAutorizacao,
@@ -76,6 +78,8 @@ export function EntradaPage() {
   const [meio, setMeio] = useState<MeioAutorizacao | null>(null);
   const [residenteId, setResidenteId] = useState<string | null>(null);
   const [justificativa, setJustificativa] = useState('');
+  /** Prazo de permanência (só visitante/prestador). Nulo = padrão da categoria. */
+  const [tipoVisita, setTipoVisita] = useState<TipoVisita | null>(null);
   // --- Retroativo
   const [dataReal, setDataReal] = useState(toInputDate(agora));
   const [horaReal, setHoraReal] = useState('');
@@ -114,7 +118,7 @@ export function EntradaPage() {
 
   const escolherPessoaRef = useRef<(p: PessoaBusca) => Promise<void>>(async () => undefined);
   const escolherPessoa = useCallback(async (p: PessoaBusca) => {
-    setPessoa(p); setQuery(''); setSugestoes([]); setErro('');
+    setPessoa(p); setQuery(''); setSugestoes([]); setErro(''); setTipoVisita(null);
     setFuncionario(p.categoria === 'funcionario' ? await api.pessoas.funcionario(p.id) : null);
     // Correção 12: após escolher a pessoa, o foco vai para a seleção de bloco
     setTimeout(() => pickerRef.current?.focusBloco(), 0);
@@ -126,6 +130,7 @@ export function EntradaPage() {
     setPessoa(null); setFuncionario(null); setQuery(''); setSugestoes([]); setNovoModo(false); setNp(NP_VAZIA); setErroNp('');
     setBloco(null); setNumero(null); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setJustificativa('');
     setErro(''); setFormulario(''); setHoraReal(''); setRestricao(null); setNegadoGravado(null); setDestino('unidade'); setAreaId('');
+    setTipoVisita(null);
     if (manterFoco) setTimeout(() => buscaRef.current?.focus(), 0);
   }
   const limparUnidade = () => {
@@ -213,6 +218,10 @@ export function EntradaPage() {
   const categoria = pessoa ? (pessoa.categoria === 'morador' ? 'visitante' : pessoa.categoria) : undefined;
   const meiosPermitidos = categoria ? meiosAceitos(categoria, emArea ? 'area_comum' : 'unidade') : [];
   const semCpf = !!pessoa?.semCpf;
+  // Seletor do tipo de visita: só para quem é cadastrado como visitante ou prestador ("morador" em outra unidade entra
+  // como visitante com o padrão "Visita", decidido no servidor).
+  const comPrazo = !!pessoa && temPrazoPermanencia(pessoa.categoria);
+  const tipoEscolhido = comPrazo ? tipoVisita ?? tipoVisitaPadrao(pessoa!.categoria) : null;
 
   const dados: DadosAutorizacao | null = pessoa ? {
     categoriaPessoa: categoria!, semCpf, unidadeDestinoId: unidadeAtual, areaComumId: areaAtual, autorizadoPorTipo: meio,
@@ -236,6 +245,9 @@ export function EntradaPage() {
         autorizadoPorPessoaId: dados.autorizadoPorPessoaId, autorizacaoPreviaId: dados.autorizacaoPreviaId,
         justificativa: meio === 'excecao_porteiro' ? justificativa : null, retroativo,
         ocorridoEm: retroativo ? quando : null, formularioContingencia: retroativo ? formulario.trim() : null,
+        // Só quando difere do padrão (que o servidor aplica sozinho): durante o deploy, o front novo diante da API anterior
+        // (DTO estrito, sem o campo) não quebra a entrada comum.
+        tipoVisita: pessoa && tipoEscolhido && tipoEscolhido !== tipoVisitaPadrao(pessoa.categoria) ? tipoEscolhido : null,
       });
       const via = { interfone: 'via interfone', morador_presente: 'com o morador presente na portaria', autorizacao_previa: 'via autorização prévia', excecao_porteiro: 'por exceção do porteiro (justificativa registrada)', escala: 'por escala' }[meio!];
       const quem = ev.autorizadoPorTipo === 'excecao_porteiro' || ev.autorizadoPorTipo === 'escala' ? '' : `autorizada por ${ev.autorizadoPorNome ?? '—'} `;
@@ -257,7 +269,7 @@ export function EntradaPage() {
       setEnviando(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pessoa, dados, pronto, api, unidadeAtual, areaAtual, meio, justificativa, retroativo, quando, formulario, usuario]);
+  }, [pessoa, dados, pronto, api, unidadeAtual, areaAtual, meio, justificativa, retroativo, quando, formulario, usuario, tipoEscolhido]);
 
   // Correção 13: Enter confirma sempre que o registro estiver completo (exceto em campo de texto longo)
   const confirmarRef = useRef(confirmar);
@@ -528,6 +540,7 @@ export function EntradaPage() {
                   onComplete={() => { /* o efeito de [unidade] consulta restrições e autorizações */ }} />
                 )}
                 {propriaUnidade && <Alert tom="ambar" role="alert">Morador não registra entrada na própria unidade no MVP.</Alert>}
+                {comPrazo && tipoEscolhido && <SeletorTipoVisita valor={tipoEscolhido} onChange={setTipoVisita} />}
               </div>
             )}
           </CartaoPasso>
@@ -681,5 +694,29 @@ export function EntradaPage() {
         </Modal>
       )}
     </div>
+  );
+}
+
+const fmtPrazo = (min: number) => (min >= 60 ? `${min / 60} h` : `${min} min`);
+
+/**
+ * Tipo de visita (define o prazo de permanência). Rádios nativos: Tab entra no grupo e as setas trocam a opção.
+ * O prazo de serviço com autorização prévia de horário vai até o fim da janela (regra do servidor).
+ */
+export function SeletorTipoVisita({ valor, onChange }: { valor: TipoVisita; onChange: (t: TipoVisita) => void }) {
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-2 text-[14px] font-medium">Tipo de visita <span className="font-normal text-[#56616B]">· define o prazo de permanência</span></legend>
+      <div className="flex flex-wrap gap-2">
+        {TIPOS_VISITA.map((t) => (
+          <label key={t} className={`flex h-11 cursor-pointer items-center gap-2 rounded-lg border-2 px-4 max-lg:h-[44px] [&:has(:focus-visible)]:outline [&:has(:focus-visible)]:outline-[3px] [&:has(:focus-visible)]:outline-offset-2 [&:has(:focus-visible)]:outline-[#0B5563] ${
+            valor === t ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#DCE1E5] bg-white hover:border-[#9AA7B0]'}`}>
+            <input type="radio" name="tipo-visita" className="sr-only" checked={valor === t} onChange={() => onChange(t)} />
+            <span className="font-medium">{ROTULO_TIPO_VISITA[t]}</span>
+            <span className="text-[13px] text-[#56616B]">{fmtPrazo(PRAZO_PADRAO_MIN[t])}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
