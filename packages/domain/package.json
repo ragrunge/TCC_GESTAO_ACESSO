@@ -52,6 +52,14 @@
       "types": "./src/rbac.ts",
       "default": "./src/rbac.ts"
     },
+    "./rbac-plataforma": {
+      "require": {
+        "types": "./dist/cjs/rbac-plataforma.d.ts",
+        "default": "./dist/cjs/rbac-plataforma.js"
+      },
+      "types": "./src/rbac-plataforma.ts",
+      "default": "./src/rbac-plataforma.ts"
+    },
     "./relatorio": {
       "require": {
         "types": "./dist/cjs/relatorio.d.ts",
