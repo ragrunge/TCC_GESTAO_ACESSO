@@ -3,6 +3,8 @@
   "git": { "deploymentEnabled": { "main": true, "**": false } },
   "rewrites": [
     { "source": "/api/:caminho*", "destination": "https://179-197-78-78.sslip.io/api/:caminho*" },
+    { "source": "/admin", "destination": "/admin/index.html" },
+    { "source": "/admin/((?!assets/).*)", "destination": "/admin/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
@@ -21,11 +23,21 @@
       ]
     },
     {
+      "source": "/admin(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
       "source": "/sw.js",
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
         { "key": "Service-Worker-Allowed", "value": "/" }
       ]
+    },
+    {
+      "source": "/admin/(index.html)?",
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
     },
     {
       "source": "/(index.html|site.webmanifest)?",

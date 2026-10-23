@@ -30,7 +30,7 @@ estrutura de unidades no código e um banco. Transformá-lo em SaaS para vários
 | SAAS-04 | Chaves por condomínio | HMAC e KEK por tenant, envelope | Mantida. Ressalva: a chave HMAC do CPF **não é rotacionável** (o CPF não é guardado) |
 | SAAS-05 | Login | Global vs por condomínio | **Por condomínio**, com "código do condomínio" na tela de login. Subdomínio fica para quando houver domínio próprio |
 | SAAS-06 | Estrutura de unidades | Cadastrável por condomínio | Mantida. `ESTRUTURA_PADRAO` vira só gerador do onboarding |
-| SAAS-07 a 19 | Master fora do RBAC, sessão e origem separadas com TOTP, onboarding, fim de contrato, backup/restore, jobs, limites, observabilidade, migração em N bancos, infraestrutura, fuso, módulos por condomínio | — | Seção 3 |
+| SAAS-07 a 19 | Master fora do RBAC, sessão separada com TOTP (em /admin, mesma origem desde 2026-10-23), onboarding, fim de contrato, backup/restore, jobs, limites, observabilidade, migração em N bancos, infraestrutura, fuso, módulos por condomínio | — | Seção 3 |
 
 Calendário: a recomendação era entregar o TCC antes; **o usuário decidiu fazer o SaaS agora, junto do TCC** (seção 10,
 pergunta 1), com as salvaguardas registradas lá.
@@ -246,20 +246,27 @@ plataforma apontando para usuários em N bancos).
 - Ações da plataforma registradas em `plataforma_audit` (append-only, mesmo trigger de `0001:202`), sem dado pessoal
   de morador.
 
-### SAAS-08 — Sessão do Master: origem separada e 2FA obrigatório
+### SAAS-08 — Sessão do Master: servido em /admin (mesma origem) e 2FA obrigatório
 
 **Decisão.**
-- **Origem separada:** front do Master em outro projeto Vercel (`<nome>-plataforma.vercel.app`), com o mesmo rewrite
-  para a mesma API. Cada origem tem seu próprio pote de cookies: XSS no app do condomínio não usa a sessão do Master,
-  e vice-versa.
+- **Mesma origem, servido em `/admin` (revisado em 2026-10-23, decisão do usuário):** o front do Master deixa de ter
+  projeto Vercel próprio e passa a ser servido em `/admin` do mesmo projeto da portaria, com o mesmo rewrite `/api`.
+  Bundles continuam separados (`apps/plataforma` é seu próprio workspace, sem código de sessão em comum com `apps/web`).
+  *Decisão original (descartada):* outro projeto Vercel (`<nome>-plataforma.vercel.app`), para ter pote de cookies
+  próprio.
+- **Risco aceito:** um XSS em qualquer tela da portaria, num navegador onde o Master esteja logado, consegue chamar
+  `/api/v1/plataforma/*` com o cookie do Master (HttpOnly impede ler o cookie, não impede usá-lo).
+- **Mitigações:** CSP estrita `script-src 'self'`; bundles separados; cookie com `Path=/api/v1/plataforma`; sessão de
+  15 min de inatividade e 8 h no máximo; TOTP; e recomendação operacional de usar o Master em um perfil de navegador
+  separado, sem login de portaria.
 - Cookie `__Host-portaria_plataforma`, `SameSite=Strict`, inatividade de 15 min e máximo de 8 h. (Implementado em
   2026-10-23 como `__Secure-portaria_plataforma` com `Path=/api/v1/plataforma`: o prefixo `__Host-` exige `Path=/`; ver §5.3.)
 - **TOTP obrigatório** (RFC 6238, implementável com `node:crypto` sem dependência nova), segredo cifrado pela chave
   mestra, 10 códigos de recuperação com hash argon2id. WebAuthn fica para depois.
 - Limite de tentativas próprio, no banco `plataforma`.
 
-**Alternativa descartada.** Mesma SPA com rota `/plataforma`: mais simples, mas a sessão do Master ficaria no mesmo
-pote de cookies da portaria, e um XSS em qualquer tela de condomínio poderia agir como Master.
+**Alternativa descartada (original).** Mesma SPA com rota `/plataforma`: sessão do Master no mesmo pote de cookies da
+portaria. Hoje o cookie é isolado por `Path`, mas a origem é a mesma (ver risco aceito acima).
 
 ### SAAS-09 — Master e LGPD: acesso direto e auditado ("Master vê tudo")
 
@@ -289,7 +296,7 @@ controlador (art. 39). A instrução passa a vir do contrato, não de uma aprova
      só esse serviço obtém subárvore de condomínio a partir de `/plataforma/*`.
   4. O síndico vê esses registros na tela **"Acessos da plataforma"** (filtro do `audit_log` por `plataforma.*`:
      quando, quem, o quê), sem poder apagar (append-only). Item do relatório mensal ao conselho.
-- **Não muda:** sessão do Master em origem separada com TOTP (SAAS-08), Master fora do RBAC de condomínio (SAAS-07),
+- **Não muda:** sessão do Master com TOTP (em /admin, mesma origem, desde 2026-10-23) (SAAS-08), Master fora do RBAC de condomínio (SAAS-07),
   `app_plataforma` sem CONNECT nos bancos de condomínio (SAAS-02), métricas em `condominio_metrica` (SAAS-15).
 - **Sai do plano:** tabelas `acesso_suporte` e `suporte_codigo`, coluna `usuario_sistema.origem`,
   `sessao.acesso_suporte_id`, rota `POST /auth/suporte`, aprovação na tela do síndico e a pergunta 4 (seção 10).
@@ -302,7 +309,7 @@ controlador (art. 39). A instrução passa a vir do contrato, não de uma aprova
 - Necessidade (art. 6º, III): poder ver não autoriza olhar sem motivo. Regra interna: acesso só com chamado ou
   incidente; acesso sem chamado é tratado como incidente interno. A trilha visível ao síndico é o controle externo.
 - Conta do Master comprometida passa a alcançar o dado pessoal de **todos** os condomínios (R7): TOTP obrigatório,
-  origem separada, poucos usuários `master`, revisão dos acessos por condomínio (relatório na F5).
+  app em /admin com cookie de caminho restrito (mesma origem, risco aceito em SAAS-08), poucos usuários `master`, revisão dos acessos por condomínio (relatório na F5).
 - Se um cliente exigir aprovação prévia: o desenho anterior volta como opção por condomínio, sem mudar o resto.
 
 **Versão anterior (v0.2) — SUBSTITUÍDA em 2026-10-22:**

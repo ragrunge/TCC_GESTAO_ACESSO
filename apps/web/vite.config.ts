@@ -25,9 +25,9 @@ export default defineConfig({
       manifest: false,
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,webmanifest}'],
-        globIgnores: ['og-image.png'],
+        globIgnores: ['og-image.png', 'admin/**'],
         navigateFallback: 'index.html',
-        navigateFallbackDenylist: [/^\/api\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/admin(\/|$)/],
         cleanupOutdatedCaches: true,
       },
     }),

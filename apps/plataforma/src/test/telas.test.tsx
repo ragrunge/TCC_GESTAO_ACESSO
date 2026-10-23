@@ -1,7 +1,7 @@
 // Telas do app do Master com uma API falsa (sem rede): login em um envio, troca obrigatória, lista, criação com a senha
 // do síndico mostrada uma vez, módulos e papel suporte.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, criarCliente } from '../api/cliente';
 import type { ApiPlataforma, CondominioPlataforma, UsuarioPlataforma } from '../api/plataforma';
 import { App, novoQueryClient } from '../App';
@@ -31,7 +31,8 @@ function apiFalsa(o: Partial<ApiPlataforma> = {}): ApiPlataforma {
 const iniciar = (api: ApiPlataforma) => render(<App api={api} queryClient={novoQueryClient()} />);
 const logado = (u: UsuarioPlataforma = MASTER) => vi.fn(async () => ({ usuario: u, sessao: SESSAO }));
 
-afterEach(() => { cleanup(); window.history.pushState({}, '', '/'); });
+beforeEach(() => { window.history.pushState({}, '', '/admin/'); });
+afterEach(() => { cleanup(); window.history.pushState({}, '', '/admin/'); });
 
 describe('login', () => {
   it('envia e-mail, senha e código num único envio e mostra a lista', async () => {
@@ -130,7 +131,7 @@ describe('novo condomínio', () => {
   });
 
   it('prévia de unidades, código inválido bloqueia, e a senha do síndico aparece uma vez e some ao fechar', async () => {
-    window.history.pushState({}, '', '/novo');
+    window.history.pushState({}, '', '/admin/novo');
     let soltar!: () => void;
     const criarCondominio = vi.fn(async () => {
       await new Promise<void>((ok) => { soltar = ok; });
@@ -168,7 +169,7 @@ describe('novo condomínio', () => {
   });
 
   it('ja_provisionado: avisa, sem senha', async () => {
-    window.history.pushState({}, '', '/novo');
+    window.history.pushState({}, '', '/admin/novo');
     const criarCondominio = vi.fn(async () => ({ situacao: 'ja_provisionado' as const, condominio: PILOTO, sindico: null }));
     iniciar(apiFalsa({ me: logado(), criarCondominio }));
     await screen.findByRole('heading', { name: 'Novo condomínio' });

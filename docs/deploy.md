@@ -996,20 +996,20 @@ docker compose --profile plataforma run --rm usuario-plataforma-cli --email <e-m
   (`master.reemitir_credencial`).
 - Primeiro acesso: no app da plataforma, e-mail + senha temporária + código do aplicativo, e em seguida a troca de senha.
 
-### 18.3 Projeto Vercel do app do Master (o usuário faz no painel)
+### 18.3 App do Master servido em /admin (mesmo projeto Vercel; nada a criar no painel)
 
-Projeto **novo**, separado do `apps/web` (origem própria: um XSS de um app não alcança a sessão do outro, SAAS-08):
+Decisão do usuário (2026-10-23, SAAS-08): **sem projeto Vercel separado**. O app do Master é servido em `/admin` do
+mesmo site e do mesmo projeto do `apps/web` (Root Directory `apps/web`), como bundle separado:
 
-1. Add New → Project → o mesmo repositório; **Root Directory: `apps/plataforma`**; Framework: Vite (build
-   `npm run build`, saída `dist`; instalação pelo workspace da raiz, como no projeto do `apps/web`).
-2. Nome do projeto: `<nome>-plataforma` (a URL fica `<nome>-plataforma.vercel.app`).
-3. Environment Variables (Production): `VITE_API_URL=/api/v1`.
-4. O `apps/plataforma/vercel.json` já traz o rewrite `/api/:caminho*` para a MESMA API (mesma origem para o navegador:
-   sem CORS), CSP estrita, `X-Robots-Tag: noindex` e **previews desligados** (`"**": false`). Conferir no painel que não
-   há preview ativo (Deployments → Preview): um preview falaria com a API de produção (mesmos limites da seção 6).
-5. Domínio: só o `.vercel.app` por enquanto. Não reaproveitar o domínio do `apps/web`.
-
-A API não precisa de CORS para isso (rewrite = mesma origem): `CORS_ORIGENS` continua vazia.
+1. O `build` do `apps/web` roda `vite build` do web e, em seguida, `build:admin` do `@portaria/plataforma`, que grava em
+   `apps/web/dist/admin/` (`base: '/admin/'`, assets em `/admin/assets`). A ordem importa: o build do web limpa o `dist`.
+2. O `apps/web/vercel.json` reescreve `/admin` e `/admin/*` (menos `/admin/assets/*`) para `/admin/index.html`, antes do
+   catch-all, e põe `X-Robots-Tag: noindex` e `Cache-Control: no-store` no admin. CSP e demais cabeçalhos são os do site.
+3. O service worker do web não cobre o admin (`navigateFallbackDenylist` e `globIgnores`); o app do Master não registra SW.
+4. `VITE_API_URL` não é necessária: o padrão `/api/v1` cai no mesmo rewrite para a API. `CORS_ORIGENS` continua vazia.
+5. URL: `https://<site>/admin/`. Previews continuam desligados (seção 6).
+6. Recomendação operacional: usar o Master em um **perfil de navegador separado**, sem login de portaria (ver risco
+   aceito em SAAS-08).
 
 ### 18.4 nginx: limite do login da plataforma (documentado; NÃO aplicado)
 

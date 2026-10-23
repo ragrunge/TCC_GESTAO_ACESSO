@@ -8,7 +8,7 @@ test.beforeEach(async ({ request }) => {
 });
 
 async function entrar(page: Page, email = MASTER, senha = SENHA_E2E) {
-  await page.goto('/');
+  await page.goto('/admin/');
   await page.getByLabel('E-mail').fill(email);
   await page.getByLabel('Senha', { exact: true }).fill(senha);
   await page.getByLabel('Código do autenticador').fill(codigoTotp());

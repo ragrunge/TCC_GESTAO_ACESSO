@@ -26,7 +26,7 @@ export default defineConfig({
     },
     {
       command: `npx vite --port ${PORTA_E2E} --strictPort`,
-      url: `http://localhost:${PORTA_E2E}`,
+      url: `http://localhost:${PORTA_E2E}/admin/`,
       env: { API_PROXY_ALVO: API_E2E },
       reuseExistingServer: false,
       timeout: 60_000,

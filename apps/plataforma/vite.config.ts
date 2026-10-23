@@ -10,7 +10,9 @@ import react from '@vitejs/plugin-react';
 const API_ALVO = process.env.API_PROXY_ALVO ?? 'http://127.0.0.1:3101';
 const proxy = { '/api': { target: API_ALVO, changeOrigin: API_ALVO.startsWith('https:'), secure: true } };
 
+// Servido em /admin/ dentro do mesmo site (e projeto Vercel) do apps/web. As chamadas à API seguem absolutas (/api/v1).
 export default defineConfig({
+  base: '/admin/',
   plugins: [react()],
   server: { port: 5174, proxy },
   preview: { proxy },

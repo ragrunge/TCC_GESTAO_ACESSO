@@ -59,7 +59,7 @@ export function App({ api, queryClient }: { api?: ApiPlataforma; queryClient?: Q
   return (
     <QueryClientProvider client={qc}>
       <SessaoProvider api={a}>
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <BrowserRouter basename="/admin" future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Rotas />
         </BrowserRouter>
       </SessaoProvider>
