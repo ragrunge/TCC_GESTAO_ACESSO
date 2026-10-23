@@ -18,6 +18,7 @@ import { AutorizacaoEvento, destaqueEvento, quandoCurto } from '../common/evento
 import { EventoGaveta } from '../historico/EventoGaveta';
 
 const COLUNAS = '90px minmax(0,1.5fr) 80px 110px minmax(0,1.8fr) minmax(0,1fr)';
+const HORAS_PREVISTOS = 12;
 const TECLA = 'hidden rounded-md border px-[10px] py-[6px] font-mono text-[16px] font-semibold lg:block';
 
 export function PainelPage() {
@@ -41,6 +42,7 @@ export function PainelPage() {
     queryFn: async () => (await api.eventos.listarPagina({ limite: 10, excluirTipos: ['saida'] })).itens,
   });
   const previas = useQuery({ queryKey: CHAVES.autorizacoesHoje, queryFn: () => api.autorizacoes.hoje(), staleTime: 0 });
+  const previstos = useQuery({ queryKey: CHAVES.autorizacoesPrevistas(HORAS_PREVISTOS), queryFn: () => api.autorizacoes.previstas(HORAS_PREVISTOS), staleTime: 0, refetchInterval: 60000 });
   // Atrasadas pela contagem da API (sem carregar a fila)
   const encs = useQuery({ queryKey: CHAVES.encomendasResumo, queryFn: () => api.encomendas.resumo(), staleTime: 0 });
   const pendentes = useQuery({ queryKey: CHAVES.restricoesPendentes, queryFn: () => api.restricoes.pendentes(), staleTime: 0 });
@@ -116,6 +118,28 @@ export function PainelPage() {
           <span className="text-[13px] font-medium text-[#0B5563]">{(() => { const n = (previas.data ?? []).filter((a) => !a.utilizadaEm).length; return n > 0 ? `${n} ainda não utilizadas →` : 'Ver autorizações →'; })()}</span>
         </button>
       </div>
+
+      <section aria-labelledby="previstos-titulo" className="rounded-[10px] border border-[#DCE1E5] bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-[#E6EAED] px-4 py-4 md:px-5">
+          <h2 id="previstos-titulo" className="text-[17px] font-semibold">Previstos nas próximas {HORAS_PREVISTOS} h</h2>
+          <span className="text-[13px] text-[#56616B]">Autorização prévia vale agora ou passa a valer; pessoa ainda fora do condomínio</span>
+        </div>
+        {previstos.error && <div className="p-4"><Alert tom="vermelho">{mensagemErro(previstos.error)}</Alert></div>}
+        {previstos.data && previstos.data.length > 0 && (
+          <ul className="m-0 list-none p-0">
+            {previstos.data.map((p) => (
+              <li key={p.autorizacaoId} className="grid grid-cols-1 gap-1 border-b border-[#EEF1F3] px-4 py-[10px] last:border-b-0 sm:grid-cols-[170px_minmax(0,1fr)_minmax(0,1fr)] sm:items-center sm:gap-3 md:px-5">
+                <span className="font-mono text-[14px] font-semibold">
+                  {p.inicio <= agora ? `Agora, até ${quandoCurto(p.fim, agora)}` : `${quandoCurto(p.inicio, agora)} – ${quandoCurto(p.fim, agora)}`}
+                </span>
+                <span className="flex flex-col"><span className="font-medium">{p.nome}</span><span className="text-[13px] text-[#56616B]">{ROTULO_CATEGORIA[p.categoria]}</span></span>
+                <span className="text-[14px]"><span className="text-[#56616B]">{p.destino.tipo === 'unidade' ? 'Unidade ' : 'Área comum: '}</span><span className="font-mono font-semibold">{p.destino.rotulo}</span></span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {previstos.data?.length === 0 && <Vazio>Nenhuma visita prevista nas próximas {HORAS_PREVISTOS} h.</Vazio>}
+      </section>
 
       <section className="rounded-[10px] border border-[#DCE1E5] bg-white">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-[#E6EAED] px-4 py-4 md:px-5">

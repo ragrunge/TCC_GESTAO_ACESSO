@@ -98,6 +98,7 @@ const NovaAutorizacaoDto = z.strictObject({
   justificativa: Texto(500).nullable().optional(),
 });
 const VigentesDto = z.strictObject({ pessoaId: z.uuid(), unidadeId: z.uuid().optional(), areaComumId: z.uuid().optional() });
+const PrevistasDto = z.strictObject({ horas: z.coerce.number().int().min(1).max(24).default(12) });
 const DaUnidadeDto = z.strictObject({ unidadeId: z.uuid() });
 const NovaRestricaoDto = z.strictObject({
   pessoaId: z.uuid(), unidadeId: z.uuid().nullable().default(null), motivo: Texto(300), validaAte: Dia.nullable(),
@@ -206,6 +207,13 @@ export class AcessoController {
   @Acao('unidade.ver')
   autorizacoesHoje() {
     return this.autorizacoes.hoje();
+  }
+
+  /** Previstos nas próximas `horas` h (1 a 24, padrão 12), de quem ainda não está dentro. Mesma permissão de `hoje`. Sem CPF/telefone. */
+  @Get('autorizacoes-previas/previstas')
+  @Acao('unidade.ver')
+  previstas(@Query(new ZodPipe(PrevistasDto)) q: z.infer<typeof PrevistasDto>) {
+    return this.autorizacoes.previstas(q.horas);
   }
 
   /** Detalhe da unidade: autorizações não revogadas e não vencidas. */

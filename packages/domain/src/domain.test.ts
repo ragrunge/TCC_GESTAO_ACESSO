@@ -4,7 +4,7 @@ import {
   parseCodigoUnidade, rotuloUnidade, validarEstruturaUnidade, type ConfigEstrutura,
 } from './units';
 import {
-  cadastroCompleto, descreverJanela, elegivelRetencao, escalaVigente, estadoAutorizacaoPrevia, legadoVencido, meiosAceitos,
+  cadastroCompleto, descreverJanela, elegivelRetencao, escalaVigente, estadoAutorizacaoPrevia, legadoVencido, proximaJanelaAutorizacao, meiosAceitos,
   pessoaDesativada, podeEntregarEncomenda, restricoesVigentes, validarDesativacaoPessoa, SENHA_TEMPORARIA_VALIDADE_MS, senhaTemporariaVencida, validarAutorizacaoEntrada, validarConferencia, validarDecisaoVinculo, validarEscala, vinculoValido,
 } from './rules';
 import { brt, HORA, menosAnos } from './time';
@@ -121,6 +121,46 @@ describe('regras puras', () => {
     expect(estadoAutorizacaoPrevia(ap, brt(2026, 12, 1, 10, 0))).toBe('expirada');
     expect(estadoAutorizacaoPrevia({ ...ap, revogadaEm: 1 }, brt(2026, 10, 9, 14, 32))).toBe('revogada');
     expect(descreverJanela(ap)).toBe('seg a sex, 8h–18h');
+  });
+
+  it('próxima janela da autorização prévia (horizonte)', () => {
+    const H12 = 12 * HORA;
+    const sexta = (hh: number, mm = 0) => brt(2026, 10, 9, hh, mm);
+    // janela diária seg-sex 8h-18h; sexta 14:32 -> em curso (inicio no passado, fim 18:00:59.999)
+    expect(proximaJanelaAutorizacao(ap, sexta(14, 32), H12)).toEqual({ inicio: sexta(8), fim: sexta(18) + 59_999 });
+    // sexta 19:00 -> próxima janela só na segunda 8h: fora de 12 h (19:00 + 12 h = 07:00 de sábado)
+    expect(proximaJanelaAutorizacao(ap, sexta(19), H12)).toBeNull();
+    // quinta 22:00 -> sexta 8h entra no horizonte (até 10:00)
+    const quinta22 = brt(2026, 10, 8, 22);
+    expect(proximaJanelaAutorizacao(ap, quinta22, H12)).toEqual({ inicio: sexta(8), fim: sexta(18) + 59_999 });
+    // sábado 20:00: segunda 8h fica fora do horizonte de 12 h, mas dentro de 24 h não (segunda 8h = +36 h)
+    expect(proximaJanelaAutorizacao(ap, brt(2026, 10, 10, 20), 24 * HORA)).toBeNull();
+    // dia da semana fora: autorização só às quartas, hoje é sexta
+    expect(proximaJanelaAutorizacao({ ...ap, diasSemana: [3] }, sexta(9), H12)).toBeNull();
+    // sem janela de horário: o dia inteiro vale; sem dias: todos
+    const diaTodo = { ...ap, diasSemana: null, horaInicio: null, horaFim: null };
+    expect(proximaJanelaAutorizacao(diaTodo, sexta(23), H12)).toEqual({ inicio: brt(2026, 10, 9), fim: brt(2026, 10, 10) - 1 });
+    // janela diária: se hoje já passou, a de amanhã entra no horizonte
+    const diaria = { ...ap, diasSemana: null, horaInicio: '06:00', horaFim: '10:00' };
+    expect(proximaJanelaAutorizacao(diaria, sexta(20), H12)).toEqual({ inicio: brt(2026, 10, 10, 6), fim: brt(2026, 10, 10, 10) + 59_999 });
+    // validaAte no meio do horizonte recorta o fim; validaAte antes do início da janela exclui
+    const ate = brt(2026, 10, 9, 16, 0);
+    expect(proximaJanelaAutorizacao({ ...ap, validaAte: ate }, sexta(14), H12)).toEqual({ inicio: sexta(8), fim: ate });
+    expect(proximaJanelaAutorizacao({ ...ap, validaAte: brt(2026, 10, 9, 7) }, sexta(6), H12)).toBeNull();
+    // validaDe no futuro dentro do horizonte recorta o início
+    const de = brt(2026, 10, 9, 12);
+    expect(proximaJanelaAutorizacao({ ...ap, validaDe: de }, sexta(6), H12)).toEqual({ inicio: de, fim: sexta(18) + 59_999 });
+    // validaDe depois do horizonte
+    expect(proximaJanelaAutorizacao({ ...ap, validaDe: brt(2026, 10, 12) }, sexta(6), H12)).toBeNull();
+    // revogada
+    expect(proximaJanelaAutorizacao({ ...ap, revogadaEm: 1 }, sexta(14), H12)).toBeNull();
+    // virada de meia-noite (horaFim < horaInicio) não é suportada
+    expect(proximaJanelaAutorizacao({ ...ap, diasSemana: null, horaInicio: '22:00', horaFim: '02:00' }, sexta(21), H12)).toBeNull();
+    // coerente com estadoAutorizacaoPrevia: 'valida' agora <=> janela em curso
+    expect(estadoAutorizacaoPrevia(ap, sexta(18, 0) + 59_999)).toBe('valida');
+    expect(proximaJanelaAutorizacao(ap, sexta(18, 0) + 59_999, 0)).not.toBeNull();
+    expect(estadoAutorizacaoPrevia(ap, sexta(18, 1))).toBe('fora_da_janela');
+    expect(proximaJanelaAutorizacao(ap, sexta(18, 1), 0)).toBeNull();
   });
 
   const v = (x: Partial<VinculoUnidade>): VinculoUnidade => ({

@@ -45,6 +45,7 @@ export const CHAVES = {
   ocorrencia: (id: string) => ['ocorrencias', 'detalhe', id] as const,
   autorizacoes: ['autorizacoes'] as const,
   autorizacoesHoje: ['autorizacoes', 'hoje'] as const,
+  autorizacoesPrevistas: (horas: number) => ['autorizacoes', 'previstas', horas] as const,
   restricoes: ['restricoes'] as const,
   restricoesPendentes: ['restricoes', 'pendentes'] as const,
   /** Verificação da cadeia inteira: cara na API real; a gaveta reaproveita o resultado por alguns segundos. */

@@ -1162,6 +1162,67 @@
         }
       }
     },
+    "/autorizacoes-previas/previstas": {
+      "get": {
+        "tags": [
+          "acesso"
+        ],
+        "operationId": "acesso_previstas",
+        "summary": "GET /autorizacoes-previas/previstas",
+        "description": "Permissão: `unidade.ver`",
+        "x-permissao": "unidade.ver",
+        "security": [
+          {
+            "sessao": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "horas",
+            "in": "query",
+            "schema": {
+              "default": 12,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 24
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sucesso: envelope `{data}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Erro400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Erro409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Erro429"
+          }
+        }
+      }
+    },
     "/autorizacoes-previas/vigentes": {
       "get": {
         "tags": [

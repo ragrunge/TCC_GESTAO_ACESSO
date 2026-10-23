@@ -197,6 +197,13 @@ export interface AutorizacaoView extends AutorizacaoPrevia {
   solicitadaPorNome: string | null;
   revogadaPorNome: string | null;
 }
+/** Visita prevista (autorização prévia que vale agora ou nas próximas horas, pessoa fora do condomínio). Sem CPF/telefone. */
+export interface PrevistoView {
+  autorizacaoId: string; pessoaId: string; nome: string; categoria: CategoriaPessoa;
+  destino: { tipo: 'unidade' | 'area_comum'; id: string; rotulo: string };
+  /** Limites da próxima janela (epoch ms). `inicio` no passado = a janela já está em curso. */
+  inicio: number; fim: number;
+}
 export interface RestricaoView extends Restricao {
   pessoaNome: string; pendente: boolean; unidadeCodigo: string | null;
   cadastradaPorNome: string; solicitadaPorNome: string | null; aprovadaPorNome: string | null; revogadaPorNome: string | null;
@@ -440,6 +447,8 @@ export interface Api {
     /** Destino: id da unidade ou, com `areaComum`, id da área comum. */
     vigentes(pessoaId: string, destinoId: string, opcoes?: { areaComum?: boolean }): Promise<AutorizacaoView[]>;
     hoje(): Promise<AutorizacaoView[]>;
+    /** Quem tem autorização que vale nas próximas `horas` h (1 a 24) e não está dentro. */
+    previstas(horas: number): Promise<PrevistoView[]>;
   };
   restricoes: {
     /** `unidadeId` null: só restrições de escopo condomínio (funcionário sem unidade de destino). */

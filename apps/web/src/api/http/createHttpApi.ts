@@ -16,7 +16,7 @@ import { codigoCondominioValido, normalizarCodigoCondominio } from '@portaria/do
 import { brt, toInputDate } from '@portaria/domain/time';
 import { AGRUPAMENTOS } from '@portaria/domain/units';
 import type {
-  Api, AutorizacaoView, Autorizador, Catalogo, ConferenciaAncora, EstadoSelos, ExecucaoRetencao, ResultadoAnonimizacao, ResultadoRetencao, ResultadoSelar,
+  Api, AutorizacaoView, PrevistoView, Autorizador, Catalogo, ConferenciaAncora, EstadoSelos, ExecucaoRetencao, ResultadoAnonimizacao, ResultadoRetencao, ResultadoSelar,
   SeloCadeia, EncomendaView, FichaPessoa, FiltroEncomendas, FiltroOcorrencias, OcorrenciaView, ResumoEncomendas, FiltroAlteracoesPagina, FiltroEventos, FiltroEventosPagina, FiltroRelatorio, FuncionarioView,
   LinhaPlanilha, Pagina, PacoteExportacao, PessoaBusca, PessoaLista, RelatorioImportacao, RelatorioResumo, RestricaoView, ResultadoBuscaGlobal,
   ResultadoImportacao, ResultadoRestricao, ResumoTurno, UnidadeDetalhe, UnidadeResumo, UsuarioComSenhaTemporaria, UsuarioSessao, VinculoView, CondominioSessao,
@@ -468,6 +468,7 @@ export function createHttpApi(base: string, opcoes: { adapter?: AxiosRequestConf
         return listaDe<AutorizacaoView>((await http.get('/autorizacoes-previas/vigentes', { params })).data);
       },
       async hoje() { return listaDe<AutorizacaoView>((await http.get('/autorizacoes-previas/hoje')).data); },
+      async previstas(horas) { return listaDe<PrevistoView>((await http.get('/autorizacoes-previas/previstas', { params: { horas } })).data); },
     },
     restricoes: {
       async verificar(pessoaId, unidadeId) {

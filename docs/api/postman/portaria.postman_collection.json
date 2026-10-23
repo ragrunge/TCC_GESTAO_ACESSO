@@ -216,6 +216,31 @@
           }
         },
         {
+          "name": "acesso / previstas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/autorizacoes-previas/previstas?horas=12",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "autorizacoes-previas",
+                "previstas"
+              ],
+              "query": [
+                {
+                  "key": "horas",
+                  "value": "12",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Permissão: `unidade.ver`"
+          }
+        },
+        {
           "name": "acesso / vigentes",
           "request": {
             "method": "GET",

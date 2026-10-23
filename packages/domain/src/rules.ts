@@ -4,7 +4,7 @@ import type {
   AutorizacaoPrevia, CategoriaPessoa, ConferenciaComprovante, Escala, Funcionario, MeioAutorizacao, Pessoa,
   Restricao, VinculoUnidade,
 } from './types';
-import { DIA, DIAS_SEMANA_ABREV, HORA, hhmmParaMin, menosAnos, minutosDoDia, partes } from './time';
+import { DIA, DIAS_SEMANA_ABREV, HORA, hhmmParaMin, inicioDoDia, menosAnos, minutosDoDia, partes } from './time';
 
 export const MIN_JUSTIFICATIVA = 15;
 export const DIAS_ENCOMENDA_ATRASADA = 7;
@@ -203,6 +203,31 @@ export function estadoAutorizacaoPrevia(ap: AutorizacaoPrevia, agora: number): E
     if (m < hhmmParaMin(ap.horaInicio) || m > hhmmParaMin(ap.horaFim)) return 'fora_da_janela';
   }
   return 'valida';
+}
+
+export interface JanelaAutorizacao { inicio: number; fim: number }
+
+/**
+ * Primeira janela da autorização que intersecta [agora, agora + horizonteMs], no fuso de São Paulo (o mesmo de
+ * `estadoAutorizacaoPrevia`). `inicio`/`fim` são os limites reais da janela (já recortados por validaDe/validaAte), sem
+ * recorte em `agora`: janela em curso devolve `inicio <= agora`. O fim do horário é inclusivo até o fim do minuto, como
+ * em `estadoAutorizacaoPrevia`. Sem horário, a janela é o dia inteiro. Revogada, expirada ou sem dia que case: null.
+ * Janela que vira a meia-noite (horaFim < horaInicio) não existe (a API a recusa): devolve null.
+ */
+export function proximaJanelaAutorizacao(ap: AutorizacaoPrevia, agora: number, horizonteMs: number): JanelaAutorizacao | null {
+  if (ap.revogadaEm !== null || horizonteMs < 0) return null;
+  const limite = agora + horizonteMs;
+  const comHora = !!(ap.horaInicio && ap.horaFim);
+  const hIni = comHora ? hhmmParaMin(ap.horaInicio!) : 0;
+  const hFim = comHora ? hhmmParaMin(ap.horaFim!) : 0;
+  if (comHora && hFim < hIni) return null;
+  for (let dia = inicioDoDia(agora); dia <= limite; dia += DIA) {
+    if (ap.diasSemana && !ap.diasSemana.includes(partes(dia).dow)) continue;
+    const ini = Math.max(comHora ? dia + hIni * 60_000 : dia, ap.validaDe);
+    const fim = Math.min(comHora ? dia + hFim * 60_000 + 59_999 : dia + DIA - 1, ap.validaAte);
+    if (ini <= fim && ini <= limite && fim >= agora) return { inicio: ini, fim };
+  }
+  return null;
 }
 
 const hAbrev = (s: string) => {

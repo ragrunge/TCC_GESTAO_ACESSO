@@ -236,6 +236,51 @@ describe('autorização prévia (RF-14, RN-07, RF-36)', () => {
   });
 });
 
+describe('previstos nas próximas horas (autorizações prévias, porteiro)', () => {
+  // Relógio da API: sábado 09:00 BRT.
+  const nova = (extra: object) => post('porteiro', '/autorizacoes-previas', {
+    unidadeId: ids['D-32'], validaAte: '2026-10-20', solicitadaPorPessoaId: ids['Ana Ribeiro'], diasSemana: null, ...extra,
+  });
+  const previstas = async (qs = '', papel: PapelTeste = 'porteiro') => (await get(papel, `/autorizacoes-previas/previstas${qs}`)).body.data as
+    { autorizacaoId: string; nome: string; categoria: string; destino: { tipo: string; rotulo: string }; inicio: number; fim: number }[];
+  const brt = (h: number, m = 0) => Date.UTC(2026, 9, 17, h + 3, m);
+
+  it('lista quem ainda não está dentro, por início; recorta pelo horizonte; sem CPF/telefone; 400 fora de 1..24', async () => {
+    const tarde = await nova({ pessoaId: ids['Helena Duarte'], horaInicio: '11:00', horaFim: '12:00' });
+    const noite = await nova({ pessoaId: ids['Marta Siqueira'], horaInicio: '19:00', horaFim: '20:00' });
+    const agoraVale = await nova({ pessoaId: ids['Marcos Pereira'], horaInicio: '06:00', horaFim: '09:30' });
+    const segunda = await nova({ pessoaId: ids['Bruno Teixeira'], diasSemana: [1], horaInicio: '08:00', horaFim: '10:00' });
+    const revogada = await nova({ pessoaId: ids['Cláudia Rocha'], horaInicio: '10:00', horaFim: '11:00' });
+    expect((await post('porteiro', `/autorizacoes-previas/${revogada.body.data.id}/revogar`)).status).toBe(204);
+    const area = await post('administracao', '/autorizacoes-previas', {
+      unidadeId: null, areaComumId: ids.salao, pessoaId: ids['Juliana Costa'], validaAte: '2026-10-20', solicitadaPorPessoaId: null,
+      diasSemana: null, horaInicio: '10:00', horaFim: '11:00',
+    });
+    const meus = new Set([tarde, noite, agoraVale, segunda, revogada, area].map((r) => r.body.data.id as string));
+    const lista = async (qs = '') => (await previstas(qs)).filter((x) => meus.has(x.autorizacaoId));
+
+    const l12 = await lista();
+    expect(l12.map((x) => x.nome)).toEqual(['Marcos Pereira', 'Juliana Costa', 'Helena Duarte', 'Marta Siqueira']);
+    expect(l12.map((x) => x.inicio)).toEqual([brt(6), brt(10), brt(11), brt(19)]);
+    expect(l12[0]).toMatchObject({ fim: brt(9, 30) + 59_999, destino: { tipo: 'unidade', rotulo: 'D-32' } });
+    expect(l12[1]).toMatchObject({ destino: { tipo: 'area_comum', rotulo: 'Salão de festas' }, categoria: 'prestador' });
+    expect(Object.keys(l12[0]!).sort()).toEqual(['autorizacaoId', 'categoria', 'destino', 'fim', 'inicio', 'nome', 'pessoaId']);
+    // O limite do horizonte é inclusivo (Juliana começa às 10:00 = agora + 1 h)
+    expect((await lista('?horas=1')).map((x) => x.nome)).toEqual(['Marcos Pereira', 'Juliana Costa']);
+    expect((await lista('?horas=2')).map((x) => x.nome)).toEqual(['Marcos Pereira', 'Juliana Costa', 'Helena Duarte']);
+    expect((await lista('?horas=24')).map((x) => x.nome)).toEqual(['Marcos Pereira', 'Juliana Costa', 'Helena Duarte', 'Marta Siqueira']);
+    expect((await previstas('', 'auditor')).length).toBeGreaterThan(0);
+    for (const h of ['0', '25', 'x', '1.5']) expect((await get('porteiro', `/autorizacoes-previas/previstas?horas=${h}`)).status, h).toBe(400);
+
+    // Quem está dentro sai da lista; depois da saída, volta.
+    const e = await entrar('porteiro', { pessoaId: ids['Marcos Pereira'], unidadeDestinoId: ids['D-32'], autorizadoPorTipo: 'autorizacao_previa', autorizacaoPreviaId: agoraVale.body.data.id });
+    expect(e.status).toBe(201);
+    expect((await lista('?horas=1')).map((x) => x.nome)).toEqual(['Juliana Costa']);
+    await sair('porteiro', e.body.data.id);
+    expect((await lista('?horas=1')).map((x) => x.nome)).toEqual(['Marcos Pereira', 'Juliana Costa']);
+  });
+});
+
 describe('restrição (RF-15, RF-16, RN-06)', () => {
   let restricaoId: string;
   it('de unidade: porteiro cadastra com solicitante; verificar mostra; a entrada grava UM negado e responde 422 com o id', async () => {

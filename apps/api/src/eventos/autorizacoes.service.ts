@@ -3,8 +3,9 @@
 // Toda criação, revogação e aprovação grava audit_log na mesma transação (RN-11).
 import { Inject, Injectable } from '@nestjs/common';
 import { pode } from '@portaria/domain/rbac';
-import { ERRO_PESSOA_DESATIVADA, MIN_JUSTIFICATIVA, justificativaValida, restricoesVigentes } from '@portaria/domain/rules';
-import { fimDoDia, inicioDoDia, partes } from '@portaria/domain/time';
+import { ERRO_PESSOA_DESATIVADA, MIN_JUSTIFICATIVA, justificativaValida, proximaJanelaAutorizacao, restricoesVigentes } from '@portaria/domain/rules';
+import { fimDoDia, HORA, inicioDoDia, partes } from '@portaria/domain/time';
+import { codigoUnidade } from '@portaria/domain/units';
 import { and, asc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import type { Contexto } from '../auth/tipos';
@@ -12,9 +13,10 @@ import { diaBrt, inicioDoDiaBrt } from '../comum/datas';
 import { AcessoNegado, codigoPg, erroApi } from '../comum/erros';
 import { RELOGIO, type Relogio } from '../comum/relogio';
 import { DB, type Db, type Executor, type Tx } from '../database/database.module';
-import { areaComum, autorizacaoPrevia, pessoa, restricao, vinculoUnidade } from '../db/schema';
+import { areaComum, autorizacaoPrevia, pessoa, restricao, unidade, vinculoUnidade } from '../db/schema';
 import { UnidadesService } from '../unidades/unidades.service';
 import { vinculoValidoSql } from '../vinculos/vinculo-valido';
+import { col, efetivoSql, semSaidaSql } from './efetivo';
 import {
   montarAutorizacoesView, montarRestricoesView, paraAutorizacaoDominio, paraRestricaoDominio, type AutorizacaoViewApi, type RestricaoViewApi,
 } from './conversoes';
@@ -29,6 +31,12 @@ export interface NovaAutorizacao {
   validaDe?: string; validaAte: string | null;
   diasSemana: number[] | null; horaInicio: string | null; horaFim: string | null;
   solicitadaPorPessoaId: string | null; justificativa?: string | null;
+}
+/** Visita prevista (porteiro): sem CPF e sem telefone (minimização, LGPD). `inicio`/`fim` = próxima janela da autorização. */
+export interface PrevistoView {
+  autorizacaoId: string; pessoaId: string; nome: string; categoria: typeof pessoa.$inferSelect['categoria'];
+  destino: { tipo: 'unidade' | 'area_comum'; id: string; rotulo: string };
+  inicio: number; fim: number;
 }
 export interface NovaRestricao {
   pessoaId: string; unidadeId: string | null; motivo: string; validaAte: string | null;
@@ -167,6 +175,38 @@ export class AutorizacoesService {
       sql`(${autorizacaoPrevia.diasSemana} IS NULL OR ${dow}::smallint = ANY(${autorizacaoPrevia.diasSemana}))`,
     )).orderBy(asc(autorizacaoPrevia.cadastradaEm)).limit(500);
     return (await this.viewsAutorizacao(ls)).sort((a, b) => (a.horaInicio ?? '').localeCompare(b.horaInicio ?? ''));
+  }
+
+  /**
+   * Pessoas com autorização prévia cuja janela vale agora ou começa nas próximas `horas` h e que NÃO estão dentro
+   * (entrada sem saída, pelo valor efetivo da pessoa, como em "presentes"). Por início da janela.
+   */
+  async previstas(horas: number): Promise<PrevistoView[]> {
+    const n = this.agora();
+    const horizonte = horas * HORA;
+    const dentro = sql`EXISTS (SELECT 1 FROM evento_acesso e WHERE e.tipo = 'entrada' AND ${semSaidaSql('e')}
+      AND ${efetivoSql('pessoa_id', 'e')} = ${col('pessoa_id', 'autorizacao_previa')})`;
+    const ls = await this.db.select({ a: autorizacaoPrevia, nome: pessoa.nome, categoria: pessoa.categoria, bloco: unidade.bloco, numero: unidade.numero, area: areaComum.nome })
+      .from(autorizacaoPrevia)
+      .innerJoin(pessoa, eq(pessoa.id, autorizacaoPrevia.pessoaId))
+      .leftJoin(unidade, eq(unidade.id, autorizacaoPrevia.unidadeId))
+      .leftJoin(areaComum, eq(areaComum.id, autorizacaoPrevia.areaComumId))
+      .where(and(
+        isNull(autorizacaoPrevia.revogadaEm), isNull(pessoa.desativadaEm), isNull(pessoa.anonimizadaEm),
+        gte(autorizacaoPrevia.validaAte, new Date(n)), lte(autorizacaoPrevia.validaDe, new Date(n + horizonte)),
+        sql`NOT ${dentro}`,
+      )).limit(1000);
+    const out: PrevistoView[] = [];
+    for (const l of ls) {
+      const ap = paraAutorizacaoDominio(l.a);
+      const j = proximaJanelaAutorizacao(ap, n, horizonte);
+      if (!j) continue;
+      const destino = ap.unidadeId
+        ? { tipo: 'unidade' as const, id: ap.unidadeId, rotulo: l.bloco !== null && l.numero !== null ? codigoUnidade({ bloco: l.bloco, numero: l.numero }) : '(unidade)' }
+        : { tipo: 'area_comum' as const, id: ap.areaComumId!, rotulo: l.area ?? '(área comum)' };
+      out.push({ autorizacaoId: ap.id, pessoaId: ap.pessoaId, nome: l.nome, categoria: l.categoria, destino, inicio: j.inicio, fim: j.fim });
+    }
+    return out.sort((a, b) => a.inicio - b.inicio || a.nome.localeCompare(b.nome, 'pt-BR') || a.autorizacaoId.localeCompare(b.autorizacaoId)).slice(0, 200);
   }
 
   /** Detalhe da unidade: não revogadas e ainda não vencidas. */
