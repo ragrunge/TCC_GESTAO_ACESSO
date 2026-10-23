@@ -909,3 +909,24 @@ migração e o backup o ignoram. Qualquer falha (rede, migração, verificação
 - **Senha temporária vencida antes do primeiro login** (condomínio já `ativo`): o mesmo comando com
   `node dist/cli/provisionar-condominio.js --nova-senha-sindico` no fim (depois de `provisionar-cli`). Só funciona
   enquanto o síndico nunca entrou; depois disso a senha é dele.
+
+---
+
+## 17. Prazo de permanência (migração 0011): deploy automático serve, API ANTES do front
+
+Só código da API, do front e uma migração nova (nada de infra). `drizzle/0011_permanencia.sql` é só *expand*: enum
+`tipo_visita`, tabela `permanencia` vazia, triggers dela e `GRANT SELECT, INSERT` para o `app_rw`. Não toca
+`evento_acesso`, a canonização nem o hash; nenhuma linha existente muda e não há backfill. O laço do `migrate`
+(`scripts/migrar-bancos.mjs`) aplica a 0011 em **cada** banco de condomínio (piloto e provisionados); condomínio
+provisionado depois já nasce com ela.
+
+- **Ordem:** a API (e a migração) antes do front. O front novo só manda `tipoVisita` quando a portaria escolhe um
+  tipo diferente do padrão; diante da API anterior (DTO estrito) essa entrada volta 400 até a API nova subir. Se a
+  Vercel publicar primeiro, a janela é a do deploy da API: avisar a portaria ou segurar o deploy do front.
+- **Conferir:** `docker compose logs migrate | grep migrar-bancos` termina em `ok (plataforma + N condomínio(s))`;
+  em cada banco, `\dp permanencia` mostra `app_rw=ar` (SELECT e INSERT, sem UPDATE/DELETE).
+- **Quem já está dentro** na hora do deploy fica sem prazo (`permanencia: null`) e mantém o alerta antigo de 8 h; o
+  botão "+1h" só aparece para entradas registradas depois.
+- **Rollback da imagem:** compatível. A API anterior não lê nem grava a tabela; entradas feitas por ela ficam sem
+  prazo. Desfazer a 0011 (DROP) não é necessário e apagaria os prazos e as prorrogações (a trilha
+  `permanencia.prorrogar` no `audit_log` fica).

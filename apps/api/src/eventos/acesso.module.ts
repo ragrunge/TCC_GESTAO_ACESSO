@@ -10,7 +10,7 @@ import { ehDiaValido } from '../comum/datas';
 import { erroApi } from '../comum/erros';
 import { PaginacaoDto } from '../comum/pagina';
 import { uuidParam, ZodPipe } from '../comum/zod.pipe';
-import { meioAutorizacao, tipoEvento } from '../db/schema';
+import { meioAutorizacao, tipoEvento, tipoVisita } from '../db/schema';
 import { UnidadesModule } from '../unidades/unidades.module';
 import { AutorizacoesService } from './autorizacoes.service';
 import { EventosService } from './eventos.service';
@@ -34,6 +34,8 @@ const NovoEventoDto = z.strictObject({
   ocorridoEm: Instante.nullable().optional(),
   observacao: Texto(500).nullable().optional(),
   formularioContingencia: Texto(60).nullable().optional(),
+  /** Prazo de permanência (só visitante/prestador; padrão visita / serviço). Ignorado para morador e funcionário. */
+  tipoVisita: z.enum(tipoVisita.enumValues).nullable().optional(),
 });
 const NovaRecusaDto = z.strictObject({
   pessoaId: z.uuid(), unidadeDestinoId: z.uuid(), meio: z.enum(['interfone', 'morador_presente']), moradorPessoaId: z.uuid(),
@@ -44,6 +46,8 @@ const SaidaDto = corpo(z.strictObject({
   observacao: Texto(500).nullable().optional(), retroativo: z.boolean().optional(), ocorridoEm: Instante.nullable().optional(),
   formularioContingencia: Texto(60).nullable().optional(),
 }));
+/** "+1h" fixo: sem parâmetro (o tamanho e os limites são regra do domain). */
+const ProrrogacaoDto = corpo(z.strictObject({}));
 const CorrecaoDto = z.strictObject({
   justificativa: Texto(500),
   observacao: Texto(500).nullable().optional(),
@@ -133,6 +137,13 @@ export class AcessoController {
   @Acao('evento.registrar')
   saida(@Ctx() ctx: Contexto, @Param('id', uuidParam) id: string, @Body(new ZodPipe(SaidaDto)) b: z.infer<typeof SaidaDto>) {
     return this.eventos.registrarSaida(ctx, id, b);
+  }
+
+  /** Prorrogação "+1h" do prazo de permanência (tabela à parte: o evento e a cadeia não mudam). 201: linha nova. */
+  @Post('eventos-acesso/:id/permanencia/prorrogacoes')
+  @Acao('evento.registrar')
+  prorrogar(@Ctx() ctx: Contexto, @Param('id', uuidParam) id: string, @Body(new ZodPipe(ProrrogacaoDto)) _b: z.infer<typeof ProrrogacaoDto>) {
+    return this.eventos.prorrogarPermanencia(ctx, id);
   }
 
   @Post('eventos-acesso/:id/correcoes')

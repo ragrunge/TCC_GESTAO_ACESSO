@@ -78,6 +78,13 @@
       "when": 1792711855204,
       "tag": "0010_configuracao",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792793505101,
+      "tag": "0011_permanencia",
+      "breakpoints": true
     }
   ]
 }

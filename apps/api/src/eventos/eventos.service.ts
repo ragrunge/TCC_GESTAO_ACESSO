@@ -16,13 +16,19 @@
 //   antes do 422: nunca é repetido nem duplicado.
 import { Inject, Injectable } from '@nestjs/common';
 import { pode } from '@portaria/domain/rbac';
-import { ERRO_PESSOA_DESATIVADA, MIN_JUSTIFICATIVA, justificativaValida, restricoesVigentes, validarAutorizacaoEntrada } from '@portaria/domain/rules';
+import {
+  ERRO_PESSOA_DESATIVADA, MIN_JUSTIFICATIVA, justificativaValida, prazoInicial, proximaProrrogacao, restricoesVigentes, temPrazoPermanencia,
+  tipoVisitaPadrao, validarAutorizacaoEntrada,
+} from '@portaria/domain/rules';
 import { inicioDoDia, fimDoDia, partes } from '@portaria/domain/time';
-import type { CategoriaPessoa, EventoView, Funcionario, MeioAutorizacao, Restricao, ValoresCorrecao } from '@portaria/domain/types';
+import type {
+  CategoriaPessoa, EventoView, Funcionario, MeioAutorizacao, PermanenciaView, Restricao, TipoVisita, ValoresCorrecao,
+} from '@portaria/domain/types';
 import { CAMPOS_CORRIGIVEIS } from '@portaria/domain/types';
 import { PORTARIA_SOCIAL } from '@portaria/domain/units';
-import { and, asc, count, desc, eq, isNull, lt, ne, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, lt, ne, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
+import { AuditoriaService } from '../auditoria/auditoria.service';
 import type { Contexto } from '../auth/tipos';
 import { diaBrt } from '../comum/datas';
 import { AcessoNegado, codigoPg, constraintPg, erroApi } from '../comum/erros';
@@ -31,7 +37,8 @@ import { RELOGIO, type Relogio } from '../comum/relogio';
 import { transacaoComRetry } from '../comum/transacao';
 import { DB, type Db, type Executor, type Tx } from '../database/database.module';
 import {
-  areaComum, autorizacaoPrevia, encomenda, eventoAcesso, funcionario, ocorrencia, pessoa, pontoAcesso, restricao, unidade, vinculoUnidade,
+  areaComum, autorizacaoPrevia, encomenda, eventoAcesso, funcionario, ocorrencia, permanencia, pessoa, pontoAcesso, restricao, unidade,
+  vinculoUnidade,
 } from '../db/schema';
 import { nomeSemAcentoSql, normalizar } from '../pessoas/busca.service';
 import { UnidadesService } from '../unidades/unidades.service';
@@ -57,6 +64,8 @@ export interface NovoEvento {
   ocorridoEm?: number | null;
   observacao?: string | null;
   formularioContingencia?: string | null;
+  /** Só visitante/prestador (padrão: visita / serviço); ignorado para morador e funcionário, que não têm prazo. */
+  tipoVisita?: TipoVisita | null;
 }
 export interface NovaRecusa {
   pessoaId: string; unidadeDestinoId: string; meio: 'interfone' | 'morador_presente'; moradorPessoaId: string;
@@ -79,6 +88,7 @@ export function traduzirErroEvento(e: unknown): unknown {
   if (!pg) return e;
   const c = constraintPg(e);
   if (pg === '23505' && c === 'evento_saida_unica_uq') return erroApi(409, 'SAIDA_JA_REGISTRADA', 'A saída desta entrada já foi registrada.');
+  if (pg === '23505' && c === 'permanencia_evento_ordem_uq') return erroApi(409, 'PRORROGACAO_CONCORRENTE', 'Outra prorrogação desta entrada acabou de ser registrada. Atualize a tela.');
   if (pg === '23503') return erroApi(422, 'REFERENCIA_INVALIDA', 'Pessoa, unidade, área ou autorização informada não existe.');
   if (pg !== '23514') return e;
   switch (c) {
@@ -93,6 +103,7 @@ export function traduzirErroEvento(e: unknown): unknown {
     case 'evento_prestador_ck': return erroApi(422, 'PRESTADOR_SEM_EMPRESA', 'Prestador precisa ter empresa no cadastro.');
     case 'evento_autorizacao_previa_ref_ck': return erroApi(422, 'AUTORIZACAO_PREVIA_INVALIDA', 'Autorização prévia inexistente, vencida ou fora da janela de dias/horário (RN-07).');
     case 'evento_escala_ck': return erroApi(422, 'MEIO_INVALIDO_PARA_TIPO', 'Este meio de autorização não se aplica ao tipo de pessoa.');
+    case 'permanencia_ordem_ck': return erroApi(422, 'PRORROGACAO_LIMITE', 'Limite de prorrogações atingido para esta entrada.');
     case undefined: {
       // RAISE do trigger (sem constraint). A mensagem é nossa (migração 0001) e só é lida aqui, nunca devolvida.
       const m = String((e as { cause?: { message?: unknown } }).cause?.message ?? (e as { message?: unknown }).message ?? '');
@@ -100,6 +111,9 @@ export function traduzirErroEvento(e: unknown): unknown {
       if (/sem CPF/i.test(m)) return erroApi(422, 'SEM_CPF_SO_EXCECAO', 'Pessoa cadastrada sem CPF só pode entrar por exceção do porteiro, com justificativa.');
       if (/data corrigida|ISO 8601/i.test(m)) return erroApi(422, 'DATA_INCONSISTENTE', 'A data e hora corrigidas devem ser anteriores ao momento atual.');
       if (/saída precisa/i.test(m)) return erroApi(404, 'ENTRADA_NAO_ENCONTRADA', 'Entrada não encontrada.');
+      // Trigger permanencia_antes_inserir (migração 0011)
+      if (/já saiu/i.test(m)) return erroApi(422, 'PESSOA_JA_SAIU', 'A saída desta pessoa já foi registrada: não há permanência a prorrogar.');
+      if (/permanência|prorrogação/i.test(m)) return erroApi(422, 'PERMANENCIA_INVALIDA', 'O prazo de permanência não foi aceito. Atualize a tela e tente de novo.');
       return erroApi(409, 'TRANSICAO_INVALIDA', 'O registro não foi aceito no estado atual. Atualize a tela e tente de novo.');
     }
     default: return erroApi(422, 'REGRA_VIOLADA', 'Os dados violam uma regra do registro de acesso.');
@@ -121,7 +135,7 @@ function resolverInstante(i: { retroativo?: boolean; ocorridoEm?: number | null;
   return { quando, formulario: i.retroativo ? formulario : null };
 }
 
-type Resultado = { tipo: 'evento'; linha: LinhaEvento } | { tipo: 'negado'; linha: LinhaEvento; restricoes: Restricao[]; destino: string };
+type Resultado = { tipo: 'evento'; linha: LinhaEvento; prazo: PermanenciaView | null } | { tipo: 'negado'; linha: LinhaEvento; restricoes: Restricao[]; destino: string };
 
 @Injectable()
 export class EventosService {
@@ -131,6 +145,7 @@ export class EventosService {
     @Inject(DB) private readonly db: Db,
     @Inject(RELOGIO) private readonly relogio: Relogio,
     @Inject(UnidadesService) private readonly unidades: UnidadesService,
+    @Inject(AuditoriaService) private readonly auditoria: AuditoriaService,
   ) {}
 
   private agora() { return this.relogio.agora().getTime(); }
@@ -271,7 +286,19 @@ export class EventosService {
         operadorId: ctx.ator.id, operadorPapel: ctx.ator.papel, ocorridoEm: new Date(quando), retroativo: !!i.retroativo,
         formularioContingencia: formulario, observacao: i.observacao?.trim() || null, ...prestacao,
       });
-      return { tipo: 'evento', linha };
+      // Prazo de permanência (tabela à parte, fora do hash) na MESMA transação: sem evento sem prazo nem prazo sem evento.
+      // Conta do ocorrido_em gravado (relógio do banco, ou a hora real no retroativo).
+      let prazo: PermanenciaView | null = null;
+      if (temPrazoPermanencia(categoria)) {
+        const tipo = i.tipoVisita ?? tipoVisitaPadrao(categoria);
+        const janela = i.autorizadoPorTipo === 'autorizacao_previa' ? autorizacoes.find((a) => a.id === i.autorizacaoPreviaId)?.horaFim : null;
+        const [pz] = await tx.insert(permanencia).values({
+          eventoEntradaId: linha.id, ordem: 0, tipoVisita: tipo, prazoAte: new Date(prazoInicial(tipo, linha.ocorridoEm.getTime(), janela)),
+          motivo: 'entrada', definidoPorId: ctx.ator.id,
+        }).returning();
+        prazo = { tipoVisita: pz!.tipoVisita, prazoAte: pz!.prazoAte.getTime(), prorrogacoes: 0 };
+      }
+      return { tipo: 'evento', linha, prazo };
     });
 
     const v = await this.view(r.linha);
@@ -281,7 +308,46 @@ export class EventosService {
         eventoId: v.id, codigo: v.codigo, restricoes,
       });
     }
-    return v;
+    return { ...v, permanencia: r.prazo };
+  }
+
+  /**
+   * Prorrogação "+1h" do prazo de permanência (linha nova na `permanencia`; nada muda no evento nem na cadeia).
+   * Só com a pessoa ainda dentro (sem saída). Limites: 4 prorrogações e 12 h desde a entrada (`proximaProrrogacao`).
+   * Duas prorrogações simultâneas: o índice único (evento, ordem) recusa a segunda com 409. Grava a trilha
+   * (`permanencia.prorrogar`) na mesma transação.
+   */
+  async prorrogarPermanencia(ctx: Contexto, entradaId: string): Promise<PermanenciaView & { eventoId: string }> {
+    const n = this.agora();
+    return this.escrever(async (tx) => {
+      const [ent] = await tx.select({ id: eventoAcesso.id, tipo: eventoAcesso.tipo, ocorridoEm: eventoAcesso.ocorridoEm })
+        .from(eventoAcesso).where(eq(eventoAcesso.id, entradaId));
+      if (!ent || ent.tipo !== 'entrada') throw erroApi(404, 'ENTRADA_NAO_ENCONTRADA', 'Entrada não encontrada.');
+      const [saiu] = await tx.select({ id: eventoAcesso.id }).from(eventoAcesso)
+        .where(and(eq(eventoAcesso.tipo, 'saida'), eq(eventoAcesso.refereEventoId, ent.id)));
+      if (saiu) throw erroApi(422, 'PESSOA_JA_SAIU', 'A saída desta pessoa já foi registrada: não há permanência a prorrogar.');
+      const [vig] = await tx.select().from(permanencia).where(eq(permanencia.eventoEntradaId, ent.id)).orderBy(desc(permanencia.ordem)).limit(1);
+      if (!vig) throw erroApi(422, 'SEM_PRAZO_PERMANENCIA', 'Esta entrada não tem prazo de permanência (morador, funcionário ou entrada anterior ao controle de prazo).');
+      const r = proximaProrrogacao({ entradaEm: ent.ocorridoEm.getTime(), prazoAte: vig.prazoAte.getTime(), prorrogacoes: vig.ordem }, n);
+      if (!r.ok) throw erroApi(r.erro.status, r.erro.code, r.erro.message);
+      const [nova] = await tx.insert(permanencia).values({
+        eventoEntradaId: ent.id, ordem: vig.ordem + 1, tipoVisita: vig.tipoVisita, prazoAte: new Date(r.prazoAte),
+        motivo: 'prorrogacao', definidoPorId: ctx.ator.id,
+      }).returning();
+      await this.auditoria.registrar(tx, {
+        ator: ctx.ator, ip: ctx.ip, acao: 'permanencia.prorrogar', entidade: 'permanencia', registroId: nova!.id, antes: vig, depois: nova,
+      });
+      return { eventoId: ent.id, tipoVisita: nova!.tipoVisita, prazoAte: nova!.prazoAte.getTime(), prorrogacoes: nova!.ordem };
+    });
+  }
+
+  /** Prazo vigente (linha de maior ordem) de cada entrada da lista. Entrada sem linha fica fora do mapa. */
+  private async prazosVigentes(ids: string[]): Promise<Map<string, PermanenciaView>> {
+    if (ids.length === 0) return new Map();
+    const ls = await this.db.selectDistinctOn([permanencia.eventoEntradaId], {
+      id: permanencia.eventoEntradaId, tipoVisita: permanencia.tipoVisita, prazoAte: permanencia.prazoAte, ordem: permanencia.ordem,
+    }).from(permanencia).where(inArray(permanencia.eventoEntradaId, ids)).orderBy(permanencia.eventoEntradaId, desc(permanencia.ordem));
+    return new Map(ls.map((l) => [l.id, { tipoVisita: l.tipoVisita, prazoAte: l.prazoAte.getTime(), prorrogacoes: l.ordem }]));
   }
 
   private async areaParaNovoUso(exec: Executor, id: string) {
@@ -465,7 +531,8 @@ export class EventosService {
     const linhas = await this.db.select().from(eventoAcesso).where(and(...w)).orderBy(desc(eventoAcesso.seq)).limit(p.limite + 1);
     const pagina = linhas.slice(0, p.limite);
     const ultimo = pagina[pagina.length - 1];
-    return new Pagina(await montarViews(this.db, pagina), linhas.length > p.limite && ultimo ? codificarCursor({ s: ultimo.seq }) : null);
+    const [views, prazos] = await Promise.all([montarViews(this.db, pagina), this.prazosVigentes(pagina.map((l) => l.id))]);
+    return new Pagina(views.map((v) => ({ ...v, permanencia: prazos.get(v.id) ?? null })), linhas.length > p.limite && ultimo ? codificarCursor({ s: ultimo.seq }) : null);
   }
 
   /** RF-29: resumo da passagem de turno (contagens por tipo de evento). */

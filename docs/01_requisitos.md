@@ -133,7 +133,7 @@ Requisitos que melhoram a produtividade, mas cuja falta não impede nenhum dos i
 | RF-17 | Exigir justificativa textual quando o porteiro liberar acesso por exceção (morador não atende, urgência). | M | P1 |
 | RF-18 | Reaproveitar o cadastro de visitantes e prestadores frequentes, sem nova digitação. | S | P5 |
 | RF-19 | Consultar o histórico de acessos por pessoa, unidade, período e porteiro. | M | P3 |
-| RF-20 | Exibir quem está dentro do condomínio no momento (entradas sem saída correspondente). | S | P3 |
+| RF-20 | Exibir quem está dentro do condomínio no momento (entradas sem saída correspondente), com o tempo de permanência. Para visitante e prestador, mostrar o prazo definido pelo tipo de visita na entrada (visita, entregador, motorista de aplicativo, serviço), avisar quando estiver para vencer ou vencido e permitir à portaria prorrogá-lo (RN-12). | S | P3 |
 | RF-21 | *Removido em 2026-10-17: fora do escopo, porque o morador não opera o sistema.* | — | — |
 | RF-35 | Lançar registro retroativo de acesso feito durante contingência, com data e hora reais da ocorrência, marcado como retroativo e com identificação de quem lançou. | M | RNF-05 |
 | RF-36 | Registrar o acesso de prestador com empresa, serviço e unidade ou área atendida. | M | P5 |
@@ -193,6 +193,7 @@ O artigo apresenta este resumo; esta especificação é a referência completa.
 | RN-08 | Encomenda só é entregue a pessoa com vínculo aprovado à unidade de destino ou a pessoa autorizada por ela. |
 | RN-09 | Moradores importados da planilha entram com status "legado" e prazo, definido em assembleia, para ter o comprovante de vínculo conferido (RF-05). Ao fim do prazo, a administração revisa os pendentes. |
 | RN-10 | Foto da pessoa é opcional. A recusa não impede o cadastro. **Fase futura:** a coleta de foto ainda não está implementada (sem upload na API nem campo na tela); o campo que existia no protótipo da portaria guardava só o nome do arquivo e foi retirado em 2026-10-22 para não dar ao porteiro a impressão de ter coletado a foto. |
+| RN-12 | Visitante e prestador entram com prazo de permanência conforme o tipo de visita informado pela portaria (padrão: visita para visitante, serviço para prestador). Morador e funcionário não têm prazo. A portaria pode prorrogar o prazo em uma hora enquanto a pessoa estiver dentro, até quatro vezes e no máximo doze horas desde a entrada; cada prorrogação entra na trilha de alterações. O prazo é aviso operacional: vencer não registra saída nem bloqueia nada, e não altera o registro de acesso (RN-04). |
 | RN-11 | Toda decisão de acesso tomada por um usuário do sistema (entrada, recusa do morador ou negativa por restrição) gera registro imutável com o usuário e o papel no momento, o meio de autorização, quem autorizou ou recusou, a autorização prévia ou a justificativa quando houver, a data e a hora do fato e do registro, e o ponto de acesso. Toda criação, alteração ou revogação de cadastro, vínculo, autorização prévia, restrição, encomenda, ocorrência e usuário, assim como login, logout e tentativa sem permissão, entra na trilha de alterações com os valores antes e depois, sem dado pessoal em claro. |
 
 ---
@@ -506,6 +507,10 @@ Inventário que orienta o protótipo navegável (`../prototipo/Portaria.dc.html`
 | --- | --- | --- |
 | 0.2 | 2026-10-09 | Rascunho inicial. |
 | 0.3 | 2026-10-17 | Atende aos comentários do orientador sobre resumir os requisitos e definir o MVP. Incluído o critério do MVP (seção 4) e o resumo do MVP (seção 4.5). RF-18 e RF-28 passam de M para S. RNFs ganham as colunas Prioridade e Origem. RNF-10 reescrito como "Preservação dos dados", com justificativa ligada a P3 e P9 e à escolha de backup em vez de sincronização. RNF-10 incluído na linha P3 da matriz (seção 9). Numeração de todos os requisitos mantida. |
+
+**Ajustes de 2026-10-23 (versão 0.3, sem nova versão), prazo de permanência.** RF-20 passa a mostrar o prazo de
+permanência por tipo de visita, com aviso de vencimento e prorrogação de uma hora pela portaria; nova RN-12. Decisão e
+limites na especificação técnica, seção 14, nº 35.
 
 **Ajustes de 2026-10-22 (versão 0.3, sem nova versão), auditoria LGPD.** Seção 7: prazo de IP e navegador das sessões
 (90 dias), fato gerador do veículo (desativação), alcance e limites da anonimização no texto livre, registro dos pedidos
