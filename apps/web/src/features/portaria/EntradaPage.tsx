@@ -32,6 +32,7 @@ const SUGESTOES_EXCECAO = ['Morador não atende o interfone', 'Emergência médi
 
 const NP_VAZIA = { nome: '', documento: '', telefone: '', semCpf: false, categoria: 'visitante' as CategoriaPessoa, empresa: '', servico: '' };
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LIMITE_SUGESTOES = 8;
 /** Quem tem vínculo válido aparece na busca com o rótulo "Morador da D-32" (pode visitar outra unidade). */
 const rotuloPessoa = (p: PessoaBusca) => (p.unidadesVinculadasCodigos.length > 0
@@ -41,7 +42,7 @@ const rotuloPessoa = (p: PessoaBusca) => (p.unidadesVinculadasCodigos.length > 0
 export function EntradaPage() {
   const api = useApi();
   const nav = useNavigate();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const retroativo = params.get('retroativo') === '1';
   const { usuario } = useAuth();
   const { avisar } = useToast();
@@ -96,6 +97,38 @@ export function EntradaPage() {
   const enterPendente = useRef(false);
 
   useEffect(() => { buscaRef.current?.focus(); }, []);
+
+  // Pré-preenchimento vindo do painel ("Registrar entrada" em Previstos): ?pessoa=<uuid>&unidade=<uuid> ou &area=<uuid>.
+  // Usa os mesmos caminhos da seleção manual (escolherPessoa + bloco/número ou área); qualquer falha é ignorada e a
+  // tela fica vazia. Os parâmetros são consumidos (replace, mantendo `retroativo`) para um reload não repetir.
+  const prefillFeito = useRef(false);
+  useEffect(() => {
+    if (prefillFeito.current || !catalogo.pronto) return;
+    const pid = params.get('pessoa'), uid = params.get('unidade'), aid = params.get('area');
+    if (!pid && !uid && !aid) return;
+    prefillFeito.current = true;
+    const prox = new URLSearchParams(params);
+    ['pessoa', 'unidade', 'area'].forEach((k) => prox.delete(k));
+    setParams(prox, { replace: true });
+    if (!pid || !UUID.test(pid) || (uid ? !UUID.test(uid) : false) || (aid ? !UUID.test(aid) : false) || (!!uid === !!aid)) return;
+    (async () => {
+      try {
+        const ficha = await api.pessoas.ficha(pid);
+        if (ficha.pessoa.desativadaEm) return;
+        // A busca devolve o PessoaBusca completo (vínculos, último acesso) que a seleção manual usa; ela já exclui desativadas
+        const achada = (await api.pessoas.buscar(ficha.pessoa.nome, { limite: 50 })).find((x) => x.id === pid);
+        if (!achada) return;
+        const un = uid ? catalogo.porId(uid) : undefined;
+        const area = aid ? catalogo.areasComuns.find((a) => a.id === aid) : undefined;
+        if (uid && !un?.ativo) return;
+        if (aid && (!area?.ativo || achada.categoria !== 'prestador')) return; // área comum é só do prestador (RF-36)
+        await escolherPessoaRef.current(achada);
+        if (un) { setBloco(un.bloco); setNumero(un.numero); }
+        else if (area) { setDestino('area_comum'); setAreaId(area.id); }
+      } catch { /* pré-preenchimento é conveniência: falha vira tela vazia */ }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogo.pronto, params]);
 
   // Busca incremental
   useEffect(() => {

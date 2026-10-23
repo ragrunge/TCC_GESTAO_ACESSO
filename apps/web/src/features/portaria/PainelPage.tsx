@@ -19,6 +19,8 @@ import { EventoGaveta } from '../historico/EventoGaveta';
 
 const COLUNAS = '90px minmax(0,1.5fr) 80px 110px minmax(0,1.8fr) minmax(0,1fr)';
 const HORAS_PREVISTOS = 12;
+/** O botão "Registrar entrada" aparece para janelas em curso ou que começam em até 30 min. */
+const ANTECEDENCIA_ENTRADA_MS = 30 * 60000;
 const TECLA = 'hidden rounded-md border px-[10px] py-[6px] font-mono text-[16px] font-semibold lg:block';
 
 export function PainelPage() {
@@ -128,12 +130,19 @@ export function PainelPage() {
         {previstos.data && previstos.data.length > 0 && (
           <ul className="m-0 list-none p-0">
             {previstos.data.map((p) => (
-              <li key={p.autorizacaoId} className="grid grid-cols-1 gap-1 border-b border-[#EEF1F3] px-4 py-[10px] last:border-b-0 sm:grid-cols-[170px_minmax(0,1fr)_minmax(0,1fr)] sm:items-center sm:gap-3 md:px-5">
+              <li key={p.autorizacaoId} className="grid grid-cols-1 gap-1 border-b border-[#EEF1F3] px-4 py-[10px] last:border-b-0 sm:grid-cols-[170px_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center sm:gap-3 md:px-5">
                 <span className="font-mono text-[14px] font-semibold">
                   {p.inicio <= agora ? `Agora, até ${quandoCurto(p.fim, agora)}` : `${quandoCurto(p.inicio, agora)} – ${quandoCurto(p.fim, agora)}`}
                 </span>
                 <span className="flex flex-col"><span className="font-medium">{p.nome}</span><span className="text-[13px] text-[#56616B]">{ROTULO_CATEGORIA[p.categoria]}</span></span>
                 <span className="text-[14px]"><span className="text-[#56616B]">{p.destino.tipo === 'unidade' ? 'Unidade ' : 'Área comum: '}</span><span className="font-mono font-semibold">{p.destino.rotulo}</span></span>
+                {podeRegistrar && p.inicio - agora <= ANTECEDENCIA_ENTRADA_MS && (
+                  <Link to={`/entrada?pessoa=${p.pessoaId}&${p.destino.tipo === 'unidade' ? 'unidade' : 'area'}=${p.destino.id}`}
+                    aria-label={`Registrar entrada de ${p.nome}`}
+                    className="inline-flex h-[40px] items-center justify-center rounded-lg border border-[#0B5563] bg-white px-3 text-[14px] font-semibold !text-[#0B5563] hover:bg-[#F0F8F9]">
+                    Registrar entrada
+                  </Link>
+                )}
               </li>
             ))}
           </ul>
