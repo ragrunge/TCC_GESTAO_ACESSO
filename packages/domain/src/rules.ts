@@ -1,10 +1,10 @@
 // Regras de negócio puras (sem React, sem I/O). Usadas pela UI (para habilitar botões)
 // e, principalmente, pela API (que é quem realmente decide).
 import type {
-  AutorizacaoPrevia, CategoriaPessoa, ConferenciaComprovante, Escala, Funcionario, MeioAutorizacao, Pessoa,
-  Restricao, VinculoUnidade,
+  AutorizacaoPrevia, CategoriaPessoa, ConferenciaComprovante, Escala, Funcionario, MeioAutorizacao, PermanenciaView, Pessoa,
+  Restricao, TipoVisita, VinculoUnidade,
 } from './types';
-import { DIA, DIAS_SEMANA_ABREV, HORA, hhmmParaMin, inicioDoDia, menosAnos, minutosDoDia, partes } from './time';
+import { DIA, DIAS_SEMANA_ABREV, HORA, fmtDuracao, fmtHora, hhmmParaMin, inicioDoDia, menosAnos, minutosDoDia, partes } from './time';
 
 export const MIN_JUSTIFICATIVA = 15;
 export const DIAS_ENCOMENDA_ATRASADA = 7;
@@ -420,9 +420,6 @@ export function elegivelRetencao(
 // portaria. Fica numa tabela append-only à parte (migração 0011): o evento_acesso, a canonização e o hash não mudam.
 // Só visitante e prestador têm prazo; morador e funcionário não. `permanenciaExcedida` (8 h fixas) continua valendo
 // para quem não tem prazo gravado (entradas de antes da migração), para a tela não perder o alerta.
-// Imports aqui (e não no topo) só para o bloco ficar inteiro no fim do arquivo e facilitar merge; o ES os iça.
-import type { PermanenciaView, TipoVisita } from './types';
-import { fmtDuracao, fmtHora, inicioDoDia } from './time';
 
 /** Prazo padrão por tipo de visita, em minutos. */
 export const PRAZO_PADRAO_MIN: Record<TipoVisita, number> = { visita: 240, entrega: 30, transporte_app: 15, servico: 480 };
