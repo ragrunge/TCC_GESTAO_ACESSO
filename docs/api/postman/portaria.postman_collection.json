@@ -380,7 +380,7 @@
             "description": "Permissão: `evento.registrar`",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"pessoaId\": \"{{pessoaId}}\",\n  \"unidadeDestinoId\": \"{{unidadeDestinoId}}\",\n  \"areaComumId\": \"{{areaComumId}}\",\n  \"autorizadoPorTipo\": \"interfone\",\n  \"autorizadoPorPessoaId\": \"{{autorizadoPorPessoaId}}\",\n  \"autorizacaoPreviaId\": \"{{autorizacaoPreviaId}}\",\n  \"justificativa\": \"exemplo\",\n  \"retroativo\": false,\n  \"ocorridoEm\": 0,\n  \"observacao\": \"exemplo\",\n  \"formularioContingencia\": \"exemplo\"\n}",
+              "raw": "{\n  \"pessoaId\": \"{{pessoaId}}\",\n  \"unidadeDestinoId\": \"{{unidadeDestinoId}}\",\n  \"areaComumId\": \"{{areaComumId}}\",\n  \"autorizadoPorTipo\": \"interfone\",\n  \"autorizadoPorPessoaId\": \"{{autorizadoPorPessoaId}}\",\n  \"autorizacaoPreviaId\": \"{{autorizacaoPreviaId}}\",\n  \"justificativa\": \"exemplo\",\n  \"retroativo\": false,\n  \"ocorridoEm\": 0,\n  \"observacao\": \"exemplo\",\n  \"formularioContingencia\": \"exemplo\",\n  \"tipoVisita\": \"visita\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -533,6 +533,46 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"justificativa\": \"exemplo\",\n  \"observacao\": \"exemplo\",\n  \"valores\": {\n    \"unidadeDestinoId\": \"{{unidadeDestinoId}}\",\n    \"ocorridoEm\": 0,\n    \"pessoaId\": \"{{pessoaId}}\",\n    \"autorizadoPorPessoaId\": \"{{autorizadoPorPessoaId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "acesso / prorrogar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/eventos-acesso/:id/permanencia/prorrogacoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "eventos-acesso",
+                ":id",
+                "permanencia",
+                "prorrogacoes"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{eventoAcessoId}}"
+                }
+              ]
+            },
+            "description": "Permissão: `evento.registrar`",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
               "options": {
                 "raw": {
                   "language": "json"

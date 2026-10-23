@@ -678,3 +678,35 @@ export const configuracao = pgTable('configuracao', {
   check('configuracao_agrupamento_ck', sql`agrupamento IN ('Bloco', 'Torre')`),
   check('configuracao_fuso_ck', sql`fuso = 'America/Sao_Paulo'`),
 ]);
+
+// ----- Tempo de permanência (prazo por tipo de visita, spec §14 2026-10-23) -------------------------------------------
+// FORA da cadeia de hash, de propósito: o prazo é operacional (alerta da portaria), muda com a prorrogação e não pode
+// mexer no evento_acesso, na canonização nem no hash. Append-only (trigger + REVOKE na migração 0011).
+
+/** Rótulos no domain (`ROTULO_TIPO_VISITA`). Só para visitante e prestador. */
+export const tipoVisita = pgEnum('tipo_visita', ['visita', 'entrega', 'transporte_app', 'servico']);
+
+/**
+ * Uma linha por definição de prazo de uma ENTRADA: `ordem` 0 é o prazo da entrada (gravado na mesma transação do
+ * evento), 1..4 são as prorrogações. O prazo vigente é a linha de maior `ordem`. O índice único (evento, ordem)
+ * serializa duas prorrogações simultâneas (a segunda recebe 23505) e o CHECK de `ordem` é o limite de prorrogações.
+ * O trigger `permanencia_antes_inserir` confere: entrada de visitante/prestador, sequência sem buraco, mesmo tipo,
+ * prazo crescente e dentro de 12 h da entrada, e nenhuma saída registrada. Sem dado pessoal: só ids, enum e instantes.
+ * O descarte da entrada por retenção (prefixo da cadeia) leva as linhas junto (cascade), como em ocorrencia_evento.
+ */
+export const permanencia = pgTable('permanencia', {
+  id: pk(),
+  eventoEntradaId: uuid('evento_entrada_id').notNull().references(() => eventoAcesso.id, { onDelete: 'cascade' }),
+  ordem: smallint('ordem').notNull(),
+  tipoVisita: tipoVisita('tipo_visita').notNull(),
+  prazoAte: instante('prazo_ate').notNull(),
+  /** 'entrada' (ordem 0) ou 'prorrogacao'. */
+  motivo: text('motivo').notNull(),
+  definidoPorId: uuid('definido_por_id').notNull().references(() => usuarioSistema.id),
+  /** Relógio do banco (o trigger sobrescreve). */
+  definidoEm: instante('definido_em').notNull().default(sql`clock_timestamp()`),
+}, (t) => [
+  uniqueIndex('permanencia_evento_ordem_uq').on(t.eventoEntradaId, t.ordem),
+  check('permanencia_ordem_ck', sql`ordem BETWEEN 0 AND 4`),
+  check('permanencia_motivo_ck', sql`motivo IN ('entrada', 'prorrogacao') AND (motivo = 'entrada') = (ordem = 0)`),
+]);
