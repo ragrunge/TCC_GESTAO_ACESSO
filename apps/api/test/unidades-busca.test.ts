@@ -285,6 +285,20 @@ describe('busca de pessoas (mesmo comportamento do mock)', () => {
     expect(nomes(await buscar('982247'))).toContain('Ana Ribeiro');
   });
 
+  it('por CPF parcial nos dois formatos: começo no novo, qualquer ponto dos 6 do meio no antigo; 11 dígitos acha os dois', async () => {
+    // Paulo Ribeiro: formato novo (318.40*.***-**). Ana Ribeiro: antigo (***.982.247-**), como as pessoas de antes de 2026-10-24.
+    const paulo = cpfComDv('318406253');
+    expect((await pessoaPorNomeBusca('Paulo Ribeiro')).documentoMascarado).toBe('318.40*.***-**');
+    for (const q of ['318', '3184', '318.40', '31840', '318406', '318.406.253', '3184062539']) expect(nomes(await buscar(q))).toContain('Paulo Ribeiro');
+    for (const q of ['184', '40625', '31841', '3194062']) expect(nomes(await buscar(q))).not.toContain('Paulo Ribeiro'); // só pelo começo
+    for (const q of ['982', '822', '247', '982.247']) expect(nomes(await buscar(q))).toContain('Ana Ribeiro'); // antigo: meio
+    for (const q of ['529', '52998']) expect(nomes(await buscar(q))).not.toContain('Ana Ribeiro'); // o começo dela não está no banco
+    expect(nomes(await buscar(paulo))).toEqual(['Paulo Ribeiro']);
+    expect(nomes(await buscar(CPF_ANA))).toEqual(['Ana Ribeiro']);
+  });
+
+  const pessoaPorNomeBusca = async (nome: string) => (await buscar(nome)).body.data.pessoas.find((p: { nome: string }) => p.nome === nome);
+
   it('por unidade: vínculos pendente, aprovado e legado da unidade', async () => {
     expect(nomes(await buscar('d 32')).sort()).toEqual(['Ana Ribeiro', 'Lúcia Ribeiro', 'Paulo Ribeiro']);
     expect(nomes(await buscar('Bloco D · AP 32')).sort()).toEqual(['Ana Ribeiro', 'Lúcia Ribeiro', 'Paulo Ribeiro']);

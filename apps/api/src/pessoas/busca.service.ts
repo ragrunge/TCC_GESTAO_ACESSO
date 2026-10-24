@@ -1,13 +1,17 @@
 // Busca de pessoas (RF-18, RF-34) e busca global do topo. Regras:
 //   nome     sem acento e sem caixa, por substring (ILIKE; a spec §3.5 deixa pg_trgm para quando a medição pedir);
-//   CPF      11 dígitos: igualdade pelo HMAC (documento_busca, chave PORTARIA_HMAC_CPF_KEY); 3 a 10 dígitos: parcial nos
-//            6 dígitos visíveis do mascarado (o mesmo que a tela já mostra);
+//   CPF      11 dígitos: igualdade pelo HMAC (documento_busca, chave PORTARIA_HMAC_CPF_KEY), nos dois formatos de máscara;
+//            3 a 10 dígitos: só os dígitos VISÍVEIS do mascarado (o mesmo que a tela já mostra; o resto não existe no banco):
+//            - formato novo "123.45*.***-**" (cadastro desde 2026-10-24): pelo COMEÇO. Até 5 dígitos, prefixo; com mais,
+//              os 5 primeiros do termo precisam ser os visíveis (os seguintes não dá para conferir);
+//            - formato antigo "***.456.789-**" (quem já estava cadastrado): parcial em qualquer ponto dos 6 do meio;
 //   unidade  "A-32", "a 32" (e o antigo "T4-32"): pessoas com vínculo pendente, aprovado ou legado nela;
 //   placa    4+ caracteres: pessoas com vínculo VÁLIDO na unidade do veículo ativo;
 //   ordem    nome exato, começa com, contém, outros critérios; depois alfabética.
 // Anonimizada nunca aparece; desativada (RF-02) só com `incluirDesativadas` (tela Cadastro), nunca na busca do topo. O CPF digitado só existe nesta requisição: vem no CORPO de um POST (não na URL, que
 // proxies e a borda da Vercel registram), não é logado (log em allowlist) e leitura não grava trilha.
 import { Inject, Injectable } from '@nestjs/common';
+import { DIGITOS_VISIVEIS_CPF } from '@portaria/domain/cpf';
 import { fmtData, fmtHora } from '@portaria/domain/time';
 import { codigoUnidade, leiturasDoCodigo } from '@portaria/domain/units';
 import { and, asc, desc, eq, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
@@ -25,7 +29,7 @@ export interface PessoaBusca {
   id: string;
   nome: string;
   documentoTipo: 'cpf';
-  /** "***.456.789-**" ou "(sem CPF)". */
+  /** "123.45*.***-**", "***.456.789-**" (formato antigo) ou "(sem CPF)". */
   documentoMascarado: string;
   semCpf: boolean;
   categoria: (typeof pessoa.categoria.enumValues)[number];
@@ -86,7 +90,9 @@ export class BuscaService {
     if (digitos.length === 11) {
       criterios.push(eq(pessoa.documentoBusca, documentoBusca(digitos, chavesDe(this.condominio).hmacCpf)));
     } else if (digitos.length >= 3) {
-      criterios.push(sql`regexp_replace(coalesce(${pessoa.documentoMascarado}, ''), '[^0-9]', '', 'g') LIKE ${`%${digitos}%`}`);
+      const visiveis = sql`regexp_replace(coalesce(${pessoa.documentoMascarado}, ''), '[^0-9]', '', 'g')`;
+      criterios.push(sql`(CASE WHEN ${pessoa.documentoMascarado} LIKE '***.%' THEN ${visiveis} LIKE ${`%${digitos}%`}
+        ELSE ${visiveis} LIKE ${`${digitos.slice(0, DIGITOS_VISIVEIS_CPF.inicio)}%`} END)`);
     }
     // "A-32"; o antigo "T4-32" também casa com o bloco "4" (todas as leituras do código).
     const cods = leiturasDoCodigo(consulta);
