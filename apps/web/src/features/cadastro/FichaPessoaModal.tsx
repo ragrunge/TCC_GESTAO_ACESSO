@@ -1,7 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Info } from 'lucide-react';
 import { useApi, type ResultadoAnonimizacao } from '../../api';
+import type { VinculoUnidade } from '@portaria/domain/types';
 import { useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
 import { InputMascara } from '../../components/InputMascara';
@@ -16,7 +18,8 @@ import { ROTULO_CATEGORIA, ROTULO_VINCULO, type Pessoa } from '@portaria/domain/
 import { agora, fmtData, fmtDataHora } from '@portaria/domain/time';
 import { MIN_JUSTIFICATIVA, justificativaValida } from '@portaria/domain/rules';
 import { mensagemErro } from '../../app/useAsync';
-import { APOS_DESATIVACAO, APOS_LGPD, APOS_PESSOA, CHAVES, useInvalidar } from '../../app/consultas';
+import { APOS_DESATIVACAO, APOS_LGPD, APOS_PESSOA, APOS_VINCULO, CHAVES, useInvalidar } from '../../app/consultas';
+import { mensagemSucesso, NovoVinculoModalLazy, precarregarNovoVinculo } from '../vinculos/NovoVinculoLazy';
 import { chipDoEvento, quandoCurto, textoAutorizacao } from '../common/evento';
 import { baixarArquivo } from '../historico/download';
 
@@ -24,7 +27,9 @@ import { baixarArquivo } from '../historico/download';
  * Ficha da pessoa. Para síndico e administração: correção do cadastro (LGPD art. 18 e RN-09), exportação dos dados do
  * titular (spec 9.3) e desativar/reativar o cadastro (RF-02: não exclui; a API recusa com a pessoa dentro, com vínculo
  * válido ou funcionário ativo, e revoga junto as autorizações prévias vigentes). Para o síndico: anonimização a pedido
- * (art. 18, VI). A API decide; a UI só oculta.
+ * (art. 18, VI). Para quem pode criar vínculo (vinculo.criar: síndico e administração; RN-03, o porteiro não): "Vincular a
+ * uma unidade", o mesmo fluxo de "Incluir morador" da tela da unidade, partindo da pessoa (nasce pendente). A API decide;
+ * a UI só oculta.
  */
 export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => void }) {
   const api = useApi();
@@ -33,6 +38,10 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
   const podeExportar = useCan('lgpd.exportar');
   const podeAnonimizar = useCan('lgpd.anonimizar');
   const podeDesativar = useCan('pessoa.desativar');
+  const podeVincular = useCan('vinculo.criar');
+  const [vinculando, setVinculando] = useState(false);
+  const [vinculado, setVinculado] = useState<{ v: VinculoUnidade; resumo: string } | null>(null);
+  useEffect(() => { if (podeVincular) precarregarNovoVinculo(); }, [podeVincular]);
   const [desativando, setDesativando] = useState(false);
   const [motivo, setMotivo] = useState('');
   const invalidar = useInvalidar();
@@ -75,6 +84,19 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
       avisar({ titulo: 'Cadastro reativado', texto: `${r.nome} volta a aparecer nas buscas. Autorizações revogadas não voltam.` });
       void invalidar(APOS_DESATIVACAO);
     } catch (e) { avisar({ tom: 'vermelho', texto: mensagemErro(e) }); }
+  }
+
+  // Vínculo no lugar da ficha (um modal só, como a desativação abaixo); Cancelar ou Esc voltam para a ficha.
+  if (vinculando && f) {
+    return (
+      <NovoVinculoModalLazy titulo="Vincular a uma unidade" pessoaFixa={f.pessoa} vinculosConhecidos={f.vinculos}
+        onClose={() => setVinculando(false)}
+        onFeito={(v, resumo) => {
+          setVinculando(false); setVinculado({ v, resumo });
+          avisar({ texto: mensagemSucesso(v) });
+          void invalidar(APOS_VINCULO); // ficha, unidade (moradores), fila e badge de pendentes, buscas
+        }} />
+    );
   }
 
   // Confirmação no lugar da ficha (um modal só: dois empilhados quebrariam o foco); Cancelar volta para a ficha.
@@ -141,7 +163,24 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
             onSalvo={() => { setEditando(false); avisar({ texto: 'Cadastro atualizado. Antes e depois ficam na trilha de alterações.' }); void invalidar(APOS_PESSOA); }} />}
           {f.funcionario && <Alert tom="petroleo">Funcionário do condomínio: {f.funcionario.funcao}. Escala {f.funcionario.escala.horaInicio}–{f.funcionario.escala.horaFim}.</Alert>}
           <section>
-            <h3 className="mb-2 text-[15px] font-semibold">Vínculos com unidades</h3>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-[15px] font-semibold">Vínculos com unidades</h3>
+              {podeVincular && !anonimizada && (
+                <Button pequeno variante="contorno" disabled={desativada} aria-describedby={desativada ? 'ficha-vincular-motivo' : undefined}
+                  onClick={() => { setVinculado(null); setVinculando(true); }}>Vincular a uma unidade</Button>
+              )}
+            </div>
+            {podeVincular && !anonimizada && desativada && (
+              <p id="ficha-vincular-motivo" className="mb-2 text-[13px] text-[#56616B]">Cadastro desativado não recebe vínculo: reative o cadastro para vincular a uma unidade.</p>
+            )}
+            {vinculado && (
+              <Alert tom={vinculado.v.status === 'pendente' ? 'ambar' : 'verde'} role="status" className="mb-2">
+                {vinculado.resumo}: {vinculado.v.status === 'pendente'
+                  ? <>solicitado e <strong>pendente</strong>. Falta registrar a conferência do comprovante e aprovar em{' '}
+                    <Link className="font-semibold underline" to="/vinculos" onClick={onClose}>Vínculos</Link>; enquanto pendente, não dá acesso de morador.</>
+                  : <>registrado ({vinculado.v.status}).</>}
+              </Alert>
+            )}
             {f.vinculos.length === 0 ? <p className="text-[#56616B]">Sem vínculos.</p> : (
               <div className="rounded-[10px] border border-[#DCE1E5]">
                 {f.vinculos.map((v) => (
