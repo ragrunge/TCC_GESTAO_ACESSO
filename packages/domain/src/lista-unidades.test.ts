@@ -71,15 +71,16 @@ describe('planilha', () => {
   });
 
   it('duas colunas com cabeçalho (qualquer ordem e grafia), uma coluna, sem cabeçalho', () => {
-    expect(linhasDePlanilha([['Apto', 'Observação', 'Torre'], ['101', 'x', '1'], ['', '', ''], ['102', '', '1']])).toEqual(['1 101', '1 102']);
-    expect(linhasDePlanilha([['Número', 'Bloco'], ['7', 'a']])).toEqual(['a 7']);
-    expect(linhasDePlanilha([['Unidade'], ['A-101'], ['B 2']])).toEqual(['A-101', 'B 2']);
+    // Cabeçalho e linha vazia viram linha em branco: a numeração da prévia é a da planilha.
+    expect(linhasDePlanilha([['Apto', 'Observação', 'Torre'], ['101', 'x', '1'], ['', '', ''], ['102', '', '1'], []])).toEqual(['', '1 101', '', '1 102']);
+    expect(linhasDePlanilha([['Número', 'Bloco'], ['7', 'a']])).toEqual(['', 'a 7']);
+    expect(linhasDePlanilha([['Unidade'], ['A-101'], ['B 2']])).toEqual(['', 'A-101', 'B 2']);
     expect(linhasDePlanilha([['A', '101'], ['B', '2']])).toEqual(['A 101', 'B 2']);
     expect(linhasDePlanilha([['A-101'], ['B-2']])).toEqual(['A-101', 'B-2']);
     expect(linhasDePlanilha([])).toEqual([]);
     // O resultado vai para o mesmo leitor da lista colada.
-    expect(lerListaUnidades(linhasDePlanilha(matrizDeCsv('Torre;Apto\n1;101\n1;101\n2;x')).join('\n')).linhas.map((l) => l.situacao))
-      .toEqual(['ok', 'duplicada', 'invalida']);
+    const r = lerListaUnidades(linhasDePlanilha(matrizDeCsv('Torre;Apto\n1;101\n\n1;101\n2;x')).join('\n'));
+    expect(r.linhas.map((l) => [l.linha, l.situacao])).toEqual([[2, 'ok'], [4, 'duplicada'], [5, 'invalida']]);
   });
 });
 

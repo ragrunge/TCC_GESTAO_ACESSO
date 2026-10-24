@@ -289,27 +289,31 @@ const ALIAS_BLOCO = ['bloco', 'torre', 'predio'];
 const ALIAS_NUMERO = ['unidade', 'numero', 'apto', 'apartamento', 'ap', 'unidades'];
 
 /**
- * Planilha (CSV ou .xlsx, já em matriz de texto) -> linhas no formato da lista colada, uma por linha da planilha.
- * Aceita uma coluna ("A-101") ou duas (bloco e número). Cabeçalho opcional: se a primeira linha não tem dígito, é
- * cabeçalho; com "Bloco"/"Torre" e "Unidade"/"Apto"/"Número", as colunas são achadas pelo nome (em qualquer ordem).
- * Sem cabeçalho reconhecido: as duas primeiras células preenchidas, nessa ordem (bloco, número).
+ * Planilha (CSV ou .xlsx, já em matriz de texto) -> linhas no formato da lista colada, UMA POR LINHA DA PLANILHA: o
+ * cabeçalho e as linhas vazias viram linha em branco, para "linha N" da prévia bater com a linha N do arquivo.
+ * Aceita uma coluna ("A-101") ou duas (bloco e número). Cabeçalho opcional: se a primeira linha preenchida não tem
+ * dígito, é cabeçalho; com "Bloco"/"Torre" e "Unidade"/"Apto"/"Número", as colunas são achadas pelo nome (em qualquer
+ * ordem). Sem cabeçalho reconhecido: as duas primeiras células preenchidas, nessa ordem (bloco, número).
  */
 export function linhasDePlanilha(matriz: readonly (readonly string[])[]): string[] {
-  const linhas = matriz.map((l) => l.map((c) => (c ?? '').trim())).filter((l) => l.some(Boolean));
-  if (!linhas.length) return [];
-  let corpo = linhas;
+  const linhas = matriz.map((l) => l.map((c) => (c ?? '').trim()));
+  const iCab = linhas.findIndex((l) => l.some(Boolean));
+  if (iCab < 0) return [];
   let iBloco = -1;
   let iNumero = -1;
-  const cab = linhas[0]!;
-  if (!cab.some((c) => /[0-9]/.test(c))) {
-    corpo = linhas.slice(1);
-    const nomes = cab.map(semAcentoMin);
+  let cabecalho = -1;
+  if (!linhas[iCab]!.some((c) => /[0-9]/.test(c))) {
+    cabecalho = iCab;
+    const nomes = linhas[iCab]!.map(semAcentoMin);
     iBloco = nomes.findIndex((n) => ALIAS_BLOCO.includes(n));
     iNumero = nomes.findIndex((n) => ALIAS_NUMERO.includes(n));
   }
-  return corpo.map((l) => {
+  const saida = linhas.map((l, i) => {
+    if (i === cabecalho || !l.some(Boolean)) return '';
     if (iBloco >= 0 && iNumero >= 0) return `${l[iBloco] ?? ''} ${l[iNumero] ?? ''}`.trim();
-    if (iNumero >= 0 && iBloco < 0) return l[iNumero] ?? '';
+    if (iNumero >= 0) return l[iNumero] ?? '';
     return l.filter(Boolean).slice(0, 2).join(' ');
   });
+  while (saida.length && !saida[saida.length - 1]) saida.pop();
+  return saida;
 }
