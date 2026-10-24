@@ -12,14 +12,19 @@ export type PapelPlataforma = (typeof PAPEIS_PLATAFORMA)[number];
  */
 export const SENHA_MIN_MASTER = 16;
 
-export const ACOES_PLATAFORMA = ['condominio.listar', 'condominio.criar', 'condominio.modulos'] as const;
+export const ACOES_PLATAFORMA = ['condominio.listar', 'condominio.criar', 'condominio.modulos', 'condominio.ler'] as const;
 export type AcaoPlataforma = (typeof ACOES_PLATAFORMA)[number];
 
-/** `suporte` (funcionário do operador) só consulta o cadastro; criar condomínio e mudar módulo é do `master`. */
+/**
+ * `suporte` (funcionário do operador) só consulta o cadastro; criar condomínio e mudar módulo é do `master`.
+ * `condominio.ler` (SAAS-09, F5 entrega 2): ler os dados de um condomínio (o que o síndico vê), sempre registrado na
+ * trilha DAQUELE condomínio. Só `master`: o contrato com o condomínio lista nominalmente quem tem esse papel.
+ */
 export const MATRIZ_PLATAFORMA: Record<AcaoPlataforma, readonly PapelPlataforma[]> = {
   'condominio.listar': ['master', 'suporte'],
   'condominio.criar': ['master'],
   'condominio.modulos': ['master'],
+  'condominio.ler': ['master'],
 };
 
 export const podePlataforma = (papel: string, acao: AcaoPlataforma): boolean =>

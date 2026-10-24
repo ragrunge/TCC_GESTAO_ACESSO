@@ -11,7 +11,7 @@ export type Acao =
   | 'encomenda.ver' | 'encomenda.operar'
   | 'ocorrencia.ver' | 'ocorrencia.operar'
   | 'relatorio.ver' | 'turno.ver'
-  | 'auditoria.verificar' | 'auditoria.exportar' | 'auditoria.selar'
+  | 'auditoria.verificar' | 'auditoria.exportar' | 'auditoria.selar' | 'auditoria.acessos_plataforma'
   | 'usuario.gerenciar' | 'usuario.gerenciar_sindico'
   | 'veiculo.cadastrar'
   | 'funcionario.gerenciar' | 'funcionario.ver' | 'pessoa.editar' | 'pessoa.desativar'
@@ -48,6 +48,9 @@ export const MATRIZ: Record<Acao, Papel[]> = {
   'auditoria.exportar': [SI, AD, AU],
   // Selo da cadeia sob demanda (spec §4.6): síndico e auditor (conselho). O selo diário é do agendador, sem usuário.
   'auditoria.selar': [SI, AU],
+  // Acessos da plataforma (SAAS-09): leituras do operador do SaaS nos dados deste condomínio. Quem responde pelo
+  // tratamento é o controlador (síndico) e o conselho o fiscaliza (auditor); a administração não.
+  'auditoria.acessos_plataforma': [SI, AU],
   'usuario.gerenciar': [SI, AD], // spec 5.2 (RNF-04); quando o alvo é síndico, exige também usuario.gerenciar_sindico
   'usuario.gerenciar_sindico': [SI], // criar, editar, desativar ou promover a síndico: só o síndico
   'veiculo.cadastrar': [SI, AD],
@@ -75,7 +78,7 @@ export const pode = (papel: Papel | undefined, acao: Acao): boolean => !!papel &
 export type Rota =
   | 'painel' | 'entrada' | 'saida' | 'pessoas' | 'encomendas' | 'ocorrencias'
   | 'unidades' | 'vinculos' | 'cadastro' | 'importar'
-  | 'historico' | 'relatorios' | 'usuarios' | 'funcionarios';
+  | 'historico' | 'relatorios' | 'usuarios' | 'funcionarios' | 'acessos-plataforma';
 
 /** Quais papéis acessam cada rota. */
 export const ROTAS: Record<Rota, Papel[]> = {
@@ -93,6 +96,7 @@ export const ROTAS: Record<Rota, Papel[]> = {
   relatorios: [SI, AD, AU],
   usuarios: [SI, AD],
   funcionarios: [SI, AD, AU], // AU só lê (funcionario.ver); criar e editar exigem funcionario.gerenciar
+  'acessos-plataforma': [SI, AU], // auditoria.acessos_plataforma
 };
 
 export const rotaInicial = (papel: Papel): Rota =>

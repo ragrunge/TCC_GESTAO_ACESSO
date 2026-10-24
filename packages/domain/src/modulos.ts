@@ -10,6 +10,8 @@
 // test/saas-provisionar.test.ts confere a migração contra esta lista). Módulo novo nasce DESLIGADO nos condomínios
 // existentes, a menos que a migração diga o contrário (decisão comercial, não técnica).
 
+import type { Rota } from './rbac';
+
 export const MODULOS = [
   'encomendas',
   'ocorrencias',
@@ -37,3 +39,27 @@ export const ROTULO_MODULO: Record<Modulo, string> = {
 export const MODULOS_PADRAO: readonly Modulo[] = MODULOS;
 
 export const ehModulo = (m: string): m is Modulo => (MODULOS as readonly string[]).includes(m);
+
+/**
+ * Tela do condomínio que pertence a um módulo (menu, rota e atalho somem com o módulo desligado). As outras telas são
+ * do núcleo. A API recusa as rotas do módulo com 403 MODULO_DESLIGADO (ModuloGuard); o front só esconde.
+ */
+export const MODULO_DA_ROTA: Partial<Record<Rota, Modulo>> = {
+  encomendas: 'encomendas',
+  ocorrencias: 'ocorrencias',
+  importar: 'importacao',
+  relatorios: 'relatorios',
+  funcionarios: 'funcionarios',
+};
+
+/**
+ * O módulo está ligado? `modulos` ausente (API anterior à F5 entrega 2, que não manda a lista) vale como todos ligados:
+ * o front não esconde nada que a API ainda não recusa.
+ */
+export const moduloLigado = (modulos: readonly string[] | null | undefined, m: Modulo): boolean => !modulos || modulos.includes(m);
+
+/** A rota está disponível com estes módulos (rota do núcleo: sempre). */
+export const rotaComModulo = (modulos: readonly string[] | null | undefined, rota: Rota): boolean => {
+  const m = MODULO_DA_ROTA[rota];
+  return !m || moduloLigado(modulos, m);
+};
