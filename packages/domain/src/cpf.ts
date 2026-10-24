@@ -3,11 +3,36 @@
 // WebCrypto, para rodar no navegador e no Node.
 export const soDigitos = (s: string) => s.replace(/\D/g, '');
 
-/** "***.456.789-**": expõe só os 6 dígitos do meio. */
-export function mascararCpf(cpf: string): string {
+/**
+ * Formatos da máscara do CPF (decisão de 2026-10-24, LGPD):
+ * - 'inicio' "123.45*.***-**": os 5 PRIMEIROS dígitos. Padrão de todo cadastro novo; permite buscar pelo começo do CPF.
+ * - 'meio'   "***.456.789-**": os 6 do meio (dígitos 4 a 9). Formato antigo, só de quem já estava cadastrado assim.
+ * Os 2 últimos são verificadores (função dos 9 primeiros): 'inicio' esconde 4 dos 9 (10.000 candidatos) e 'meio'
+ * esconde 3 (1.000). REGRA ANTI-RECONSTRUÇÃO: o mesmo CPF nunca pode aparecer nos dois formatos (pessoa, trilha,
+ * exportação), porque 1-5 + 4-9 = 1-9, e daí o CPF inteiro. Quem decide o formato é a API (service de pessoas).
+ */
+export type FormatoMascaraCpf = 'inicio' | 'meio';
+
+export const MASCARA_CPF_INICIO = /^\d{3}\.\d{2}\*\.\*\*\*-\*\*$/;
+export const MASCARA_CPF_MEIO = /^\*\*\*\.\d{3}\.\d{3}-\*\*$/;
+/** Quantos dígitos cada formato deixa visíveis. */
+export const DIGITOS_VISIVEIS_CPF: Record<FormatoMascaraCpf, number> = { inicio: 5, meio: 6 };
+
+/** Máscara de exibição. Recebe o CPF com ou sem pontuação; exige 11 dígitos. */
+export function mascararCpf(cpf: string, formato: FormatoMascaraCpf = 'inicio'): string {
   const d = soDigitos(cpf);
   if (d.length !== 11) throw new Error('CPF deve ter 11 dígitos');
-  return `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**`;
+  if (formato === 'meio') return `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**`;
+  if (formato === 'inicio') return `${d.slice(0, 3)}.${d.slice(3, 5)}*.***-**`;
+  throw new Error(`formato de máscara desconhecido: ${String(formato)}`);
+}
+
+/** Formato de uma máscara já gravada; null para nulo, "(sem CPF)", "(anonimizado)" ou qualquer texto fora dos dois. */
+export function formatoDaMascara(mascara: string | null | undefined): FormatoMascaraCpf | null {
+  if (!mascara) return null;
+  if (MASCARA_CPF_INICIO.test(mascara)) return 'inicio';
+  if (MASCARA_CPF_MEIO.test(mascara)) return 'meio';
+  return null;
 }
 
 /**

@@ -35,7 +35,7 @@ export interface Pessoa {
   id: string;
   nome: string;
   documentoTipo: TipoDocumento;
-  /** Sempre mascarado (ex.: ***.456.789-**), "(sem CPF)" ou "(anonimizado)". O CPF nunca é guardado. */
+  /** Sempre mascarado (ex.: 123.45*.***-** ou, no formato antigo, ***.456.789-**), "(sem CPF)" ou "(anonimizado)". O CPF nunca é guardado. */
   documentoMascarado: string;
   /** HMAC-SHA256 hex dos 11 dígitos do CPF (mesmo algoritmo de apps/api/src/db/cpf.ts): busca exata e deduplicação. */
   documentoBusca?: string;
