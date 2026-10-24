@@ -1173,3 +1173,26 @@ gerenciador. Remover o autenticador do celular (o segredo não vale mais em luga
 apagou e as rotas `/plataforma` dela respondem 500 (portaria intacta). Para voltar ao TOTP de verdade: restaurar o banco
 `plataforma` do backup do passo 1 (perde o que a plataforma gravou depois) e subir a imagem anterior; ou, sem restaurar,
 uma migração nova que recrie as colunas e um `--reemitir-totp` na CLI antiga. Preferir corrigir para frente.
+
+---
+
+## 19. Máscara do CPF com os 5 primeiros dígitos (migração 0012): deploy automático serve
+
+Só código da API, do front e uma migração (nada de infra). `drizzle/0012_mascara_cpf_inicio.sql` troca o CHECK
+`pessoa_documento_mascarado_ck` para aceitar os dois formatos (`***.456.789-**` e `123.45*.***-**`). Nenhuma linha
+muda: as pessoas já cadastradas (7 no piloto) seguem no formato antigo e passam no CHECK novo, que o `ADD CONSTRAINT`
+valida na hora. O laço do `migrate` (`scripts/migrar-bancos.mjs`) aplica a 0012 em **cada** banco de condomínio (piloto e
+provisionados); condomínio provisionado depois já nasce com ela. Decisão e regra anti-reconstrução: spec §3.2 (`pessoa`)
+e §14 nº 36.
+
+- **Ordem:** a migração antes da API nova (o `migrate` já roda antes). API nova sobre o CHECK antigo recusaria todo
+  cadastro novo com 500. O front pode subir antes ou depois: só mudam textos dos campos de busca.
+- **Conferir:** `docker compose logs migrate | grep migrar-bancos` termina em `ok (plataforma + N condomínio(s))`; em
+  cada banco, `SELECT documento_mascarado FROM pessoa WHERE documento_mascarado IS NOT NULL` continua igual ao de antes
+  do deploy, e o primeiro cadastro novo sai como `123.45*.***-**`.
+- **Rollback da imagem:** funciona (a API anterior só gera o formato antigo, que segue aceito), mas **quebra a regra
+  anti-reconstrução**: ela corrigiria o CPF de quem já está no formato novo gravando o antigo, e cadastraria no antigo um
+  CPF cuja máscara nova já existe. Se voltar a imagem, não corrigir CPF nem cadastrar pessoa até a API nova voltar.
+  **Desfazer a 0012** só é possível
+  enquanto não houver linha no formato novo: depois do primeiro cadastro, sem volta prática (o número não existe no banco
+  para remascarar).

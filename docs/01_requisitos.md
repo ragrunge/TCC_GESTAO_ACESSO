@@ -247,6 +247,7 @@ Observações:
 - A anonimização substitui o texto livre que é sobre a pessoa (nota e justificativa do vínculo, motivo da restrição, justificativa da autorização) e troca o nome completo dela por "[anonimizado]" em encomendas, ocorrências, mensagens da importação e trilha de alterações. Limites informados ao titular: menção por apelido ou abreviação não é encontrada; nome de uma palavra só ou igual ao de outra pessoa não é trocado automaticamente (revisão manual); o texto livre do evento de acesso faz parte do selo de integridade e só sai com o evento, ao fim dos 3 anos.
 - O atendimento de cada pedido de eliminação fica registrado, só com identificadores, fora do banco do condomínio, para ser refeito se um backup anterior for restaurado.
 - Dependente menor de idade (art. 14) é cadastrado sem CPF e sem telefone, se não os tiver: são exigidos só para proprietário e inquilino, e passam a ser obrigatórios quando o dependente deixa de ser menor.
+- O CPF é exibido mascarado com os 5 primeiros dígitos (`123.45*.***-**`); quem foi cadastrado antes de 2026-10-24 fica com o formato antigo (`***.456.789-**`). O mesmo CPF nunca é mostrado nem guardado nos dois formatos, porque juntos eles revelam os 9 primeiros dígitos, e os 2 últimos são calculáveis a partir deles.
 - A anonimização apaga também o código de busca do CPF (HMAC). Como ele é determinístico, mantê-lo permitiria reidentificar a pessoa a partir de um CPF conhecido.
 - Campos de texto livre (justificativa, observação) não devem conter nome nem documento de terceiros. Isso entra no treinamento (seção 8, etapa 4).
 - Não há armazenamento do arquivo do comprovante de vínculo: registra-se só a conferência. Isso atende à minimização (art. 6º, III); o condomínio não precisa guardar contrato de locação para provar que conferiu.
@@ -508,6 +509,11 @@ Inventário que orienta o protótipo navegável (`../prototipo/Portaria.dc.html`
 | --- | --- | --- |
 | 0.2 | 2026-10-09 | Rascunho inicial. |
 | 0.3 | 2026-10-17 | Atende aos comentários do orientador sobre resumir os requisitos e definir o MVP. Incluído o critério do MVP (seção 4) e o resumo do MVP (seção 4.5). RF-18 e RF-28 passam de M para S. RNFs ganham as colunas Prioridade e Origem. RNF-10 reescrito como "Preservação dos dados", com justificativa ligada a P3 e P9 e à escolha de backup em vez de sincronização. RNF-10 incluído na linha P3 da matriz (seção 9). Numeração de todos os requisitos mantida. |
+
+**Ajustes de 2026-10-24 (versão 0.3, sem nova versão), máscara do CPF.** Cadastro novo passa a mostrar os 5 primeiros
+dígitos do CPF (`123.45*.***-**`) em vez dos 6 do meio (`***.456.789-**`), para a portaria buscar pelo começo do CPF.
+Quem já estava cadastrado fica no formato antigo, e o mesmo CPF nunca aparece nos dois formatos (seção 7). Decisão na
+especificação técnica, seção 14, nº 36.
 
 **Ajustes de 2026-10-23 (versão 0.3, sem nova versão), prazo de permanência.** RF-20 passa a mostrar o prazo de
 permanência por tipo de visita, com aviso de vencimento e prorrogação de uma hora pela portaria; nova RN-12. Decisão e
