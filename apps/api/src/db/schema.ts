@@ -223,7 +223,7 @@ export const pessoa = pgTable('pessoa', {
   semCpf: boolean('sem_cpf').notNull().default(false),
   /** Dependente menor de idade (LGPD art. 14, 0007): CPF e telefone opcionais. Não é "sem CPF": entra como morador. */
   menorIdade: boolean('menor_idade').notNull().default(false),
-  /** Exibição: ***.456.789-**. O CHECK impede que um CPF completo seja gravado aqui por engano. */
+  /** Exibição: 123.45*.***-** (novo) ou ***.456.789-** (antigo). O CHECK impede que um CPF completo seja gravado aqui por engano. */
   documentoMascarado: text('documento_mascarado'),
   /** HMAC-SHA256(chave HMAC, 11 dígitos), hex. Busca exata e unicidade sem guardar o CPF. O CPF não é armazenado. */
   documentoBusca: text('documento_busca').unique('pessoa_documento_busca_uq'),
@@ -252,7 +252,9 @@ export const pessoa = pgTable('pessoa', {
     OR (menor_idade AND NOT sem_cpf AND documento_busca IS NULL AND documento_mascarado IS NULL)`),
   check('pessoa_menor_ck', sql`NOT menor_idade OR (NOT sem_cpf AND categoria = 'morador')`),
   check('pessoa_documento_busca_ck', sql`documento_busca ~ '^[0-9a-f]{64}$'`),
-  check('pessoa_documento_mascarado_ck', sql`documento_mascarado ~ '^\\*\\*\\*\\.[0-9]{3}\\.[0-9]{3}-\\*\\*$'`),
+  // Dois formatos (migração 0012): "***.456.789-**" (antigo, meio) e "123.45*.***-**" (cadastro novo, início). Os
+  // asteriscos fixos nas posições escondidas impedem gravar o CPF completo; qual formato cada pessoa recebe é regra da API.
+  check('pessoa_documento_mascarado_ck', sql`documento_mascarado ~ '^(\\*\\*\\*\\.[0-9]{3}\\.[0-9]{3}-\\*\\*|[0-9]{3}\\.[0-9]{2}\\*\\.\\*\\*\\*-\\*\\*)$'`),
   check('pessoa_telefone_ck', sql`telefone ~ '^[0-9]{10,11}$'`),
   check('pessoa_telefone_obrigatorio_ck', sql`telefone IS NOT NULL OR anonimizada_em IS NOT NULL OR importacao_id IS NOT NULL OR menor_idade`),
   check('pessoa_prestador_empresa_ck', sql`categoria <> 'prestador' OR anonimizada_em IS NOT NULL
