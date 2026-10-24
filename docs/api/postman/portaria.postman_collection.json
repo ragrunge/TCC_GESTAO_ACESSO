@@ -953,7 +953,7 @@
             "description": "Plataforma (Master). Pública: não exige sessão.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"pessoa.exemplo@exemplo.org\",\n  \"senha\": \"{{senha}}\",\n  \"codigo\": \"exemplo\"\n}",
+              "raw": "{\n  \"email\": \"pessoa.exemplo@exemplo.org\",\n  \"senha\": \"{{senha}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

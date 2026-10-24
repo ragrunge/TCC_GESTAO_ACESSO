@@ -935,6 +935,10 @@ provisionado depois já nasce com ela.
 
 ## 18. App do Master, F5 entrega 1 (migração `drizzle-plataforma/0003`): deploy MANUAL
 
+> **2026-10-23: o Master entra SEM segundo fator** (decisão do usuário; SAAS-08). O TOTP descrito na entrega 1 saiu do
+> código e do banco pela migração `drizzle-plataforma/0004_master_sem_totp.sql`. Em produção, onde a 0003 já está
+> aplicada e o Master já existe, siga **18.7**. As subseções abaixo já descrevem o fluxo sem TOTP.
+
 Desenho em `docs/05_arquitetura_saas.md` §5.3 (SAAS-07/08). Código: `apps/api/src/master/` (rotas `/api/v1/plataforma/*`),
 `apps/api/src/cli/criar-usuario-plataforma.ts`, `apps/api/src/cli/servidor-provisionador.ts` e o front `apps/plataforma`
 (outro projeto Vercel). Muda compose, Dockerfile e `.env.producao.example`: o `deploy-vps.sh` sai com código 2.
@@ -946,7 +950,7 @@ Desenho em `docs/05_arquitetura_saas.md` §5.3 (SAAS-07/08). Código: `apps/api/
   da plataforma. Nenhum banco de condomínio muda; `evento_acesso`, a cadeia e a trilha do condomínio não são tocados.
   `master_usuario.totp_mestra_versao` é NOT NULL sem default: se alguém tiver inserido Master à mão, a migração falha
   (de propósito) e o deploy para antes da API nova;
-- a API ganha as rotas `/api/v1/plataforma/*` (login com senha + TOTP, sessão própria, lista de condomínios, criação,
+- a API ganha as rotas `/api/v1/plataforma/*` (login com e-mail e senha, sem 2FA desde 2026-10-23; sessão própria, lista de condomínios, criação,
   módulos). O login, o cookie e as guardas do condomínio continuam iguais;
 - dois serviços novos no compose, **fora do `up`** (perfis): `provisionador` (perfil `provisionar`, chamado pela tela
   "Novo condomínio") e `usuario-plataforma-cli` (perfil `plataforma`, bootstrap do Master).
@@ -978,23 +982,22 @@ valendo. Com elas preenchidas mas o serviço parado, a tela também responde 503
 ### 18.2 Bootstrap do primeiro Master (terminal comum)
 
 > **Rodar num terminal SSH comum, NUNCA pelo `!` do Claude Code nem por ferramenta que grave a saída.** A saída traz a
-> senha temporária e o segredo TOTP (a URI `otpauth://`): pelo `!` ela entraria no histórico da conversa e nos
-> servidores do provedor do assistente. O serviço roda com `logging: none` e `--rm`.
+> senha temporária: pelo `!` ela entraria no histórico da conversa e nos servidores do provedor do assistente. O
+> serviço roda com `logging: none` e `--rm`.
 
 ```bash
 cd /opt/tcc-portaria
 docker compose --profile plataforma run --rm usuario-plataforma-cli --email <e-mail> --nome "<nome>"   # papel master
 ```
 
-- Saída: senha temporária (72 h, troca obrigatória no primeiro login), o segredo em base32 (para digitar no aplicativo
-  autenticador) e a URI `otpauth://totp/...` (para gerar o QR localmente, fora da VPS, se preferir). Nada disso fica
-  guardado em claro: o segredo vai cifrado pela chave mestra (`master_usuario.totp_cifrado`), a senha só como argon2id.
-  A CLI não imprime QR em ASCII: exigiria uma biblioteca nova na imagem da API só para isso.
+- Saída: só a senha temporária (72 h, troca obrigatória no primeiro login). Fica guardada só como argon2id.
 - E-mail já cadastrado: `RECUSADO`, código 1, nada muda. Funcionário de suporte (só consulta): `--papel suporte`.
-- Celular perdido: `... usuario-plataforma-cli --email <e-mail> --reemitir-totp` (segredo novo, sessões encerradas).
-  Senha esquecida: `--nova-senha` (temporária nova, troca obrigatória). Os dois juntos valem. Fica em `plataforma_audit`
-  (`master.reemitir_credencial`).
-- Primeiro acesso: no app da plataforma, e-mail + senha temporária + código do aplicativo, e em seguida a troca de senha.
+- Senha esquecida ou suspeita de vazamento: `... usuario-plataforma-cli --email <e-mail> --nova-senha` (temporária nova,
+  troca obrigatória, todas as sessões dele encerradas). Fica em `plataforma_audit` (`master.reemitir_credencial`).
+  `--reemitir-totp` não existe mais (erro de uso, código 2).
+- Primeiro acesso: no app da plataforma, e-mail + senha temporária, e em seguida a troca de senha, que exige **no mínimo
+  16 caracteres** (a do condomínio é 12). Sem segundo fator, a senha é a única barreira: gere-a e guarde-a num
+  **gerenciador de senhas**, sem reutilizar em nenhum outro lugar.
 
 ### 18.3 App do Master servido em /admin (mesmo projeto Vercel; nada a criar no painel)
 
@@ -1064,6 +1067,9 @@ poucos segundos, mas se a Vercel cortar antes do fim, vale o parágrafo acima (r
 
 ### 18.6 Rollback
 
+> Depois da 18.7 (0004 aplicada), voltar a uma imagem anterior a ela **quebra as rotas `/plataforma`** dessa imagem
+> (selecionam colunas que não existem mais); a portaria não é afetada. Ver o rollback na 18.7.
+
 - **API:** imagem anterior (`API_TAG=$TAG_ANTERIOR`, `docker compose up -d --wait`). A 0003 fica: a imagem anterior não
   lê as colunas novas nem usa as tabelas do Master. As sessões do Master deixam de valer (a imagem anterior não tem as
   rotas); a portaria não é afetada.
@@ -1074,3 +1080,54 @@ poucos segundos, mas se a Vercel cortar antes do fim, vale o parágrafo acima (r
 - **Desfazer a 0003** não é necessário (só *expand*). Se exigido: com `master_usuario` vazia, como superusuário,
   `DROP COLUMN` das colunas novas, o CHECK antigo de `plataforma_login_limite` de volta e a linha da 0003 fora de
   `drizzle.__drizzle_migrations`.
+
+### 18.7 Remover o TOTP do Master (migração `drizzle-plataforma/0004`, 2026-10-23)
+
+Decisão do usuário (SAAS-08): login do Master só com e-mail e senha. **Risco aceito:** senha do Master vazada = acesso
+total à plataforma. Compensações: senha de 16+ na troca, limite de tentativas, sessão de 15 min / 8 h, IP na trilha da
+plataforma, gerenciador de senhas.
+
+**O que muda:** a 0004 faz `DROP` de `master_usuario.totp_cifrado`, `totp_mestra_versao`, `totp_ultimo_passo` (e dos dois
+CHECKs), de `master_sessao.totp_confirmado_em` e da tabela `master_codigo_recuperacao` (nunca usada). É *contract*
+direto: só a API nova roda depois. O segredo TOTP do Master existente é apagado (de propósito). **O Master existente
+continua com a MESMA senha** e não precisa ser recriado; as sessões abertas continuam valendo até expirar. Nenhum banco de
+condomínio muda. A imagem do `usuario-plataforma-cli` deixa de receber a chave mestra (o compose mudou, então o
+`deploy-vps.sh` sai com código 2: siga os passos abaixo).
+
+**Ordem:** o serviço `migrate` (laço `scripts/migrar-bancos.mjs`, como `app_migrator`, dono das tabelas) roda a 0004 no
+banco `plataforma` ANTES de qualquer banco de condomínio, e o compose só sobe a `api` nova depois que ele termina com 0.
+A API antiga (com TOTP) não funciona no schema novo, mas não chega a rodar contra ele, exceto num caso: **se o laço
+falhar num banco de condomínio depois de aplicar a 0004**, a API antiga continua no ar e só as rotas `/plataforma` dela
+quebram (500); a portaria segue normal. Corrigir o banco que falhou e repetir o `up`.
+
+```bash
+cd /opt/tcc-portaria
+sudo systemctl start tcc-portaria-backup.service                         # 1. backup antes (o DROP não volta sem ele)
+TAG_ANTERIOR="$(sed -n 's/^API_TAG=//p' .env)"; echo "$TAG_ANTERIOR"      #    anotar
+git fetch && git checkout --detach origin/main                            # 2. código e imagens
+sed -i "s|^API_TAG=.*|API_TAG=$(git rev-parse --short HEAD)|" .env
+docker compose build && docker compose up -d --wait                       # 3. migrate (plataforma 0004) e depois a API
+```
+
+Conferir:
+
+- `docker compose logs migrate | grep migrar-bancos` termina em `ok (plataforma + N condomínio(s))`;
+- `docker compose exec -T db psql -U postgres -d plataforma -tAc "select count(*) from drizzle.__drizzle_migrations"` = 5;
+- colunas de TOTP sumiram (saída **vazia**):
+  `docker compose exec -T db psql -U postgres -d plataforma -tAc "select column_name from information_schema.columns where table_name='master_usuario' and column_name like 'totp%'"`;
+- `docker compose exec -T db psql -U postgres -d plataforma -tAc "select to_regclass('master_codigo_recuperacao')"` vazio;
+- `docker compose exec -T db psql -U postgres -d plataforma -tAc "select count(*) from master_usuario"` = o mesmo de antes (o Master continua lá);
+- `https://<site>/admin/`: a tela de login não tem mais o campo "Código do autenticador"; o Master entra com e-mail e a
+  senha de sempre (o front novo sai pelo deploy da Vercel; com o front velho no ar, o login manda `codigo` e recebe 400:
+  publicar o front junto, ou logo depois, da API);
+- `docker compose exec -T db psql -U postgres -d plataforma -tAc "select acao, detalhes->>'ip' from plataforma_audit order by seq desc limit 3"` mostra o `auth.login` com o IP;
+- a portaria do piloto entra e "Verificar integridade" dá `ok`, como antes.
+
+**Depois:** se a senha atual do Master tem menos de 16 caracteres, ela continua valendo (a regra é só na troca). Para
+aplicar já o novo mínimo: `--nova-senha` pela CLI (18.2) e trocar no primeiro acesso por uma de 16+ gerada no
+gerenciador. Remover o autenticador do celular (o segredo não vale mais em lugar nenhum).
+
+**Rollback:** voltar só a imagem (`API_TAG=$TAG_ANTERIOR`) NÃO devolve o TOTP: a imagem antiga lê colunas que a 0004
+apagou e as rotas `/plataforma` dela respondem 500 (portaria intacta). Para voltar ao TOTP de verdade: restaurar o banco
+`plataforma` do backup do passo 1 (perde o que a plataforma gravou depois) e subir a imagem anterior; ou, sem restaurar,
+uma migração nova que recrie as colunas e um `--reemitir-totp` na CLI antiga. Preferir corrigir para frente.

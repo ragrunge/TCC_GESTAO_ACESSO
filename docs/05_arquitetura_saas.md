@@ -13,6 +13,9 @@
 > Master com senha + TOTP, sessão e cookie próprios, lista de condomínios, criação pela tela via serviço provisionador e
 > módulos. O que entrou e as decisões tomadas onde o doc deixava margem: §5.3. Deploy manual: `docs/deploy.md`, seção 18.
 > A entrega 2 (SAAS-09, "Master vê tudo" auditado) e o `ModuloGuard` (SAAS-19) ficam para depois.
+> **v0.5 (2026-10-23): login do Master SEM segundo fator** (decisão do usuário, risco aceito): o TOTP da entrega 1 saiu
+> (migração `drizzle-plataforma/0004_master_sem_totp.sql`); login só com e-mail e senha. Compensações e risco em SAAS-08
+> e no início da §5.3. Deploy: `docs/deploy.md`, seção 18.
 > Complementa `01_requisitos.md` (v0.3) e `02_especificacao_tecnica.md` (v0.1); não os altera.
 > O condomínio real do estudo de caso é chamado aqui de **condomínio-piloto**.
 
@@ -30,7 +33,7 @@ estrutura de unidades no código e um banco. Transformá-lo em SaaS para vários
 | SAAS-04 | Chaves por condomínio | HMAC e KEK por tenant, envelope | Mantida. Ressalva: a chave HMAC do CPF **não é rotacionável** (o CPF não é guardado) |
 | SAAS-05 | Login | Global vs por condomínio | **Por condomínio**, com "código do condomínio" na tela de login. Subdomínio fica para quando houver domínio próprio |
 | SAAS-06 | Estrutura de unidades | Cadastrável por condomínio | Mantida. `ESTRUTURA_PADRAO` vira só gerador do onboarding |
-| SAAS-07 a 19 | Master fora do RBAC, sessão separada com TOTP (em /admin, mesma origem desde 2026-10-23), onboarding, fim de contrato, backup/restore, jobs, limites, observabilidade, migração em N bancos, infraestrutura, fuso, módulos por condomínio | — | Seção 3 |
+| SAAS-07 a 19 | Master fora do RBAC, sessão separada (em /admin, mesma origem desde 2026-10-23; sem 2FA desde 2026-10-23), onboarding, fim de contrato, backup/restore, jobs, limites, observabilidade, migração em N bancos, infraestrutura, fuso, módulos por condomínio | — | Seção 3 |
 
 Calendário: a recomendação era entregar o TCC antes; **o usuário decidiu fazer o SaaS agora, junto do TCC** (seção 10,
 pergunta 1), com as salvaguardas registradas lá.
@@ -246,9 +249,28 @@ plataforma apontando para usuários em N bancos).
 - Ações da plataforma registradas em `plataforma_audit` (append-only, mesmo trigger de `0001:202`), sem dado pessoal
   de morador.
 
-### SAAS-08 — Sessão do Master: servido em /admin (mesma origem) e 2FA obrigatório
+### SAAS-08 — Sessão do Master: servido em /admin (mesma origem), sem 2FA (revisado em 2026-10-23)
 
-**Decisão.**
+> **Revisão de 2026-10-23 (decisão do usuário): sem segundo fator.** O login do Master passa a ser só e-mail + senha; o
+> TOTP implementado na entrega 1 (§5.3) foi removido do código e do banco (migração `0004_master_sem_totp`: saem
+> `master_usuario.totp_cifrado`, `totp_mestra_versao`, `totp_ultimo_passo` e seus CHECKs,
+> `master_sessao.totp_confirmado_em` e a tabela `master_codigo_recuperacao`, que nunca foi usada).
+> - **Risco aceito:** senha do Master vazada (phishing, reuso, malware, ombro) = **acesso total à plataforma**: criar
+>   condomínio, mudar módulos e, com a entrega 2 (SAAS-09), ler o dado pessoal de todos os condomínios. Não há segundo
+>   obstáculo entre a senha e a conta.
+> - **Compensações:** senha do Master com **no mínimo 16 caracteres** na troca (`SENHA_MIN_MASTER` em
+>   `@portaria/domain/rbac-plataforma`; a do condomínio continua 12), mesma lista de senhas comuns e sem o e-mail;
+>   **limite de tentativas** mantido (par e-mail+IP e IP bloqueiam; e-mail sozinho atrasa); **sessão curta** (15 min de
+>   inatividade, 8 h no máximo); **trilha da plataforma com o IP** em `auth.login`, `auth.login_falha`, `auth.bloqueio`,
+>   `auth.logout` e `auth.trocar_senha(_falha)`; mensagem única sem enumeração e o mesmo custo de argon2 para e-mail
+>   inexistente; senha temporária da CLI com troca obrigatória; recomendação operacional de **gerenciador de senhas**
+>   (senha única, gerada, nunca reutilizada) e de perfil de navegador separado.
+> - O Master que já existia em produção continua com a **mesma senha** (a migração só apaga o segredo TOTP).
+> - Voltar a ter 2FA (TOTP ou WebAuthn) é uma migração *expand* nova com bootstrap pela CLI; nada desta revisão impede.
+>
+> O texto abaixo é a decisão original; os itens de TOTP e códigos de recuperação estão substituídos por esta revisão.
+
+**Decisão (original).**
 - **Mesma origem, servido em `/admin` (revisado em 2026-10-23, decisão do usuário):** o front do Master deixa de ter
   projeto Vercel próprio e passa a ser servido em `/admin` do mesmo projeto da portaria, com o mesmo rewrite `/api`.
   Bundles continuam separados (`apps/plataforma` é seu próprio workspace, sem código de sessão em comum com `apps/web`).
@@ -257,12 +279,13 @@ plataforma apontando para usuários em N bancos).
 - **Risco aceito:** um XSS em qualquer tela da portaria, num navegador onde o Master esteja logado, consegue chamar
   `/api/v1/plataforma/*` com o cookie do Master (HttpOnly impede ler o cookie, não impede usá-lo).
 - **Mitigações:** CSP estrita `script-src 'self'`; bundles separados; cookie com `Path=/api/v1/plataforma`; sessão de
-  15 min de inatividade e 8 h no máximo; TOTP; e recomendação operacional de usar o Master em um perfil de navegador
+  15 min de inatividade e 8 h no máximo; ~~TOTP~~ (removido em 2026-10-23, ver revisão acima); e recomendação operacional de usar o Master em um perfil de navegador
   separado, sem login de portaria.
 - Cookie `__Host-portaria_plataforma`, `SameSite=Strict`, inatividade de 15 min e máximo de 8 h. (Implementado em
   2026-10-23 como `__Secure-portaria_plataforma` com `Path=/api/v1/plataforma`: o prefixo `__Host-` exige `Path=/`; ver §5.3.)
-- **TOTP obrigatório** (RFC 6238, implementável com `node:crypto` sem dependência nova), segredo cifrado pela chave
-  mestra, 10 códigos de recuperação com hash argon2id. WebAuthn fica para depois.
+- ~~**TOTP obrigatório** (RFC 6238, implementável com `node:crypto` sem dependência nova), segredo cifrado pela chave
+  mestra, 10 códigos de recuperação com hash argon2id. WebAuthn fica para depois.~~ **Substituído em 2026-10-23:** sem
+  2FA (revisão acima).
 - Limite de tentativas próprio, no banco `plataforma`.
 
 **Alternativa descartada (original).** Mesma SPA com rota `/plataforma`: sessão do Master no mesmo pote de cookies da
@@ -296,7 +319,7 @@ controlador (art. 39). A instrução passa a vir do contrato, não de uma aprova
      só esse serviço obtém subárvore de condomínio a partir de `/plataforma/*`.
   4. O síndico vê esses registros na tela **"Acessos da plataforma"** (filtro do `audit_log` por `plataforma.*`:
      quando, quem, o quê), sem poder apagar (append-only). Item do relatório mensal ao conselho.
-- **Não muda:** sessão do Master com TOTP (em /admin, mesma origem, desde 2026-10-23) (SAAS-08), Master fora do RBAC de condomínio (SAAS-07),
+- **Não muda:** sessão do Master separada (em /admin, mesma origem, desde 2026-10-23; sem 2FA desde 2026-10-23) (SAAS-08), Master fora do RBAC de condomínio (SAAS-07),
   `app_plataforma` sem CONNECT nos bancos de condomínio (SAAS-02), métricas em `condominio_metrica` (SAAS-15).
 - **Sai do plano:** tabelas `acesso_suporte` e `suporte_codigo`, coluna `usuario_sistema.origem`,
   `sessao.acesso_suporte_id`, rota `POST /auth/suporte`, aprovação na tela do síndico e a pergunta 4 (seção 10).
@@ -308,7 +331,8 @@ controlador (art. 39). A instrução passa a vir do contrato, não de uma aprova
   prazo de guarda desses registros (o da trilha). Sem essa cláusula, o acesso não tem instrução do controlador.
 - Necessidade (art. 6º, III): poder ver não autoriza olhar sem motivo. Regra interna: acesso só com chamado ou
   incidente; acesso sem chamado é tratado como incidente interno. A trilha visível ao síndico é o controle externo.
-- Conta do Master comprometida passa a alcançar o dado pessoal de **todos** os condomínios (R7): TOTP obrigatório,
+- Conta do Master comprometida passa a alcançar o dado pessoal de **todos** os condomínios (R7): sem 2FA desde
+  2026-10-23 (SAAS-08: senha de 16+, limite de tentativas, sessão curta, trilha com IP),
   app em /admin com cookie de caminho restrito (mesma origem, risco aceito em SAAS-08), poucos usuários `master`, revisão dos acessos por condomínio (relatório na F5).
 - Se um cliente exigir aprovação prévia: o desenho anterior volta como opção por condomínio, sem mudar o resto.
 
@@ -547,13 +571,14 @@ CREATE TABLE master_usuario (
   nome             text NOT NULL,
   email            text NOT NULL,
   senha_hash       text NOT NULL CHECK (senha_hash LIKE '$argon2id$%'),
-  totp_cifrado     bytea NOT NULL,            -- 2FA obrigatório: NOT NULL de propósito
+  totp_cifrado     bytea NOT NULL,            -- removida na 0004 (2026-10-23, sem 2FA; SAAS-08)
   papel            text NOT NULL CHECK (papel IN ('master','suporte')),
   ativo            boolean NOT NULL DEFAULT true,
   criado_em        timestamptz(3) NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX master_usuario_email_uq ON master_usuario (lower(email));
 
+-- master_codigo_recuperacao: nunca usada; removida na 0004 (2026-10-23, sem 2FA; SAAS-08)
 CREATE TABLE master_codigo_recuperacao (master_usuario_id uuid REFERENCES master_usuario(id),
   codigo_hash text NOT NULL, usado_em timestamptz(3), PRIMARY KEY (master_usuario_id, codigo_hash));
 
@@ -562,7 +587,7 @@ CREATE TABLE master_sessao (  -- mesmo desenho de `sessao` (schema.ts:114-135), 
   master_usuario_id uuid NOT NULL REFERENCES master_usuario(id),
   criada_em timestamptz(3) NOT NULL DEFAULT now(), ultimo_uso_em timestamptz(3) NOT NULL DEFAULT now(),
   expira_em timestamptz(3) NOT NULL, revogada_em timestamptz(3), totp_confirmado_em timestamptz(3), ip inet
-);
+);  -- totp_confirmado_em: removida na 0004 (2026-10-23)
 
 -- plataforma_login_limite: mesmo desenho de login_limite (schema.ts:140-153), limite global por IP (SAAS-14) e do Master
 
@@ -665,7 +690,7 @@ fase tem rollback por *redeploy* da imagem anterior.
 | F2 | API multi-banco: `ResolvedorCondominio`, durable providers, `PLATAFORMA_DB`, chaves vindas da plataforma (fallback para o ambiente desligado ao fim da fase), cookie `v2.` com aceitação do formato antigo para o piloto, login com código (opcional para o piloto), agendador por condomínio, laço de migração e de backup. Produção continua com um condomínio | Imagem anterior: o schema do piloto não mudou, as sessões antigas continuam válidas | Reinício da API (segundos; RNF-05 cobre com formulário) | G |
 | F3 | Migração `0007` (§4.2) em `portaria` (2026-10-22: `configuracao` entrou na `0010`; o suporte saiu, SAAS-09) | Migração reversa (só `DROP` de colunas e tabelas novas, vazias) | Não (tabelas pequenas, `ADD COLUMN` com default constante não reescreve linha) | P |
 | F4 | Âncora agregada (§4.3): selos públicos v2, workflow novo, prova de inclusão, congelamento do `selos.jsonl` | Reativar o endpoint v1 (o código fica até o fim da fase) | Não | M |
-| F5 | Plataforma: API `/plataforma/*`, front separado na Vercel, TOTP, onboarding (CLI: **feito em 2026-10-22**, §5.2), acesso do Master auditado (SAAS-09), módulos (SAAS-19), métricas | Desligar o projeto Vercel e as rotas (flag) | Não | G |
+| F5 | Plataforma: API `/plataforma/*`, front separado na Vercel, ~~TOTP~~ (sem 2FA desde 2026-10-23), onboarding (CLI: **feito em 2026-10-22**, §5.2), acesso do Master auditado (SAAS-09), módulos (SAAS-19), métricas | Desligar o projeto Vercel e as rotas (flag) | Não | G |
 | F6 | **Condomínio de teste** em produção (`demo`, dados fictícios do seed) para smoke de isolamento: sessão de um não abre o outro, jobs dos dois rodam, backup e restore de um só | Excluir `demo` (SAAS-11) | Não | P |
 | F7 | Fim de contrato: exportação completa, exclusão com duas pessoas, rotação de chave | — | Não | M |
 | F8 | Primeiro cliente real (depois das mitigações M1 a M9 da seção 10, do contrato de operador e da revisão de segurança) | — | — | — |
@@ -779,6 +804,24 @@ para existir, sem a tela do Master: SAAS-10 (passos e retomada), `configuracao` 
 
 ### 5.3 F5, entrega 1: app do Master (2026-10-23, código; deploy em `docs/deploy.md` §18)
 
+> **Revisão de 2026-10-23: TOTP removido** (decisão do usuário; risco e compensações em SAAS-08). Mudou:
+> - Migração `drizzle-plataforma/0004_master_sem_totp.sql` (*contract* direto): `DROP` de `master_usuario.totp_cifrado`,
+>   `totp_mestra_versao`, `totp_ultimo_passo`, dos CHECKs `master_usuario_totp_ck`/`_totp_passo_ck`, de
+>   `master_sessao.totp_confirmado_em` e da tabela `master_codigo_recuperacao`. Seguro porque o `migrate` termina antes
+>   da `api` nova subir; se o laço falhar depois dela (num banco de condomínio), a API velha fica no ar e só as rotas
+>   `/plataforma` dela quebram (500), as de condomínio não.
+> - `POST /plataforma/auth/login` recebe só `{ email, senha }` (DTO estrito: `codigo` agora é 400). Mensagem única
+>   "E-mail ou senha inválidos.". Saíram `src/master/totp.ts`, `segredo-totp.ts`, o anti-replay e
+>   `test/master-totp.test.ts`; o serviço de login não injeta mais a chave mestra (o limite de tentativas ainda usa).
+> - Troca de senha do Master: mínimo 16 (`SENHA_MIN_MASTER`); `problemasDaSenha(..., { minimo })` mantém 12 para o
+>   condomínio.
+> - CLI `criar-usuario-plataforma`: só senha temporária; `--reemitir-totp` saiu (vira erro de uso), `--nova-senha` fica;
+>   o serviço `usuario-plataforma-cli` não recebe mais a chave mestra.
+> - `apps/plataforma`: login sem o campo "Código do autenticador"; troca de senha avisa o mínimo de 16.
+>
+> Os itens abaixo que falam de TOTP, anti-replay, `totp_confirmado_em` e `--reemitir-totp` descrevem a entrega 1 como
+> foi feita e estão substituídos por esta revisão.
+
 **Entrou:**
 - **Banco `plataforma`, migração `drizzle-plataforma/0003_master_auth.sql`** (só *expand*; as tabelas da §4.1 já
   existiam vazias): `master_usuario` ganha `totp_mestra_versao`, `totp_ultimo_passo` (anti-replay), `deve_trocar_senha`,
@@ -846,11 +889,12 @@ para existir, sem a tela do Master: SAAS-10 (passos e retomada), `configuracao` 
 - **Módulos:** PATCH com a lista inteira (normalizada na ordem de `MODULOS`); sem mudança, sem linha na trilha;
   condomínio encerrado/excluído recusa. A recusa de rota no condomínio (`ModuloGuard`) continua para depois.
 - **Códigos de recuperação** (`master_codigo_recuperacao`, SAAS-08) **não** entraram: a recuperação nesta entrega é a CLI
-  `--reemitir-totp` na VPS (exige shell, que é o controle certo para poucos Masters).
+  `--reemitir-totp` na VPS (exige shell, que é o controle certo para poucos Masters). *(2026-10-23: a tabela saiu na
+  0004; a recuperação é só `--nova-senha`.)*
 
 **Ficou para depois:** entrega 2 (SAAS-09: leitura auditada dos dados do condomínio, tela "Acessos da plataforma");
 `ModuloGuard` e `modulos` em `/auth/me`; contrato (`condominio_contrato`) e tipo do condomínio na tela; métricas
-(`condominio_metrica`); códigos de recuperação; WebAuthn; limite global por IP para os logins de condomínio (SAAS-14).
+(`condominio_metrica`); 2FA (TOTP ou WebAuthn), se a decisão de 2026-10-23 for revista; limite global por IP para os logins de condomínio (SAAS-14).
 
 ---
 
@@ -860,7 +904,7 @@ para existir, sem a tela do Master: SAAS-10 (passos e retomada), `configuracao` 
 
 - `database.module.ts`: `DB` vira provider durable resolvido por condomínio; novo `PLATAFORMA_DB`; registro de pools
   com teto global e fechamento por ociosidade.
-- Novo módulo `plataforma` (controllers `/plataforma/*`, guarda `@Plataforma`, sessão do Master, TOTP, condomínios,
+- Novo módulo `plataforma` (controllers `/plataforma/*`, guarda `@Plataforma`, sessão do Master (sem 2FA desde 2026-10-23), condomínios,
   acesso do Master auditado com `AcessoPlataformaService` (SAAS-09), módulos com `ModuloGuard` (SAAS-19), métricas) e
   CLI `provisionar-condominio` (**feita**, §5.2), `excluir-condominio`, `rotacionar-chave`.
 - `auth`: cookie `v2.<condominio_id>.<token>`; login com código; `SessaoService.validar` no banco escolhido. (A rota
@@ -950,8 +994,9 @@ Desde 2026-10-22 o Master lê dado de condomínio sem aprovação, com registro 
   correlação.
 
 **Seção 6 (não funcionais):**
-- RNF-02 alterado: 2FA obrigatório para usuários da plataforma desde a primeira versão (continua opcional para
-  condomínio).
+- RNF-02 alterado: ~~2FA obrigatório para usuários da plataforma desde a primeira versão~~ (2026-10-23, decisão do
+  usuário: sem 2FA; senha do Master com 16+ caracteres, limite de tentativas, sessão curta, trilha com IP; SAAS-08).
+  Continua opcional para condomínio.
 - RNF-13 Isolamento entre condomínios: banco separado; teste de isolamento por rota no CI.
 - RNF-14 Exportação completa e exclusão verificável no fim do contrato, em prazo contratual.
 - RNF-01 e RNF-10 precisam citar cadeia e backup **por condomínio**.
@@ -1021,7 +1066,7 @@ Nada disso exige mudança agora, exceto não criar unicidade ou trigger que impe
 | R4 | Esgotamento de conexões com muitos condomínios | Pool pequeno com timeout; teto global; revisitar SAAS-01 acima de ~100 |
 | R5 | Perda da chave mestra = perda de todos os anexos e da busca por CPF de todos os condomínios | Cópia da chave mestra fora da VPS, em cofre, com procedimento de recuperação testado (pergunta 6) |
 | R6 | Vazamento da chave mestra + dump = força bruta de CPF | Mestra fora do backup; acesso restrito; rotação da mestra é barata |
-| R7 | Master comprometido: desde 2026-10-22 alcança o dado pessoal de **todos** os condomínios (SAAS-09) | Origem separada, TOTP, poucos usuários `master`, ponto único que grava a trilha de cada condomínio antes de responder, tela do síndico, revisão de acessos. A aprovação do síndico saiu |
+| R7 | Master comprometido: desde 2026-10-22 alcança o dado pessoal de **todos** os condomínios (SAAS-09) | Origem separada, ~~TOTP~~ (sem 2FA desde 2026-10-23: senha 16+, limite de tentativas, sessão curta, trilha com IP, gerenciador de senhas; SAAS-08), poucos usuários `master`, ponto único que grava a trilha de cada condomínio antes de responder, tela do síndico, revisão de acessos. A aprovação do síndico saiu |
 | R8 | API comprometida = todos os condomínios | Inerente a um processo (P3). Reduz o alcance: `app_rw` sem DELETE, trilha append-only, âncora fora do servidor |
 | R9 | VPS compartilhada com sistema de terceiros, mantida com vários clientes (decisão de 2026-10-22) | Mitigações M1 a M9 (seção 10); gatilhos de saída para VPS dedicada (M9) |
 | R10 | Âncora controlada pelo operador não protege o cliente contra o operador | E-mail ao síndico obrigatório; raiz pública em repositório com proteção de branch |
@@ -1032,7 +1077,7 @@ Nada disso exige mudança agora, exceto não criar unicidade ou trigger que impe
 | R15 | Provisionamento interrompido deixa banco e chaves de um condomínio que não existe para a API | Status `provisionando` ignorado por API, migração e backup; retomada idempotente; rollback em `docs/deploy.md` §16.3 |
 | R16 | Serviço provisionador ligado e API invadida: o invasor pede condomínios novos (com o token, que a API tem) | Serviço desligado fora do onboarding (perfil); uma operação só (criar), nada de excluir ou mexer em condomínio existente; um pedido por vez; trilha `condominio.provisionar` com o Master como ator |
 | R17 | Resposta do POST perdida depois da ativação (timeout da Vercel ou rede): a senha do síndico não chega ao Master | Retomada responde `ja_provisionado` sem senha; nova senha pela CLI `--nova-senha-sindico` (`docs/deploy.md` §18.5) |
-| R18 | Saída da CLI `criar-usuario-plataforma` (senha temporária e segredo TOTP) capturada por ferramenta que grava o terminal | Runbook manda rodar em terminal comum, nunca pelo `!` do Claude Code; `logging: none`; reemissão pela CLI revoga sessões |
+| R18 | Saída da CLI `criar-usuario-plataforma` (senha temporária; o segredo TOTP saiu em 2026-10-23) capturada por ferramenta que grava o terminal | Runbook manda rodar em terminal comum, nunca pelo `!` do Claude Code; `logging: none`; reemissão pela CLI revoga sessões |
 
 ---
 
@@ -1133,7 +1178,7 @@ obrigatórias (condição de F6 e F8; as marcadas "já" existem para o piloto):
 | F2 API multi-banco | **G** | Maior risco: resolvedor, sessão, login, jobs, backup, testes de isolamento |
 | F3 Migração `0007` | P | Só *expand* |
 | F4 Âncora agregada | M | Merkle, prova de inclusão, workflow |
-| F5 Plataforma (API + front + TOTP + onboarding + suporte) | **G** | App novo |
+| F5 Plataforma (API + front + onboarding + suporte; TOTP removido em 2026-10-23) | **G** | App novo |
 | F6 Condomínio de teste em produção | P | Smoke de isolamento |
 | F7 Fim de contrato | M | Exportação completa e exclusão |
 | Revisão de requisitos/spec (v0.4) | M | Documento, sem código |

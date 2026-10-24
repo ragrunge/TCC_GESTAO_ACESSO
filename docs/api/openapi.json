@@ -5258,16 +5258,11 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 256
-                  },
-                  "codigo": {
-                    "type": "string",
-                    "pattern": "^\\d{6}$"
                   }
                 },
                 "required": [
                   "email",
-                  "senha",
-                  "codigo"
+                  "senha"
                 ],
                 "additionalProperties": false
               }
@@ -8304,7 +8299,7 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "__Secure-portaria_plataforma",
-        "description": "Cookie da sessão do Master (app da plataforma), Path=/api/v1/plataforma, criado por `POST /plataforma/auth/login` (e-mail, senha e código TOTP). Nunca aceito nas rotas de condomínio, e o de condomínio nunca é aceito aqui. No modo local (http) o nome é `portaria_plataforma`."
+        "description": "Cookie da sessão do Master (app da plataforma), Path=/api/v1/plataforma, criado por `POST /plataforma/auth/login` (e-mail e senha; sem segundo fator desde 2026-10-23, SAAS-08). Nunca aceito nas rotas de condomínio, e o de condomínio nunca é aceito aqui. No modo local (http) o nome é `portaria_plataforma`."
       },
       "sessao": {
         "type": "apiKey",
