@@ -75,7 +75,12 @@ test.describe('14. Vínculo pela ficha da pessoa', () => {
     await page.keyboard.press('Enter');
     await page.keyboard.type('11');
     await page.keyboard.press('Enter');
-    await expect(modal.getByRole('combobox', { name: 'Apartamento' })).toContainText('AP 11');
+    const apartamento = modal.getByRole('combobox', { name: 'Apartamento' });
+    await expect(apartamento).toContainText('AP 11');
+    // A lista fecha e o Radix devolve o foco ao gatilho depois (setTimeout): só mexer no foco depois disso, senão a
+    // devolução tardia rouba o foco do radio. Durante a lista aberta o foco está no filtro, então isto é discriminante.
+    await expect(apartamento).toHaveAttribute('aria-expanded', 'false');
+    await expect(apartamento).toBeFocused();
 
     await modal.getByRole('radio', { name: 'Proprietário' }).focus();
     // Setas movem o foco entre as opções (o Radix move num setTimeout: espera o foco chegar) e Espaço marca.

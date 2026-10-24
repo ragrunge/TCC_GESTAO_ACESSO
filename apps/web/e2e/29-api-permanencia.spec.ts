@@ -40,13 +40,17 @@ test.describe.serial('API real: prazo de permanência na portaria', () => {
     await page.getByRole('radio', { name: 'D', exact: true }).click();
     await page.getByLabel('Ou digite o apartamento', { exact: false }).fill('32');
     await expect(page.getByRole('button', { name: 'Alterar', exact: true })).toBeVisible();
+    // Ao terminar de carregar a unidade o produto move o foco para "Quem autorizou?" (EntradaPage, focarMeio), de forma
+    // assíncrona: só mexer no foco do tipo de visita depois disso, senão o foco tardio rouba o foco do teste.
+    const meio = page.getByRole('group', { name: 'Meio de autorização' });
+    await expect(meio.locator('input:focus')).toHaveCount(1);
     // Tipo de visita: rádios nativos; o padrão é Visita e as setas trocam a opção
     const tipos = page.getByRole('group', { name: /Tipo de visita/ });
     await expect(tipos.getByRole('radio', { name: /Visita/ })).toBeChecked();
     await tipos.getByRole('radio', { name: /Visita/ }).focus();
     await page.keyboard.press('ArrowRight');
     await expect(tipos.getByRole('radio', { name: /Entregador/ })).toBeChecked();
-    await page.getByRole('group', { name: 'Meio de autorização' }).getByText('Interfone', { exact: true }).click();
+    await meio.getByText('Interfone', { exact: true }).click();
     await page.getByRole('radiogroup', { name: /Morador que autorizou/ }).getByText('Ana Ribeiro', { exact: true }).click();
     await page.getByRole('button', { name: /^Confirmar entrada/ }).click();
     await expect(toast(page, 'Entrada registrada').first()).toBeVisible();
