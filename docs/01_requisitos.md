@@ -490,6 +490,7 @@ Inventário que orienta o protótipo navegável (`../prototipo/Portaria.dc.html`
 | T04 Alerta de restrição | Porteiro | UC03 | RF-16 |
 | T05 Liberação por exceção | Porteiro | UC05 | RF-17 |
 | T06 Pessoas no condomínio e saída | Porteiro | UC07, UC09 | RF-20 |
+| T06b Registrar saída (busca entre quem está dentro, atalho F8) | Porteiro | UC07 | RF-12, RF-20 |
 | T07 Encomendas | Porteiro | UC21 a UC24 | RF-22 a RF-26 |
 | T08 Ocorrências | Porteiro | UC25, UC26 | RF-27, RF-28 |
 | T09 Unidade (detalhe) | Administração | UC13, UC10, UC11 | RF-01, RF-08, RF-14, RF-15 |

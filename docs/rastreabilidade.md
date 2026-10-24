@@ -15,13 +15,13 @@ A trilha RN/UC → arquivo mais detalhada está nos comentários do código (`gi
 | RF-09 | Funcionários, função e escala | `funcionarios/funcionarios.module.ts` | `features/funcionarios/FuncionariosPage.tsx`, `features/funcionarios/escala.ts` |
 | RF-10 | Dispositivos de acesso (prioridade C) | não implementado | não implementado |
 | RF-11 | Importação da planilha de moradores | `importacao/importacao.module.ts` | `features/importacao/ImportacaoPage.tsx`, `features/importacao/csv.ts` |
-| RF-12, RF-13, RF-17 | Entrada e saída, quem autorizou, justificativa da exceção | `eventos/acesso.module.ts`, `eventos/eventos.service.ts` | `features/portaria/EntradaPage.tsx` |
+| RF-12, RF-13, RF-17 | Entrada e saída, quem autorizou, justificativa da exceção | `eventos/acesso.module.ts`, `eventos/eventos.service.ts` | `features/portaria/EntradaPage.tsx`; saída (UC07): `features/portaria/SaidaPage.tsx` (`/saida`, `?entrada=<id>`), `features/portaria/saida.tsx` (confirmação e saída retroativa) |
 | RF-14 | Autorização prévia | `eventos/autorizacoes.service.ts`, `eventos/acesso.module.ts` | `features/unidades/UnidadeDetalhePage.tsx` |
 | RF-15 | Restrições da unidade | `eventos/autorizacoes.service.ts`, `eventos/acesso.module.ts` | `features/unidades/UnidadeDetalhePage.tsx`, `features/portaria/PainelPage.tsx` |
 | RF-16 | Bloqueio por restrição (evento `negado`) | `eventos/eventos.service.ts` | `features/portaria/EntradaPage.tsx`, `features/portaria/negado.ts` |
 | RF-18, RF-34 | Busca de pessoa e reaproveitamento de cadastro | `pessoas/busca.service.ts`, `pessoas/pessoas.module.ts` | `components/PessoaPicker.tsx`, `features/portaria/EntradaPage.tsx` |
 | RF-19 | Histórico de acessos | `eventos/eventos.service.ts`, `eventos/evento-view.ts`, `eventos/efetivo.ts` | `features/historico/HistoricoPage.tsx`, `features/historico/EventoGaveta.tsx` |
-| RF-20 | Pessoas dentro do condomínio | `eventos/eventos.service.ts` (`presentes`) | `features/portaria/PessoasDentroPage.tsx` |
+| RF-20 | Pessoas dentro do condomínio | `eventos/eventos.service.ts` (`presentes`) | `features/portaria/PessoasDentroPage.tsx`, `features/portaria/presentes.tsx` |
 | RF-22, RF-23, RF-25, RF-26 | Encomendas: recebimento, conferência da unidade, retirada, atrasadas | `encomendas/encomendas.module.ts` | `features/encomendas/EncomendasPage.tsx` |
 | RF-24 | Notificação da unidade (interfone no MVP) | fora do sistema no MVP | fora do sistema no MVP |
 | RF-27, RF-28 | Ocorrências e vínculo com eventos | `ocorrencias/ocorrencias.module.ts`, `documentos/cofre.ts` | `features/ocorrencias/OcorrenciasPage.tsx` |
@@ -42,5 +42,5 @@ Requisitos não funcionais com código próprio:
 | RNF-02 (autenticação) | `apps/api/src/auth/` |
 | RNF-03 (anexos cifrados) | `apps/api/src/documentos/cofre.ts` |
 | RNF-04 (RBAC) | `packages/domain/src/rbac.ts`, `apps/api/src/auth/guards.ts` (`PapelGuard`), `RequireRole` em `apps/web/src/auth/AuthContext.tsx` |
-| RNF-07 (teclado) | `apps/web/src/app/Layout.tsx` (F2/F3/F4), `apps/web/src/features/portaria/EntradaPage.tsx`, `apps/web/src/components/TowerUnitPicker.tsx` |
+| RNF-07 (teclado) | `apps/web/src/app/Layout.tsx` (F2 entrada, F8 saída, F3 encomenda, F4 ocorrência), `apps/web/src/features/portaria/EntradaPage.tsx`, `apps/web/src/features/portaria/SaidaPage.tsx`, `apps/web/src/components/TowerUnitPicker.tsx` |
 | RNF-09 (retenção e LGPD) | `apps/api/src/lgpd/lgpd.service.ts`, `apps/api/src/lgpd/retencao.service.ts` |
