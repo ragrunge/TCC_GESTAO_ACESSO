@@ -171,3 +171,145 @@ export const AREAS_COMUNS_INICIAIS = [
 export const PORTARIA_SOCIAL = 'Portaria social';
 
 export type { Unidade };
+
+// ----- Lista explícita de unidades (criação de condomínio pelo Master: lista colada ou planilha) ---------------------
+
+/** Máximo de unidades na criação de um condomínio (lista, planilha ou JSON da CLI). */
+export const LIMITE_UNIDADES = 5000;
+
+/**
+ * Uma unidade por linha: BLOCO e NÚMERO separados por hífen, espaço, barra, ponto, vírgula, ponto e vírgula ou tabulação
+ * (a célula colada do Excel). Prefixo "Bloco"/"Torre" e "Ap"/"Apto" opcionais; maiúsculas e minúsculas tanto faz.
+ * Exemplos aceitos: "A-101", "a 101", "B/12", "Bloco A 101", "Torre 2 - 34", "A;101", "Bloco A · AP 32".
+ */
+const LINHA_UNIDADE = /^(?:(?:bloco|torre)\s+)?([a-z0-9]+)\s*(?:[-/.·;,|\t]\s*|\s+)(?:(?:ap|apto|apartamento|unidade)\.?\s*)?([0-9]+)$/i;
+
+export type SituacaoLinhaUnidade = 'ok' | 'invalida' | 'duplicada';
+
+export interface LinhaListaUnidades {
+  /** Número da linha no texto de origem (1 = primeira; linhas em branco contam, para bater com o que se vê). */
+  linha: number;
+  texto: string;
+  situacao: SituacaoLinhaUnidade;
+  /** Normalizada (`ok` e `duplicada`). */
+  unidade: EstruturaUnidade | null;
+  motivo: string | null;
+}
+
+export interface ResultadoListaUnidades {
+  /** Linhas não vazias, na ordem do texto. */
+  linhas: LinhaListaUnidades[];
+  /** Unidades válidas e únicas, ordenadas (bloco natural, número). */
+  unidades: EstruturaUnidade[];
+  invalidas: number;
+  duplicadas: number;
+  /** Mais unidades válidas que LIMITE_UNIDADES. */
+  acimaDoLimite: boolean;
+}
+
+/** Uma linha -> unidade normalizada, ou o motivo da recusa (texto para a tela). */
+export function lerLinhaUnidade(texto: string, agrupamento: Agrupamento = 'Bloco'): { unidade: EstruturaUnidade } | { motivo: string } {
+  const t = texto.trim().replace(/[–—]/g, '-');
+  const falta = `Falta ${agrupamento === 'Torre' ? 'a torre' : 'o bloco'} (ex.: A-101).`;
+  const m = LINHA_UNIDADE.exec(t);
+  if (!m) {
+    if (/^(?:(?:bloco|torre)\s*)?[0-9]+$/i.test(t)) return { motivo: falta };
+    if (/^[a-z0-9]+$/i.test(t)) return { motivo: 'Separe o bloco do número com hífen ou espaço (ex.: A-101).' };
+    return { motivo: 'Formato não reconhecido. Use BLOCO-NÚMERO (ex.: A-101).' };
+  }
+  const bloco = normalizarBloco(m[1]!);
+  if (bloco === 'BLOCO' || bloco === 'TORRE') return { motivo: falta };
+  const numero = normalizarNumero(m[2]!);
+  const erro = validarEstruturaUnidade(bloco, numero, agrupamento);
+  return erro ? { motivo: erro } : { unidade: { bloco, numero } };
+}
+
+/** Lê a lista colada (uma unidade por linha): valida cada linha, marca as repetidas e devolve as válidas, ordenadas. */
+export function lerListaUnidades(texto: string, agrupamento: Agrupamento = 'Bloco'): ResultadoListaUnidades {
+  const linhas: LinhaListaUnidades[] = [];
+  const vistas = new Map<string, number>();
+  texto.replace(/^﻿/, '').split(/\r?\n/).forEach((bruta, i) => {
+    const t = bruta.trim();
+    if (!t) return;
+    const r = lerLinhaUnidade(t, agrupamento);
+    if ('motivo' in r) { linhas.push({ linha: i + 1, texto: t, situacao: 'invalida', unidade: null, motivo: r.motivo }); return; }
+    const chave = codigoUnidade(r.unidade);
+    const antes = vistas.get(chave);
+    if (antes !== undefined) {
+      linhas.push({ linha: i + 1, texto: t, situacao: 'duplicada', unidade: r.unidade, motivo: `Repetida: ${chave} já está na linha ${antes}.` });
+      return;
+    }
+    vistas.set(chave, i + 1);
+    linhas.push({ linha: i + 1, texto: t, situacao: 'ok', unidade: r.unidade, motivo: null });
+  });
+  const unidades = linhas.filter((l) => l.situacao === 'ok').map((l) => l.unidade!).sort(compararUnidades);
+  return {
+    linhas, unidades,
+    invalidas: linhas.filter((l) => l.situacao === 'invalida').length,
+    duplicadas: linhas.filter((l) => l.situacao === 'duplicada').length,
+    acimaDoLimite: unidades.length > LIMITE_UNIDADES,
+  };
+}
+
+/** Unidades agrupadas por bloco, na ordem natural dos blocos (prévia e revisão). */
+export function agruparPorBloco(unidades: readonly EstruturaUnidade[]): { bloco: string; unidades: EstruturaUnidade[] }[] {
+  const m = new Map<string, EstruturaUnidade[]>();
+  for (const u of [...unidades].sort(compararUnidades)) {
+    const l = m.get(u.bloco) ?? [];
+    l.push(u);
+    m.set(u.bloco, l);
+  }
+  return [...m.entries()].map(([bloco, us]) => ({ bloco, unidades: us }));
+}
+
+/** Divide uma linha de CSV respeitando aspas. */
+function dividirCsv(linha: string, sep: string): string[] {
+  const out: string[] = [];
+  let atual = '';
+  let aspas = false;
+  for (let i = 0; i < linha.length; i++) {
+    const c = linha[i]!;
+    if (c === '"') { if (aspas && linha[i + 1] === '"') { atual += '"'; i++; } else aspas = !aspas; } else if (c === sep && !aspas) { out.push(atual); atual = ''; } else atual += c;
+  }
+  out.push(atual);
+  return out.map((s) => s.trim());
+}
+
+/** CSV (UTF-8, separador ";", "," ou tabulação, detectado na primeira linha) -> matriz de células. */
+export function matrizDeCsv(texto: string): string[][] {
+  const brutas = texto.replace(/^﻿/, '').split(/\r?\n/);
+  const primeira = brutas.find((l) => l.trim()) ?? '';
+  const conta = (c: string) => primeira.split(c).length - 1;
+  const sep = [';', '\t', ','].reduce((a, b) => (conta(b) > conta(a) ? b : a));
+  return brutas.map((l) => (l.trim() ? dividirCsv(l, sep) : []));
+}
+
+const semAcentoMin = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+const ALIAS_BLOCO = ['bloco', 'torre', 'predio'];
+const ALIAS_NUMERO = ['unidade', 'numero', 'apto', 'apartamento', 'ap', 'unidades'];
+
+/**
+ * Planilha (CSV ou .xlsx, já em matriz de texto) -> linhas no formato da lista colada, uma por linha da planilha.
+ * Aceita uma coluna ("A-101") ou duas (bloco e número). Cabeçalho opcional: se a primeira linha não tem dígito, é
+ * cabeçalho; com "Bloco"/"Torre" e "Unidade"/"Apto"/"Número", as colunas são achadas pelo nome (em qualquer ordem).
+ * Sem cabeçalho reconhecido: as duas primeiras células preenchidas, nessa ordem (bloco, número).
+ */
+export function linhasDePlanilha(matriz: readonly (readonly string[])[]): string[] {
+  const linhas = matriz.map((l) => l.map((c) => (c ?? '').trim())).filter((l) => l.some(Boolean));
+  if (!linhas.length) return [];
+  let corpo = linhas;
+  let iBloco = -1;
+  let iNumero = -1;
+  const cab = linhas[0]!;
+  if (!cab.some((c) => /[0-9]/.test(c))) {
+    corpo = linhas.slice(1);
+    const nomes = cab.map(semAcentoMin);
+    iBloco = nomes.findIndex((n) => ALIAS_BLOCO.includes(n));
+    iNumero = nomes.findIndex((n) => ALIAS_NUMERO.includes(n));
+  }
+  return corpo.map((l) => {
+    if (iBloco >= 0 && iNumero >= 0) return `${l[iBloco] ?? ''} ${l[iNumero] ?? ''}`.trim();
+    if (iNumero >= 0 && iBloco < 0) return l[iNumero] ?? '';
+    return l.filter(Boolean).slice(0, 2).join(' ');
+  });
+}
