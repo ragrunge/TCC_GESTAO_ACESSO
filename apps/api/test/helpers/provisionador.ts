@@ -42,7 +42,7 @@ export interface OpcoesProvisionadorTeste {
   gerarSenha?: () => string;
 }
 
-export function provisionadorPglite(o: OpcoesProvisionadorTeste): Provisionador & { cluster: ClusterPglite; chamadas: number } {
+export function provisionadorPglite(o: OpcoesProvisionadorTeste): Provisionador & { cluster: ClusterPglite; chamadas: number; ligado: boolean } {
   const cluster = new ClusterPglite(o.registro);
   let n = 0;
   const portas = (): Portas => ({
@@ -64,7 +64,10 @@ export function provisionadorPglite(o: OpcoesProvisionadorTeste): Provisionador 
   const p = {
     cluster,
     chamadas: 0,
+    /** false simula o serviço parado (GET /saude responde disponivel: false). */
+    ligado: true,
     configurado: () => true,
+    disponivel: async () => p.ligado,
     async provisionar(entrada: unknown, masterUsuarioId: string) {
       p.chamadas++;
       const e = validarEntrada(entrada);

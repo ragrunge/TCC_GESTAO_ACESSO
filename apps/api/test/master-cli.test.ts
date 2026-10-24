@@ -9,6 +9,7 @@ import { autorizado, criarServidor, tokenDoAmbiente } from '../src/cli/servidor-
 import { criarUsuario, ErroUsuarioPlataforma, reemitirSenha, validarCadastro } from '../src/master/usuario-plataforma';
 import { ErroProvisionamento, type ResultadoProvisionamento } from '../src/saas/provisionar';
 import { masterSessao, masterUsuario, plataformaAudit } from '../src/saas/schema-plataforma';
+import { ProvisionadorHttp, TEMPO_SAUDE_MS } from '../src/master/provisionador';
 import { comoAppPlataforma, novoBancoPlataforma } from './helpers/plataforma';
 
 let p: Awaited<ReturnType<typeof novoBancoPlataforma>>;
@@ -119,7 +120,7 @@ describe('serviço provisionador (HTTP interno)', () => {
     expect((await pedir('{nao json')).status).toBe(400);
     expect((await pedir({ entrada: {}, masterUsuarioId: 'x' })).status).toBe(400);
     expect((await pedir({ entrada: {}, masterUsuarioId: ID, extra: 1 })).status).toBe(400);
-    expect((await pedir({ entrada: { x: 'a'.repeat(70_000) }, masterUsuarioId: ID }).catch(() => ({ status: 413 }))).status).toBe(413);
+    expect((await pedir({ entrada: { x: 'a'.repeat(600_000) }, masterUsuarioId: ID }).catch(() => ({ status: 413 }))).status).toBe(413);
     const r = await pedir({ entrada: { codigo: 'recusa' }, masterUsuarioId: ID });
     expect([r.status, ((await r.json()) as { erro: string }).erro]).toEqual([422, 'o código recusa já está cadastrado']);
     const q = await pedir({ entrada: { codigo: 'quebra' }, masterUsuarioId: ID });
@@ -131,12 +132,36 @@ describe('serviço provisionador (HTTP interno)', () => {
     expect(((await ok.json()) as { resultado: ResultadoProvisionamento }).resultado.sindico?.senhaTemporaria).toBe('k');
   });
 
+  it('GET /saude: 200 com o token, 401 sem ele; o cliente da API vira booleano e nunca lança', async () => {
+    const saude = (token?: string, metodo = 'GET', caminho = '/saude') =>
+      fetch(`${url}${caminho}`, { method: metodo, headers: token ? { authorization: `Bearer ${token}` } : {} });
+    const antes = chamadas.length;
+    const ok = await saude(TOKEN);
+    expect([ok.status, await ok.json()]).toEqual([200, { ok: true }]);
+    expect((await saude()).status).toBe(401);
+    expect((await saude('errado')).status).toBe(401);
+    expect((await saude(TOKEN, 'POST')).status).toBe(404);
+    expect((await saude(TOKEN, 'GET', '/provisionar')).status).toBe(404);
+    expect(chamadas).toHaveLength(antes);
+    expect(await new ProvisionadorHttp(url, TOKEN).disponivel()).toBe(true);
+    expect(await new ProvisionadorHttp(url, 'x'.repeat(40)).disponivel()).toBe(false);
+    expect(await new ProvisionadorHttp('http://127.0.0.1:9', TOKEN).disponivel()).toBe(false);
+    expect(await new ProvisionadorHttp(null, null).disponivel()).toBe(false);
+    // Pendurado: o timeout curto (TEMPO_SAUDE_MS) devolve false em vez de prender a tela.
+    const preso = (async (_u: string, i: RequestInit) => new Promise((_ok, falha) => i.signal!.addEventListener('abort', () => falha(new Error('abort'))))) as unknown as typeof fetch;
+    const t0 = Date.now();
+    expect(await new ProvisionadorHttp(url, TOKEN, preso).disponivel()).toBe(false);
+    expect(Date.now() - t0).toBeLessThan(TEMPO_SAUDE_MS + 2_000);
+  });
+
   it('um pedido por vez: o segundo simultâneo recebe 409', async () => {
     let soltar!: () => void;
     atraso = new Promise((ok) => { soltar = ok; });
     const primeiro = pedir({ entrada: { codigo: 'a' }, masterUsuarioId: ID });
     await new Promise((ok) => setTimeout(ok, 50));
     expect((await pedir({ entrada: { codigo: 'b' }, masterUsuarioId: ID })).status).toBe(409);
+    // Ocupado não é desligado: a saúde responde no meio do provisionamento.
+    expect(await new ProvisionadorHttp(url, TOKEN).disponivel()).toBe(true);
     soltar();
     expect((await primeiro).status).toBe(200);
     atraso = null;

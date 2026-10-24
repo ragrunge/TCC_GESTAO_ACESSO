@@ -37,6 +37,9 @@ const paraApi = (c: Linha): CondominioPlataforma => ({
   modulos: MODULOS.filter((m) => c.modulos.includes(m)), criadoEm: c.criadoEm.toISOString(),
 });
 
+/** Mesmo texto da tela (apps/plataforma): o que fazer na VPS (docs/deploy.md, seção 18.5). */
+export const MENSAGEM_PROVISIONADOR_DESLIGADO = 'O provisionador está desligado. Na VPS: docker compose --profile provisionar up -d provisionador';
+
 export interface ResultadoCriacao {
   situacao: 'provisionado' | 'retomado' | 'ja_provisionado' | 'nova_senha_sindico';
   condominio: CondominioPlataforma;
@@ -53,6 +56,11 @@ export class CondominiosMasterService {
     @Inject(PROVISIONADOR) private readonly provisionador: Provisionador,
   ) {}
 
+  /** GET /plataforma/provisionador/saude: só o booleano (sem URL, token nem motivo). */
+  async provisionadorDisponivel(): Promise<{ disponivel: boolean }> {
+    return { disponivel: this.provisionador.configurado() && await this.provisionador.disponivel() };
+  }
+
   async listar(): Promise<CondominioPlataforma[]> {
     return (await this.db.select(colunas).from(condominio).orderBy(asc(condominio.nome), asc(condominio.codigo))).map(paraApi);
   }
@@ -65,7 +73,7 @@ export class CondominiosMasterService {
       throw e;
     }
     if (!this.provisionador.configurado()) {
-      throw erroApi(503, 'PROVISIONADOR_INDISPONIVEL', 'O provisionador está desligado. Ligue o serviço provisionador na VPS (docs/deploy.md, seção 18) ou use a CLI.');
+      throw erroApi(503, 'PROVISIONADOR_INDISPONIVEL', MENSAGEM_PROVISIONADOR_DESLIGADO);
     }
     if (this.ocupado) throw erroApi(409, 'PROVISIONAMENTO_EM_ANDAMENTO', 'Outro provisionamento está em andamento. Aguarde e tente de novo.');
     this.ocupado = true;
@@ -86,7 +94,8 @@ export class CondominiosMasterService {
       if (e instanceof ProvisionamentoOcupado) throw erroApi(409, 'PROVISIONAMENTO_EM_ANDAMENTO', 'Outro provisionamento está em andamento. Aguarde e tente de novo.');
       if (e instanceof ProvisionadorIndisponivel) {
         log('error', 'plataforma.provisionador_indisponivel', { motivo: e.message });
-        throw erroApi(503, 'PROVISIONADOR_INDISPONIVEL', 'O provisionador não respondeu. Se o condomínio ficou "provisionando", repita o envio com os MESMOS dados para retomar.');
+        throw erroApi(503, 'PROVISIONADOR_INDISPONIVEL', 'O provisionador não respondeu (desligado ou fora do ar). Na VPS: docker compose --profile provisionar up -d provisionador. '
+          + 'Se o condomínio ficou "provisionando", repita o envio com os MESMOS dados para retomar.');
       }
       throw e;
     } finally {

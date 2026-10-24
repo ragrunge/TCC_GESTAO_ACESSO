@@ -1079,7 +1079,7 @@
             "description": "Plataforma (Master). Permissão: `condominio.criar`",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"codigo\": \"exemplo\",\n  \"nome\": \"Fulano de Tal\",\n  \"cidade\": \"exemplo\",\n  \"uf\": \"exemplo\",\n  \"plano\": \"exemplo\",\n  \"estrutura\": {\n    \"agrupamento\": \"Bloco\",\n    \"blocos\": [\n      \"exemplo\"\n    ],\n    \"andares\": [\n      -9007199254740991\n    ],\n    \"finais\": [\n      -9007199254740991\n    ],\n    \"ausentes\": [\n      \"exemplo\"\n    ]\n  },\n  \"areasComuns\": [\n    \"exemplo\"\n  ],\n  \"sindico\": {\n    \"nome\": \"Fulano de Tal\",\n    \"login\": \"exemplo\"\n  }\n}",
+              "raw": "{\n  \"codigo\": \"exemplo\",\n  \"nome\": \"Fulano de Tal\",\n  \"cidade\": \"exemplo\",\n  \"uf\": \"exemplo\",\n  \"plano\": \"exemplo\",\n  \"agrupamento\": \"Bloco\",\n  \"estrutura\": {\n    \"agrupamento\": \"Bloco\",\n    \"blocos\": [\n      \"exemplo\"\n    ],\n    \"andares\": [\n      -9007199254740991\n    ],\n    \"finais\": [\n      -9007199254740991\n    ],\n    \"ausentes\": [\n      \"exemplo\"\n    ]\n  },\n  \"unidades\": [\n    {\n      \"bloco\": \"exemplo\",\n      \"numero\": \"exemplo\"\n    }\n  ],\n  \"areasComuns\": [\n    \"exemplo\"\n  ],\n  \"sindico\": {\n    \"nome\": \"Fulano de Tal\",\n    \"login\": \"exemplo\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2224,6 +2224,30 @@
               ]
             },
             "description": "Permissão: `pessoa.desativar`"
+          }
+        }
+      ]
+    },
+    {
+      "name": "provisionadormaster",
+      "item": [
+        {
+          "name": "provisionadormaster / saude",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/plataforma/provisionador/saude",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "plataforma",
+                "provisionador",
+                "saude"
+              ]
+            },
+            "description": "Plataforma (Master). Permissão: `condominio.criar`"
           }
         }
       ]

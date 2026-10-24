@@ -30,6 +30,7 @@ const ENTRADA = {
 };
 
 let api: ApiDeTeste;
+let prov: ReturnType<typeof provisionadorPglite>;
 const logs: string[] = [];
 
 async function novoMaster(email: string, o: { papel?: 'master' | 'suporte'; trocaPendente?: boolean } = {}) {
@@ -67,7 +68,7 @@ beforeAll(async () => {
     vi.spyOn(console, k).mockImplementation((...a: unknown[]) => { logs.push(a.map(String).join(' ')); });
   }
   api = await novaApi({}, {
-    provisionador: (c) => provisionadorPglite({ plataforma: c.plataforma, registro: c.registro, mestra: MESTRA_TESTE, gerarSenha: () => 'temp-sindico-unica-0001' }),
+    provisionador: (c) => (prov = provisionadorPglite({ plataforma: c.plataforma, registro: c.registro, mestra: MESTRA_TESTE, gerarSenha: () => 'temp-sindico-unica-0001' })),
   });
   await novoMaster('master@exemplo.test');
   await novoMaster('novo@exemplo.test', { trocaPendente: true });
@@ -274,6 +275,64 @@ describe('condomínios', () => {
     expect((await trilhaP('condominio.provisionar_falha')).at(-1)!.detalhes).toMatchObject({ codigo: 'vila-sul', motivo: 'recusado' });
   });
 
+  it('criar com lista explícita: agrupamento próprio, bloco em maiúsculas, unidades fora da grade; repetir = ja_provisionado', async () => {
+    const m = await entrarMaster('master@exemplo.test');
+    const { estrutura: _e, ...base } = ENTRADA;
+    const corpo = {
+      ...base, codigo: 'lista-norte', nome: 'Residencial Lista Norte', agrupamento: 'Torre', sindico: { nome: 'Síndica Lista', login: 'sindica.lista' },
+      unidades: [{ bloco: '2', numero: '1201' }, { bloco: 'a', numero: '03' }, { bloco: '10', numero: '01' }, { bloco: '2', numero: '32' }],
+    };
+    const r = await api.http().post(`${P}/condominios`).set('Cookie', m).send(corpo);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(r.body.data).toMatchObject({ situacao: 'provisionado', condominio: { codigo: 'lista-norte' }, sindico: { login: 'sindica.lista' } });
+    const [c] = await api.plataforma.db.select().from(condominio).where(eq(condominio.codigo, 'lista-norte'));
+    const banco = prov.cluster.clientes.get(c!.banco)!;
+    expect((await banco.query<{ c: string }>("select bloco || '-' || numero as c from unidade order by 1")).rows.map((x) => x.c))
+      .toEqual(['10-01', '2-1201', '2-32', 'A-03']);
+    expect((await banco.query<{ agrupamento: string }>('select agrupamento from configuracao')).rows).toEqual([{ agrupamento: 'Torre' }]);
+    const de_novo = await api.http().post(`${P}/condominios`).set('Cookie', m).send({ ...corpo, unidades: [...corpo.unidades].reverse() });
+    expect(de_novo.body.data).toMatchObject({ situacao: 'ja_provisionado', sindico: null });
+  });
+
+  it('criar: estrutura E unidades, nenhuma das duas, repetida, sem agrupamento, número não canônico ou acima do limite = 400 citando o campo', async () => {
+    const m = await entrarMaster('master@exemplo.test');
+    const { estrutura: _e, ...base } = ENTRADA;
+    const lista = { ...base, codigo: 'recusa-lista', agrupamento: 'Bloco', unidades: [{ bloco: 'A', numero: '01' }] };
+    const casos: [unknown, string][] = [
+      [{ ...lista, estrutura: ENTRADA.estrutura }, 'unidades'],
+      [base, 'unidades'],
+      [{ ...lista, unidades: [{ bloco: 'A', numero: '01' }, { bloco: 'a', numero: '01' }] }, 'unidades.1'],
+      [{ ...lista, agrupamento: undefined }, 'agrupamento'],
+      [{ ...lista, unidades: [{ bloco: 'A', numero: '1' }] }, 'unidades.0.numero'],
+      [{ ...lista, unidades: [{ bloco: 'ABCD', numero: '01' }] }, 'unidades.0.bloco'],
+      [{ ...lista, unidades: [] }, 'unidades'],
+      [{ ...lista, unidades: Array.from({ length: 5001 }, (_, i) => ({ bloco: 'A', numero: String(i + 10) })) }, 'unidades'],
+      [{ ...ENTRADA, codigo: 'recusa-lista', agrupamento: 'Torre' }, 'agrupamento'],
+    ];
+    for (const [corpo, campo] of casos) {
+      const r = await api.http().post(`${P}/condominios`).set('Cookie', m).send(corpo as object);
+      expect([r.status, r.body.code], JSON.stringify(r.body)).toEqual([400, 'DADOS_INVALIDOS']);
+      expect(r.body.details.map((d: { field: string }) => d.field), JSON.stringify(r.body)).toContain(campo);
+    }
+    expect(await api.plataforma.db.select().from(condominio).where(eq(condominio.codigo, 'recusa-lista'))).toEqual([]);
+  });
+
+  it('saúde do provisionador: master consulta (no-store), só o booleano; desligado = false; suporte 403; sem sessão 401', async () => {
+    const m = await entrarMaster('master@exemplo.test');
+    const ok = await api.http().get(`${P}/provisionador/saude`).set('Cookie', m);
+    expect([ok.status, ok.body.data]).toEqual([200, { disponivel: true }]);
+    expect(ok.headers['cache-control']).toBe('no-store');
+    prov.ligado = false;
+    try {
+      expect((await api.http().get(`${P}/provisionador/saude`).set('Cookie', m)).body.data).toEqual({ disponivel: false });
+    } finally {
+      prov.ligado = true;
+    }
+    const sup = await api.http().get(`${P}/provisionador/saude`).set('Cookie', await entrarMaster('suporte@exemplo.test'));
+    expect([sup.status, sup.body.code]).toEqual([403, 'SEM_PERMISSAO']);
+    expect((await api.http().get(`${P}/provisionador/saude`)).status).toBe(401);
+  });
+
   it('módulos: PATCH grava, normaliza a ordem e registra antes/depois na mesma transação; 400, 404', async () => {
     const m = await entrarMaster('master@exemplo.test');
     const [c] = await api.plataforma.db.select().from(condominio).where(eq(condominio.codigo, 'vila-sul'));
@@ -309,11 +368,14 @@ describe('condomínios', () => {
 
 describe('provisionador', () => {
   it('desligado ou fora do ar: 503; configuração validada', async () => {
-    const fake = { configurado: () => false, provisionar: vi.fn() };
+    const fake = { configurado: () => false, disponivel: vi.fn(async () => true), provisionar: vi.fn() };
     const svc = new CondominiosMasterService(api.plataforma.db, fake);
     const m = { sessaoId: 'x', expiraEm: new Date(), ip: null, usuario: { id: 'x', nome: 'x', email: 'x@x.x', papel: 'master' as const, deveTrocarSenha: false } };
     await expect(svc.criar(m, { ...ENTRADA, plano: 'padrao', estrutura: { ...ENTRADA.estrutura, agrupamento: 'Bloco' } } as never)).rejects.toMatchObject({ status: 503 });
     expect(fake.provisionar).not.toHaveBeenCalled();
+    // Desligado (sem URL/token): a saúde nem consulta o serviço.
+    expect(await svc.provisionadorDisponivel()).toEqual({ disponivel: false });
+    expect(fake.disponivel).not.toHaveBeenCalled();
 
     expect(provisionadorDoAmbiente({}).configurado()).toBe(false);
     expect(() => provisionadorDoAmbiente({ PROVISIONADOR_URL: 'http://provisionador:3200' })).toThrow(/juntas/);

@@ -8,14 +8,14 @@ import { AuthModule } from '../auth/auth.module';
 import { AuthMasterService } from './auth-master.service';
 import { CondominiosMasterService } from './condominios-master.service';
 import { LimiteMasterService } from './limite-master.service';
-import { AuthMasterController, CondominiosMasterController } from './master.controller';
+import { AuthMasterController, CondominiosMasterController, ProvisionadorMasterController } from './master.controller';
 import { PlataformaGuard } from './plataforma.guard';
 import { PROVISIONADOR, provisionadorDoAmbiente } from './provisionador';
 import { SessaoMasterService } from './sessao-master.service';
 
 @Module({
   imports: [AuthModule],
-  controllers: [AuthMasterController, CondominiosMasterController],
+  controllers: [AuthMasterController, CondominiosMasterController, ProvisionadorMasterController],
   providers: [
     AuthMasterService, SessaoMasterService, LimiteMasterService, CondominiosMasterService,
     { provide: PROVISIONADOR, useFactory: () => provisionadorDoAmbiente(process.env) },

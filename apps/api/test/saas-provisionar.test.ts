@@ -146,6 +146,28 @@ describe('entrada', () => {
     expect(() => lerEntrada('{nao json')).toThrow(/JSON/);
   });
 
+  it('lista explícita: alternativa à estrutura (exatamente uma), agrupamento próprio, normalizada e ordenada; CLI lê igual', () => {
+    const { estrutura: _e, ...base } = ENTRADA;
+    const lista = { ...base, agrupamento: 'Bloco', unidades: [{ bloco: 'b', numero: '1201' }, { bloco: ' A ', numero: '32' }, { bloco: 'A', numero: '03' }] };
+    const e = validarEntrada(lista);
+    expect(e.agrupamento).toBe('Bloco');
+    expect(e.unidades).toEqual([{ bloco: 'A', numero: '03' }, { bloco: 'A', numero: '32' }, { bloco: 'B', numero: '1201' }]);
+    expect(lerEntrada(JSON.stringify(lista))).toEqual(e);
+    // A grade vira a mesma forma (unidades resolvidas), com o agrupamento dela.
+    const g = validarEntrada(ENTRADA);
+    expect([g.agrupamento, g.unidades.length]).toEqual(['Torre', UNIDADES]);
+    expect(validarEntrada({ ...ENTRADA, agrupamento: 'Torre' }).unidades).toEqual(g.unidades);
+    const erro = (x: unknown) => { try { validarEntrada(x); return ''; } catch (err) { expect(err).toBeInstanceOf(ErroProvisionamento); return (err as Error).message; } };
+    expect(erro({ ...lista, estrutura: ENTRADA.estrutura })).toMatch(/exatamente um/);
+    expect(erro(base)).toMatch(/exatamente um/);
+    expect(erro({ ...lista, agrupamento: undefined })).toMatch(/agrupamento: obrigatório/);
+    expect(erro({ ...ENTRADA, agrupamento: 'Bloco' })).toMatch(/agrupamento: diferente/);
+    expect(erro({ ...lista, unidades: [{ bloco: 'A', numero: '03' }, { bloco: 'a', numero: '03' }] })).toMatch(/unidades\.1: unidade repetida: A-03/);
+    expect(erro({ ...lista, unidades: [{ bloco: 'A', numero: '3' }] })).toMatch(/unidades\.0\.numero/);
+    expect(erro({ ...lista, unidades: [{ bloco: 'A-1', numero: '03' }] })).toMatch(/unidades\.0\.bloco/);
+    expect(erro({ ...lista, unidades: [{ bloco: 'A', numero: '03', andar: 0 }] })).toMatch(/unidades\.0/);
+  });
+
   it('argumentos e ambiente: role e banco de cada URL conferidos; mensagem sem valor', () => {
     expect(lerArgs([])).toEqual({ arquivo: null, opcoes: {} });
     expect(lerArgs(['--entrada', 'x.json', '--nova-senha-sindico'])).toEqual({ arquivo: 'x.json', opcoes: { novaSenhaSindico: true } });
@@ -308,6 +330,23 @@ describe('retomada depois de falha no meio', () => {
     await expect(comoPlataforma(() => provisionar(p, validarEntrada(E3), { novaSenhaSindico: true }))).rejects.toThrow(/já entrou/);
     // Em condomínio provisionando a opção não vale (lá a retomada já regenera).
     await expect(comoPlataforma(() => provisionar(p, validarEntrada({ ...E3, codigo: 'quatro', nome: 'Quatro' }), { novaSenhaSindico: true }))).rejects.toThrow(/só vale para condomínio já ativo/);
+  });
+
+  it('retomada com lista explícita: mesma lista (em outra ordem) conclui; lista diferente é recusada sem mexer', async () => {
+    const { estrutura: _e, ...base } = ENTRADA;
+    const L = { ...base, codigo: 'lista-sul', nome: 'Lista Sul', agrupamento: 'Bloco', sindico: { nome: 'Síndico Lista', login: 'sindico.lista' },
+      unidades: [{ bloco: 'A', numero: '101' }, { bloco: 'A', numero: '102' }, { bloco: 'B', numero: '01' }] };
+    cluster.falharConexoes = 1;
+    const p = portas();
+    await expect(comoPlataforma(() => provisionar(p, validarEntrada(L)))).rejects.toThrow(/falha simulada/);
+    expect((await statusDe('lista-sul'))?.status).toBe('provisionando');
+    await expect(comoPlataforma(() => provisionar(p, validarEntrada({ ...L, unidades: [...L.unidades, { bloco: 'C', numero: '01' }] }))))
+      .rejects.toThrow(/outra estrutura de unidades \(faltam C-01; sobram nenhuma\)/);
+    const r = await comoPlataforma(() => provisionar(p, validarEntrada({ ...L, unidades: [...L.unidades].reverse() })));
+    expect([r.situacao, r.unidades]).toEqual(['retomado', 3]);
+    const db = cluster.clientes.get(r.banco)!;
+    const aud = (await db.query<{ depois: { blocos: string[]; unidades: number } }>("select depois from audit_log where acao = 'condominio.provisionar'")).rows;
+    expect(aud.map((a) => a.depois)).toMatchObject([{ blocos: ['A', 'B'], unidades: 3 }]);
   });
 
   it('banco que já existe com outro dono: recusa sem tocar nele', async () => {

@@ -858,6 +858,25 @@ imagem anterior não lê `configuracao` nem as colunas novas. Para tirar o login
    `ESTRUTURA_PADRAO` (número = andar × 10 + final; `ausentes` "01" vale para todos os blocos, "A-01" só para um).
    `areasComuns` é opcional (padrão: a lista do piloto). Exceções da grade entram depois pelo CRUD ou pela planilha.
 
+   **Alternativa à grade: lista explícita** (desde 2026-10-23; é o que a tela do Master manda). No lugar de
+   `estrutura`, `agrupamento` no nível de cima e `unidades` com cada `{ bloco, numero }`; serve para condomínio que
+   não segue andar × 10 + final (cobertura, casas, numeração de 3 ou 4 dígitos):
+
+   ```json
+   { "codigo": "<slug>", "nome": "<nome exibido>", "cidade": "<cidade>", "uf": "SP",
+     "agrupamento": "Bloco",
+     "unidades": [ { "bloco": "A", "numero": "101" }, { "bloco": "A", "numero": "102" }, { "bloco": "B", "numero": "03" } ],
+     "sindico": { "nome": "<nome do síndico>", "login": "<login>" } }
+   ```
+
+   Regras (validadas antes de tocar em qualquer banco; erro de formato = 400 na API, recusa na CLI): **exatamente um**
+   de `estrutura` ou `unidades`; `agrupamento` obrigatório com `unidades` (com `estrutura`, opcional e igual ao de
+   dentro); `bloco` com 1 a 3 letras ou dígitos (vira maiúsculo) e `numero` canônico, só dígitos, 2 no mínimo e sem
+   zero à esquerda além da dezena (`03`, `32`, `101`; `3` e `003` são recusados), os mesmos CHECKs `unidade_bloco_ck`
+   e `unidade_numero_ck` do banco; sem repetidas; de 1 a 5000 unidades (`LIMITE_UNIDADES` do domain). A retomada
+   (seção 16.3) compara o CONJUNTO de unidades, então a mesma lista em outra ordem retoma, e uma lista diferente é
+   recusada sem mexer em nada. `plano` é opcional nos dois formatos (padrão `padrao`).
+
 2. Rodar (backup antes, como em toda escrita):
 
    ```bash
@@ -1052,8 +1071,28 @@ valendo nos dois casos); trocar por `~*` na próxima mexida no nginx.
 
 1. Backup (`sudo systemctl start tcc-portaria-backup.service`) e ligar o provisionador:
    `docker compose --profile provisionar up -d provisionador`.
-2. No app da plataforma: Licenças → Novo condomínio → preencher (os campos do JSON da seção 16.2) → Criar. A senha
-   temporária do síndico aparece **uma vez** ("Já copiei, fechar"); entregar por canal fora do sistema.
+2. No app da plataforma: Licenças → Novo condomínio. É um assistente em 4 passos (Voltar mantém o que foi
+   preenchido):
+   1. **Condomínio**: nome; o código é sugerido a partir do nome (editável; é o que a portaria digita no login e não
+      muda depois); cidade e UF. O plano não aparece: vai `padrao`.
+   2. **Unidades**: Bloco ou Torre; a lista colada (uma por linha: `A-101`, `A 101`, `Bloco A 101`, `Torre 2 - 34`,
+      `A;101`) **ou** uma planilha CSV/XLSX (uma coluna `A-101` ou duas, bloco e número; cabeçalho opcional). A prévia
+      agrupa por bloco e aponta linhas inválidas e repetidas, com o motivo e a opção de remover. O parser é o
+      `lerListaUnidades` do domain, e a API valida de novo (formato da seção 16.2). Áreas comuns como etiquetas.
+   3. **Síndico**: nome; login sugerido (`maria.souza`), editável.
+   4. **Revisar e criar**: resumo, confirmação explícita ("não pode ser desfeita") e o botão Criar, que só habilita
+      se `GET /api/v1/plataforma/provisionador/saude` responder `{ "disponivel": true }` (a API consulta o
+      `GET /saude` do serviço, com o mesmo token e timeout de 3 s; só quem tem `condominio.criar`). Desligado: aviso
+      com o comando do passo 1 e "Verificar de novo".
+
+   A senha temporária do síndico aparece **uma vez**, com um "Copiar tudo" que monta o texto para o síndico (código,
+   login, senha e `https://tccgestaoacesso.vercel.app/login`); entregar por canal fora do sistema. Ao fechar, a lista
+   volta com o condomínio novo destacado.
+
+   **Ordem de deploy desta versão (assistente, 2026-10-23):** API **antes** do front (a tela nova chama
+   `GET /plataforma/provisionador/saude` e manda `unidades`; a API antiga responde 404 e 400). A imagem do serviço
+   provisionador é a mesma da API: um container `provisionador` antigo ainda de pé responde 404 no `/saude`, e a tela
+   mostra "desligado" até ele ser recriado (`docker compose --profile provisionar up -d provisionador`). Sem migração.
 3. Desligar: `docker compose stop provisionador` (o CREATEDB e a senha do `app_migrator` só ficam num processo vivo
    enquanto há onboarding a fazer).
 

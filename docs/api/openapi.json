@@ -50,6 +50,9 @@
       "name": "pessoas"
     },
     {
+      "name": "provisionadormaster"
+    },
+    {
       "name": "relatorios"
     },
     {
@@ -5560,7 +5563,16 @@
                     "minLength": 1,
                     "maxLength": 40
                   },
+                  "agrupamento": {
+                    "description": "Obrigatório com `unidades`; com `estrutura`, opcional e igual a `estrutura.agrupamento`.",
+                    "type": "string",
+                    "enum": [
+                      "Bloco",
+                      "Torre"
+                    ]
+                  },
                   "estrutura": {
+                    "description": "Grade (número = andar × 10 + final). Exatamente um de `estrutura` ou `unidades`.",
                     "type": "object",
                     "properties": {
                       "agrupamento": {
@@ -5615,6 +5627,30 @@
                     ],
                     "additionalProperties": false
                   },
+                  "unidades": {
+                    "description": "Lista explícita, sem repetidas (bloco maiúsculo; número canônico: \"03\", \"32\", \"101\"). Exatamente um de `estrutura` ou `unidades`.",
+                    "minItems": 1,
+                    "maxItems": 5000,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "bloco": {
+                          "type": "string",
+                          "pattern": "^[A-Z0-9]{1,3}$"
+                        },
+                        "numero": {
+                          "type": "string",
+                          "pattern": "^(0[1-9]|[1-9][0-9]{1,3})$"
+                        }
+                      },
+                      "required": [
+                        "bloco",
+                        "numero"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
                   "areasComuns": {
                     "maxItems": 50,
                     "type": "array",
@@ -5649,7 +5685,6 @@
                   "nome",
                   "cidade",
                   "uf",
-                  "estrutura",
                   "sindico"
                 ],
                 "additionalProperties": false
@@ -5751,6 +5786,55 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Sucesso: envelope `{data}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Erro400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Erro401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Erro403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Erro404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Erro409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Erro422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Erro429"
+          }
+        }
+      }
+    },
+    "/plataforma/provisionador/saude": {
+      "get": {
+        "tags": [
+          "provisionadormaster"
+        ],
+        "operationId": "provisionadormaster_saude",
+        "summary": "GET /plataforma/provisionador/saude",
+        "description": "Plataforma (Master). Permissão: `condominio.criar`",
+        "x-permissao": "condominio.criar",
+        "security": [
+          {
+            "sessaoPlataforma": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Sucesso: envelope `{data}`.",

@@ -74,6 +74,21 @@ export class AuthMasterController {
   }
 }
 
+@Controller('plataforma/provisionador')
+export class ProvisionadorMasterController {
+  constructor(@Inject(CondominiosMasterService) private readonly condominios: CondominiosMasterService) {}
+
+  /**
+   * O serviço provisionador está de pé? Só para quem pode criar condomínio (mesma permissão de POST /condominios).
+   * Responde `{ disponivel }` e nada mais: nem URL, nem token, nem o motivo da falha. Consulta com timeout curto.
+   */
+  @Get('saude')
+  @PlataformaAcao('condominio.criar')
+  saude() {
+    return this.condominios.provisionadorDisponivel(); // no-store: global (plataforma.ts)
+  }
+}
+
 @Controller('plataforma/condominios')
 export class CondominiosMasterController {
   constructor(@Inject(CondominiosMasterService) private readonly condominios: CondominiosMasterService) {}

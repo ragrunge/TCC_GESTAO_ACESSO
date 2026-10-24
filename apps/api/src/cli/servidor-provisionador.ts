@@ -7,8 +7,10 @@
 //   - roda num container próprio, SÓ na rede interna do compose (sem porta publicada), e só quando ligado à mão
 //     (perfil `provisionar`): desligado, a tela responde 503 e nada no cluster aceita CREATE DATABASE vindo da API;
 //   - aceita UMA operação, `POST /provisionar` com a entrada da CLI e o id do Master que pediu, autenticada por token
-//     compartilhado (`PROVISIONADOR_TOKEN`, comparado em tempo constante). Sem "nova senha do síndico", sem exclusão;
-//   - atende um pedido por vez (409 se ocupado), com corpo de até 64 KiB;
+//     compartilhado (`PROVISIONADOR_TOKEN`, comparado em tempo constante). Sem "nova senha do síndico", sem exclusão.
+//     Além dela, só `GET /saude` (mesmo token; 200 sem corpo útil), para a tela saber se vale a pena preencher;
+//   - atende um provisionamento por vez (409 se ocupado), com corpo de até 512 KiB (a lista explícita de unidades
+//     chega a LIMITE_UNIDADES = 5000 itens, uns 160 KiB);
 //   - nunca loga corpo nem resposta (a resposta leva a senha temporária do síndico, uma vez, para a API devolver ao Master).
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -18,7 +20,7 @@ import { ErroChave } from '../saas/chave-mestra';
 import { ErroProvisionamento, type ResultadoProvisionamento, provisionar, validarEntrada } from '../saas/provisionar';
 import { abrirPortas, lerAmbiente } from './provisionar-condominio';
 
-export const LIMITE_CORPO = 64 * 1024;
+export const LIMITE_CORPO = 512 * 1024;
 export const PORTA_PADRAO = 3200;
 
 const Pedido = z.strictObject({ entrada: z.unknown(), masterUsuarioId: z.uuid() });
@@ -56,8 +58,11 @@ export function criarServidor(d: DepsServidor): Server {
   let ocupado = false;
   return createServer((req, res) => {
     void (async () => {
-      if (req.method !== 'POST' || req.url !== '/provisionar') return responder(res, 404, { erro: 'rota inexistente' });
+      const saude = req.method === 'GET' && req.url === '/saude';
+      if (!saude && (req.method !== 'POST' || req.url !== '/provisionar')) return responder(res, 404, { erro: 'rota inexistente' });
       if (!autorizado(req.headers.authorization, d.token)) return responder(res, 401, { erro: 'não autorizado' });
+      // Responde mesmo durante um provisionamento: "ocupado" não é "desligado" (o envio é que recebe 409).
+      if (saude) return responder(res, 200, { ok: true });
       const texto = await lerCorpo(req);
       if (texto === null) return responder(res, 413, { erro: 'corpo grande demais' });
       let pedido: z.infer<typeof Pedido>;

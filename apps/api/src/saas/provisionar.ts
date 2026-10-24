@@ -10,7 +10,8 @@
 //      para app_migrator e app_rw: os mesmos GRANTs do piloto (db/bootstrap/00_roles.sh). Banco que já existe com
 //      outro dono: recusa (não é nosso).
 //   3. migrações do condomínio (app_migrator), as mesmas pastas do laço `migrar-bancos.mjs`.
-//   4. dados (app_rw, uma transação): `configuracao` (agrupamento), unidades geradas da estrutura, ponto de acesso,
+//   4. dados (app_rw, uma transação): `configuracao` (agrupamento), as unidades (da grade `estrutura` ou da lista
+//      explícita `unidades`), ponto de acesso,
 //      áreas comuns e o primeiro síndico com senha temporária (troca obrigatória no primeiro login, validade de 72 h),
 //      com audit_log de ator nulo e nome NOME_PROVISIONAMENTO. Na retomada, a senha do síndico é REGERADA (a anterior
 //      nunca foi entregue: a senha só sai depois do passo 6).
@@ -24,11 +25,12 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { CODIGO_CONDOMINIO, UFS } from '@portaria/domain/condominio';
+import { CODIGO_CONDOMINIO, LOGIN_SINDICO, UFS } from '@portaria/domain/condominio';
 import { MODULOS_PADRAO } from '@portaria/domain/modulos';
 import { SENHA_TEMPORARIA_VALIDADE_MS } from '@portaria/domain/rules';
 import {
-  AGRUPAMENTOS, AREAS_COMUNS_INICIAIS, type ConfigEstrutura, codigoUnidade, gerarUnidades, PORTARIA_SOCIAL,
+  type Agrupamento, AGRUPAMENTOS, AREAS_COMUNS_INICIAIS, codigoUnidade, compararUnidades, type EstruturaUnidade, FORMATO_BLOCO,
+  FORMATO_NUMERO, gerarUnidades, LIMITE_UNIDADES, PORTARIA_SOCIAL,
 } from '@portaria/domain/units';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { colunasGestao } from '../auth/auth.service';
@@ -48,28 +50,67 @@ export class ErroProvisionamento extends Error {}
 
 // ----- Entrada ------------------------------------------------------------------------------------------------------
 
+const EnumAgrupamento = z.enum(AGRUPAMENTOS as unknown as ['Bloco', 'Torre']);
+
+/** Grade declarativa (número = andar × 10 + final), como o ESTRUTURA_PADRAO do domain. */
 const Estrutura = z.strictObject({
-  agrupamento: z.enum(AGRUPAMENTOS as unknown as ['Bloco', 'Torre']),
+  agrupamento: EnumAgrupamento,
   blocos: z.array(z.string()).min(1).max(60),
   andares: z.array(z.number().int()).min(1).max(10),
   finais: z.array(z.number().int()).min(1).max(9),
   ausentes: z.array(z.string()).max(500).default([]),
 });
 
-/** Formato do arquivo JSON da CLI (exemplo em docs/deploy.md, seção 16). Só dado do condomínio e do síndico. */
+/**
+ * Lista explícita (lista colada ou planilha na tela do Master; `lerListaUnidades` do domain). Mesmas regras dos CHECKs
+ * `unidade_bloco_ck` e `unidade_numero_ck` (FORMATO_BLOCO e FORMATO_NUMERO): o bloco vira maiúsculo; o número tem de vir
+ * canônico ("03", "32", "101"), para "3" e "03" nunca virarem duas linhas iguais por engano.
+ */
+const UnidadeLista = z.strictObject({
+  bloco: z.string().trim().toUpperCase().regex(FORMATO_BLOCO, 'bloco: 1 a 3 letras ou dígitos'),
+  numero: z.string().trim().regex(FORMATO_NUMERO, 'número: só dígitos (até 4), maior que zero, com 2 dígitos no mínimo (ex.: 03, 32, 101)'),
+});
+
+/**
+ * Formato do arquivo JSON da CLI e do corpo de POST /plataforma/condominios (exemplos em docs/deploy.md, seção 16.2).
+ * Só dado do condomínio e do síndico. As unidades vêm por UM de dois caminhos: `estrutura` (grade) ou `unidades` (lista
+ * explícita, com o `agrupamento` neste nível).
+ */
 export const EntradaJson = z.strictObject({
   codigo: z.string().trim().toLowerCase().regex(CODIGO_CONDOMINIO, 'código: 3 a 31 caracteres, a-z, 0-9 e hífen, começando por letra'),
   nome: z.string().trim().min(1).max(200),
   cidade: z.string().trim().min(1).max(100),
   uf: z.string().trim().toUpperCase().refine((u) => (UFS as readonly string[]).includes(u), 'UF inválida'),
   plano: z.string().trim().min(1).max(40).default('padrao'),
-  estrutura: Estrutura,
+  /** Bloco ou Torre: obrigatório com `unidades`; com `estrutura`, opcional e igual ao `estrutura.agrupamento`. */
+  agrupamento: EnumAgrupamento.optional().describe('Obrigatório com `unidades`; com `estrutura`, opcional e igual a `estrutura.agrupamento`.'),
+  estrutura: Estrutura.optional().describe('Grade (número = andar × 10 + final). Exatamente um de `estrutura` ou `unidades`.'),
+  unidades: z.array(UnidadeLista).min(1).max(LIMITE_UNIDADES).optional()
+    .describe('Lista explícita, sem repetidas (bloco maiúsculo; número canônico: "03", "32", "101"). Exatamente um de `estrutura` ou `unidades`.'),
   areasComuns: z.array(z.string().trim().min(1).max(80)).max(50).optional(),
   // Mesmas regras do cadastro de usuário da API (usuarios.controller.ts).
   sindico: z.strictObject({
     nome: z.string().trim().min(3).max(120),
-    login: z.string().trim().toLowerCase().regex(/^[a-z][a-z0-9._-]{2,39}$/, 'login do síndico: 3 a 40 caracteres, começando por letra (a-z, 0-9, ".", "-", "_")'),
+    login: z.string().trim().toLowerCase().regex(LOGIN_SINDICO, 'login do síndico: 3 a 40 caracteres, começando por letra (a-z, 0-9, ".", "-", "_")'),
   }),
+}).superRefine((e, ctx) => {
+  if (!e.estrutura === !e.unidades) {
+    ctx.addIssue({ code: 'custom', path: ['unidades'], message: 'informe exatamente um: `estrutura` (grade) ou `unidades` (lista)' });
+  }
+  if (e.unidades && !e.agrupamento) ctx.addIssue({ code: 'custom', path: ['agrupamento'], message: 'obrigatório com `unidades` (Bloco ou Torre)' });
+  if (e.estrutura && e.agrupamento && e.agrupamento !== e.estrutura.agrupamento) {
+    ctx.addIssue({ code: 'custom', path: ['agrupamento'], message: 'diferente de `estrutura.agrupamento`' });
+  }
+  if (e.unidades) {
+    const vistas = new Set<string>();
+    let repetidas = 0;
+    e.unidades.forEach((u, i) => {
+      const c = codigoUnidade(u);
+      if (!vistas.has(c)) { vistas.add(c); return; }
+      // Até 5 apontadas: a lista pode ter milhares, e a resposta de erro não precisa repetir todas.
+      if (++repetidas <= 5) ctx.addIssue({ code: 'custom', path: ['unidades', i], message: `unidade repetida: ${c}` });
+    });
+  }
 });
 
 export interface EntradaProvisionamento {
@@ -78,28 +119,45 @@ export interface EntradaProvisionamento {
   cidade: string;
   uf: string;
   plano: string;
-  estrutura: ConfigEstrutura;
+  agrupamento: Agrupamento;
+  /** Unidades a criar, normalizadas, únicas e ordenadas: geradas da grade `estrutura` ou a lista `unidades`. */
+  unidades: EstruturaUnidade[];
   areasComuns: string[];
   sindico: { nome: string; login: string };
 }
 
-/** JSON lido -> entrada validada (inclusive a estrutura, gerada aqui para recusar antes de tocar em qualquer banco). */
+/**
+ * JSON lido -> entrada validada, com as unidades JÁ resolvidas (a grade é gerada aqui): tudo é recusado antes de tocar
+ * em qualquer banco.
+ */
 export function validarEntrada(bruto: unknown): EntradaProvisionamento {
   const r = EntradaJson.safeParse(bruto);
   if (!r.success) {
     const problemas = r.error.issues.map((i) => `${i.path.join('.') || '(raiz)'}: ${i.message}`);
     throw new ErroProvisionamento(`entrada inválida: ${problemas.join('; ')}`);
   }
-  const e = r.data;
-  try {
-    gerarUnidades(e.estrutura);
-  } catch (erro) {
-    throw new ErroProvisionamento(`entrada inválida: ${erro instanceof Error ? erro.message : String(erro)}`);
+  const { estrutura, unidades: lista, agrupamento: informado, areasComuns, ...resto } = r.data;
+  let unidades: EstruturaUnidade[];
+  let agrupamento: Agrupamento;
+  if (estrutura) {
+    try {
+      unidades = gerarUnidades(estrutura);
+    } catch (erro) {
+      throw new ErroProvisionamento(`entrada inválida: ${erro instanceof Error ? erro.message : String(erro)}`);
+    }
+    agrupamento = estrutura.agrupamento;
+  } else {
+    // O schema já garantiu: lista presente, formato dos CHECKs, sem repetidas, até LIMITE_UNIDADES, agrupamento informado.
+    unidades = lista!.map((u) => ({ bloco: u.bloco, numero: u.numero })).sort(compararUnidades);
+    agrupamento = informado!;
   }
-  const areas = e.areasComuns ?? [...AREAS_COMUNS_INICIAIS];
+  const areas = areasComuns ?? [...AREAS_COMUNS_INICIAIS];
   if (new Set(areas.map((a) => a.toLowerCase())).size !== areas.length) throw new ErroProvisionamento('entrada inválida: área comum repetida');
-  return { ...e, areasComuns: areas };
+  return { ...resto, agrupamento, unidades, areasComuns: areas };
 }
+
+/** Blocos distintos das unidades, na ordem delas (trilha do provisionamento). */
+const blocosDe = (us: readonly EstruturaUnidade[]) => [...new Set(us.map((u) => u.bloco))];
 
 // ----- Portas (o que muda entre produção, Postgres real e PGlite) ----------------------------------------------------
 
@@ -275,25 +333,29 @@ async function gravarSindico(tx: Tx, e: EntradaProvisionamento, banco: string, g
 
 /** Configuração, unidades, ponto de acesso, áreas comuns e síndico, numa transação (app_rw). Devolve a senha gerada. */
 async function gravarDados(p: Portas, banco: string, e: EntradaProvisionamento): Promise<SenhaGerada> {
-  const esperadas = gerarUnidades(e.estrutura);
+  const esperadas = e.unidades;
   const g = await novaSenha(p);
   await p.dados(banco).transaction(async (tx) => {
     const [conf] = await tx.select().from(s.configuracao);
     if (!conf) {
-      await tx.insert(s.configuracao).values({ agrupamento: e.estrutura.agrupamento });
-    } else if (conf.agrupamento !== e.estrutura.agrupamento) {
-      throw new ErroProvisionamento(`o banco ${banco} já tem agrupamento ${conf.agrupamento}, a entrada diz ${e.estrutura.agrupamento}`);
+      await tx.insert(s.configuracao).values({ agrupamento: e.agrupamento });
+    } else if (conf.agrupamento !== e.agrupamento) {
+      throw new ErroProvisionamento(`o banco ${banco} já tem agrupamento ${conf.agrupamento}, a entrada diz ${e.agrupamento}`);
     }
 
-    // Banco vazio recebe a estrutura; banco com unidades (retomada) precisa ter exatamente a mesma.
+    // Banco vazio recebe as unidades; banco com unidades (retomada) precisa ter exatamente o mesmo conjunto, venha ele da
+    // grade ou da lista (a comparação é por código "A-101", então a mesma lista em outra ordem também retoma).
     const existentes = await tx.select({ bloco: s.unidade.bloco, numero: s.unidade.numero }).from(s.unidade);
     const noBanco = new Set(existentes.map(codigoUnidade));
     const alvo = new Set(esperadas.map(codigoUnidade));
     if (!existentes.length) {
-      await tx.insert(s.unidade).values(esperadas.map((u) => ({ bloco: u.bloco, numero: u.numero })));
+      // Em lotes: milhares de linhas num INSERT só passariam do limite de parâmetros do protocolo (65535).
+      for (let i = 0; i < esperadas.length; i += 1000) {
+        await tx.insert(s.unidade).values(esperadas.slice(i, i + 1000).map((u) => ({ bloco: u.bloco, numero: u.numero })));
+      }
       await new AuditoriaService().registrar(tx, {
         ...ATOR_PROVISIONAMENTO, acao: 'condominio.provisionar', entidade: 'configuracao', registroId: null,
-        depois: { agrupamento: e.estrutura.agrupamento, unidades: esperadas.length, blocos: e.estrutura.blocos, areas_comuns: e.areasComuns, ponto_acesso: PORTARIA_SOCIAL },
+        depois: { agrupamento: e.agrupamento, unidades: esperadas.length, blocos: blocosDe(esperadas), areas_comuns: e.areasComuns, ponto_acesso: PORTARIA_SOCIAL },
       });
     } else if (noBanco.size !== alvo.size || [...alvo].some((x) => !noBanco.has(x))) {
       throw new ErroProvisionamento(`o banco ${banco} já tem outra estrutura de unidades (${diferencaUnidades(noBanco, alvo)}): nada foi alterado`);
@@ -312,10 +374,10 @@ async function verificar(p: Portas, banco: string, e: EntradaProvisionamento, mi
   if (migracoes.aplicadas !== migracoes.esperadas) problemas.push(`migrações: ${migracoes.aplicadas} aplicadas de ${migracoes.esperadas}`);
   const db = p.dados(banco);
   const [conf] = await db.select().from(s.configuracao);
-  if (conf?.agrupamento !== e.estrutura.agrupamento) problemas.push('configuracao ausente ou diferente');
+  if (conf?.agrupamento !== e.agrupamento) problemas.push('configuracao ausente ou diferente');
   const [{ n }] = await db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(s.unidade);
-  const esperadas = gerarUnidades(e.estrutura).length;
-  if (n !== esperadas) problemas.push(`unidades: ${n} no banco, ${esperadas} na estrutura`);
+  const esperadas = e.unidades.length;
+  if (n !== esperadas) problemas.push(`unidades: ${n} no banco, ${esperadas} na entrada`);
   const [sind] = await db.select({ papel: s.usuarioSistema.papel, ativo: s.usuarioSistema.ativo })
     .from(s.usuarioSistema).where(sql`lower(${s.usuarioSistema.login}) = ${e.sindico.login}`);
   if (sind?.papel !== 'sindico' || !sind.ativo) problemas.push('síndico ausente ou inativo');

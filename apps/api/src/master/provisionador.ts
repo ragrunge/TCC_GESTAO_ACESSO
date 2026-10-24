@@ -19,6 +19,11 @@ export class ProvisionadorIndisponivel extends Error {}
 export interface Provisionador {
   /** Há para onde mandar (configurado). Não garante que o serviço esteja de pé. */
   configurado(): boolean;
+  /**
+   * O serviço está de pé e aceita o token (GET /saude, timeout curto). Nunca lança: qualquer falha é `false`. Serve à
+   * tela do Master para não deixar preencher tudo e só descobrir no envio que o provisionador está desligado.
+   */
+  disponivel(): Promise<boolean>;
   /** `entrada` = o JSON da CLI (validado de novo do outro lado). Lança ErroProvisionamento (recusa) ou ProvisionadorIndisponivel. */
   provisionar(entrada: unknown, masterUsuarioId: string): Promise<ResultadoProvisionamento>;
 }
@@ -26,11 +31,26 @@ export interface Provisionador {
 /** Tempo máximo de um provisionamento (CREATE DATABASE + migrações + argon2): folgado, mas não infinito. */
 export const TEMPO_MAXIMO_MS = 120_000;
 export const TOKEN_MINIMO = 32;
+/** Tempo máximo da consulta de saúde: a tela espera por ela. */
+export const TEMPO_SAUDE_MS = 3_000;
 
 export class ProvisionadorHttp implements Provisionador {
   constructor(private readonly url: string | null, private readonly token: string | null, private readonly buscar: typeof fetch = fetch) {}
 
   configurado() { return !!this.url && !!this.token; }
+
+  async disponivel(): Promise<boolean> {
+    if (!this.url || !this.token) return false;
+    try {
+      const r = await this.buscar(`${this.url}/saude`, {
+        method: 'GET', headers: { authorization: `Bearer ${this.token}` }, signal: AbortSignal.timeout(TEMPO_SAUDE_MS),
+      });
+      await r.body?.cancel().catch(() => undefined);
+      return r.status === 200;
+    } catch {
+      return false;
+    }
+  }
 
   async provisionar(entrada: unknown, masterUsuarioId: string): Promise<ResultadoProvisionamento> {
     if (!this.url || !this.token) throw new ProvisionadorIndisponivel('provisionador não configurado');
