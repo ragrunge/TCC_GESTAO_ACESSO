@@ -110,7 +110,7 @@ export function PessoaCombobox({ rotulo = 'Pessoa', valor, onChange, onCadastrar
                 onValueChange={(v) => { setQ(v); setAberto(true); }}
                 onFocus={() => { if (q.trim()) setAberto(true); }}
                 aria-describedby={dicaId} aria-invalid={erro ? true : undefined}
-                placeholder="Nome, CPF ou unidade (ex.: D-32)"
+                placeholder="Nome, início do CPF ou unidade (ex.: D-32)"
                 className={cn('input', erro ? 'border-perigo' : null)} />
             </div>
           </PopoverAnchor>

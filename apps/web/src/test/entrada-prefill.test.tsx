@@ -33,7 +33,7 @@ vi.mock('../app/catalogo', () => {
 });
 
 const pessoa = (categoria: PessoaBusca['categoria'], extra: Partial<PessoaBusca> = {}) => ({
-  id: PID, nome: 'Larissa Gomes', categoria, documentoTipo: 'cpf', documentoMascarado: '***.456.789-**',
+  id: PID, nome: 'Larissa Gomes', categoria, documentoTipo: 'cpf', documentoMascarado: '123.45*.***-**',
   ultimoAcesso: 'Sem acessos', unidadesVinculadas: [], unidadesVinculadasCodigos: [], ...extra,
 }) as PessoaBusca;
 

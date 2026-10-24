@@ -18,7 +18,7 @@ beforeAll(() => {
 afterEach(() => cleanup());
 
 const pessoa = (id: string, nome: string, extra: Partial<PessoaBusca> = {}): PessoaBusca => ({
-  id, nome, categoria: 'visitante', documentoTipo: 'cpf', documentoMascarado: '***.456.789-**',
+  id, nome, categoria: 'visitante', documentoTipo: 'cpf', documentoMascarado: '123.45*.***-**',
   ultimoAcesso: 'Sem acessos', unidadesVinculadas: [], unidadesVinculadasCodigos: [], criadoEm: 0, ...extra,
 });
 const LARISSA = pessoa('p1', 'Larissa Gomes', { unidadesVinculadas: ['u-d32'], unidadesVinculadasCodigos: ['D-32'], categoria: 'morador' });
@@ -58,7 +58,7 @@ describe('PessoaCombobox', () => {
     expect(buscar).toHaveBeenCalledWith('Lari');
     soltar([LARISSA, LUCAS]);
     const op = await screen.findByRole('option', { name: /Larissa Gomes/ });
-    expect(op.textContent).toContain('***.456.789-**');
+    expect(op.textContent).toContain('123.45*.***-**');
     expect(op.textContent).toContain('Morador');
     expect(op.textContent).toContain('D-32');
     expect(screen.getByRole('option', { name: /Lucas Ferraz/ }).textContent).toContain('Sem vínculo válido');

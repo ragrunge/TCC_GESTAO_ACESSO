@@ -74,7 +74,7 @@ export function csvExemplo(): string {
     `C;24;Heloísa Barcellos Dias;${cpf('623456780')};(11) 98877-1006;Proprietário`,
     `C;04;Ícaro Valadares Prado;;(11) 98877-1007;Proprietário`,
     `D;11;Júlia Albuquerque Neri;123.456.789-00;(11) 98877-1008;Inquilino`,
-    `D;32;Ana Ribeiro;***.456.789-**;(11) 98877-1009;Proprietário`,
+    `D;32;Ana Ribeiro;123.45*.***-**;(11) 98877-1009;Proprietário`,
     `D;44;Kaique Sampaio Brito;${cpf('723456780')};98877;Proprietário`,
     `E;13;Larissa Cordeiro Maia;${cpf('823456780')};(11) 98877-1010;Proprietário`,
     `E;04;Murilo Espíndola Rocha;${cpf('923456780')};(11) 98877-1011;Proprietário`,

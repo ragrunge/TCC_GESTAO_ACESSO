@@ -60,6 +60,18 @@ test.describe('15. Saída pelo porteiro (/saida)', () => {
     await expect(page.getByText(`Vinculado à entrada ${codigoEntrada}`)).toBeVisible();
   });
 
+  test('busca pelo começo do CPF (formato novo da máscara) acha quem está dentro; o meio do CPF não', async ({ page }) => {
+    await page.goto('/saida');
+    const busca = page.getByRole('combobox', { name: 'Buscar quem está dentro' });
+    await busca.fill('901.23'); // Márcia Pereira: CPF 901.234.561-xx, máscara 901.23*.***-**
+    const opcao = page.getByRole('option', { name: /Márcia Pereira/ });
+    await expect(opcao).toHaveCount(1);
+    await expect(opcao).toContainText('901.23*.***-**');
+    await busca.fill('23456'); // dígitos 3 a 7: não estão no banco (só os 5 primeiros ficam visíveis)
+    await expect(page.getByText('Ninguém dentro com “23456”.')).toBeVisible();
+    await expect(page.getByRole('option', { name: /Márcia Pereira/ })).toHaveCount(0);
+  });
+
   test('pela gaveta da entrada: abre a saída já escolhida; Esc volta sem registrar', async ({ page }) => {
     await filtrarHistoricoPorPessoa(page, 'Márcia Pereira');
     const entrada = linhaEvento(page, 'Márcia Pereira', 'D-32');

@@ -58,7 +58,7 @@ test.describe('3. Cadastro de nova pessoa na entrada', () => {
 
     await expect(toast(page, /Carlos Teste Valido cadastrado\(a\) como visitante/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Trocar', exact: true })).toBeVisible();
-    await expect(page.getByText('***.901.238-**')).toBeVisible(); // CPF só aparece mascarado
+    await expect(page.getByText('908.90*.***-**')).toBeVisible(); // CPF só aparece mascarado (formato novo: 5 primeiros)
     await expect(page.getByText(CPF_VALIDO)).toHaveCount(0);
 
     // Com CPF, todos os meios ficam disponíveis (aqui: escolhe a unidade e confere os rótulos)

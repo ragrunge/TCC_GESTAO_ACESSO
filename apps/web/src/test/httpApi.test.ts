@@ -279,7 +279,7 @@ describe('adaptador HTTP: catálogo, unidades, busca e contagem', () => {
   });
 
   it('pessoas: desativar (motivo no corpo), reativar, e "mostrar desativados" na busca e na lista', async () => {
-    const p = { id: 'p1', nome: 'Bruno', documentoTipo: 'cpf', documentoMascarado: '***.148.503-**', categoria: 'visitante', desativadaEm: 1, criadoEm: 0 };
+    const p = { id: 'p1', nome: 'Bruno', documentoTipo: 'cpf', documentoMascarado: '697.14*.***-**', categoria: 'visitante', desativadaEm: 1, criadoEm: 0 };
     const { api, adapter } = montar((c) => {
       if (c.url === '/pessoas/busca') return { status: 200, data: { data: { pessoas: [], temMais: false } } };
       if (c.url === '/pessoas') return { status: 200, data: { data: [], pagination: { cursor: null, hasNextPage: false } } };

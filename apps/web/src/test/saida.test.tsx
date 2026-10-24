@@ -62,7 +62,7 @@ function montar(url = '/saida', presentes: EventoView[] = [MARCIA, PEDRO, CARLOS
       }),
     },
     pessoas: {
-      buscar: vi.fn(async (): Promise<PessoaBusca[]> => [{ id: `p-${ID_CARLOS}`, nome: 'Carlos Souza', documentoMascarado: '***.456.789-**' } as PessoaBusca]),
+      buscar: vi.fn(async (): Promise<PessoaBusca[]> => [{ id: `p-${ID_CARLOS}`, nome: 'Carlos Souza', documentoMascarado: '123.45*.***-**' } as PessoaBusca]),
     },
   } as unknown as Api;
   let loc = '';
@@ -90,7 +90,9 @@ describe('filtro da saída', () => {
   });
   it('CPF só com 3+ dígitos e sem letras', () => {
     expect(digitosCpf('456')).toBe('456');
-    expect(digitosCpf('***.456.789-**')).toBe('456789');
+    expect(digitosCpf('123.45')).toBe('12345');
+    expect(digitosCpf('123.45*.***-**')).toBe('12345'); // máscara nova colada
+    expect(digitosCpf('***.456.789-**')).toBe('456789'); // máscara antiga colada
     expect(digitosCpf('45')).toBeNull();
     expect(digitosCpf('A-101')).toBeNull();
   });
@@ -131,11 +133,11 @@ describe('SaidaPage', () => {
   it('CPF parcial: consulta a busca de pessoas (corpo) e cruza pelo id, mostrando o mascarado', async () => {
     const { api } = montar();
     await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(3));
-    digitar('456');
-    await waitFor(() => expect(api.pessoas.buscar).toHaveBeenCalledWith('456', { limite: 50 }));
+    digitar('123.4'); // começo do CPF (a API casa pelo começo no formato novo)
+    await waitFor(() => expect(api.pessoas.buscar).toHaveBeenCalledWith('1234', { limite: 50 }));
     await waitFor(() => expect(nomes()).toHaveLength(1));
     expect(nomes()[0]).toMatch(/Carlos Souza/);
-    expect(screen.getByText('***.456.789-**')).toBeTruthy();
+    expect(screen.getByText('123.45*.***-**')).toBeTruthy();
   });
 
   it('teclado: seta + Enter abre a confirmação com o resumo; Esc volta sem registrar e o foco volta à busca', async () => {

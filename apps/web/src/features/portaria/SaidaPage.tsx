@@ -4,7 +4,8 @@
 //
 // Filtro local por nome, categoria, tipo de visita, empresa/serviço e destino ("D-32", "d32", área comum). CPF: a
 // lista de presentes não traz documento (minimização), então um termo só de dígitos (3+) também consulta a busca de
-// pessoas que já existe (POST /pessoas/busca, termo no corpo) e cruza pelo id da pessoa.
+// pessoas que já existe (POST /pessoas/busca, termo no corpo) e cruza pelo id da pessoa. A API casa pelo COMEÇO do CPF
+// (máscara nova, 5 primeiros dígitos) e pelo meio só nos cadastros antigos ("***.456.789-**"); 11 dígitos, pelo HMAC.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -29,7 +30,7 @@ const MIN_DIGITOS_CPF = 3;
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const compacto = (s: string) => norm(s).replace(/[^a-z0-9]/g, '');
 
-/** Termo só de dígitos e separadores de CPF ("123", "123.456", "***.456.789-**"). */
+/** Termo só de dígitos e separadores de CPF ("123", "123.45", "123.45*.***-**", o antigo "***.456.789-**"). */
 export function digitosCpf(q: string): string | null {
   if (!/^[\d.\-*\s]+$/.test(q.trim())) return null;
   const d = q.replace(/\D/g, '');
@@ -130,7 +131,7 @@ export function SaidaPage() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[#56616B]" strokeWidth={2} aria-hidden />
             <CommandPrimitive.Input ref={buscaRef} value={q} onValueChange={setQ} autoComplete="off"
               aria-describedby="busca-saida-status"
-              placeholder="Nome, CPF, unidade (ex.: D-32) ou tipo de visita"
+              placeholder="Nome, início do CPF, unidade (ex.: D-32) ou tipo de visita"
               onKeyDown={(e) => { if (e.key === 'Escape' && q) { e.preventDefault(); setQ(''); } }}
               className="input h-[52px] pl-10 text-[16px]" />
           </div>

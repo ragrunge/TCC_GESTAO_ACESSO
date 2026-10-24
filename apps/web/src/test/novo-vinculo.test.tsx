@@ -43,11 +43,11 @@ beforeAll(() => {
 beforeEach(() => { permissoes.clear(); ['vinculo.criar', 'pessoa.editar'].forEach((a) => permissoes.add(a)); });
 afterEach(() => cleanup());
 
-const PESSOA: Pessoa = { id: 'p1', nome: 'Larissa Gomes', categoria: 'visitante', documentoTipo: 'cpf', documentoMascarado: '***.456.789-**', criadoEm: 0 };
+const PESSOA: Pessoa = { id: 'p1', nome: 'Larissa Gomes', categoria: 'visitante', documentoTipo: 'cpf', documentoMascarado: '123.45*.***-**', criadoEm: 0 };
 const vinculo = (extra: Partial<VinculoView>): VinculoView => ({
   id: 'v1', pessoaId: 'p1', unidadeId: 'u-b201', tipo: 'proprietario', status: 'pendente', vigenciaInicio: null, vigenciaFim: null,
   prazoRegularizacao: null, conferencia: null, solicitadoPor: '', solicitadoEm: 0, registradoPorId: 'u1',
-  pessoaNome: 'Larissa Gomes', pessoaDocumento: '***.456.789-**', pessoaCadastroCompleto: true, unidadeCodigo: 'B-201',
+  pessoaNome: 'Larissa Gomes', pessoaDocumento: '123.45*.***-**', pessoaCadastroCompleto: true, unidadeCodigo: 'B-201',
   decididoPorNome: null, registradoPorNome: null, conferidoPorNome: null, legadoVencido: false, encerradoEm: null, ...extra,
 });
 

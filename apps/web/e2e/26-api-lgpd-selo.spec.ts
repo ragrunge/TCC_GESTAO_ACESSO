@@ -54,7 +54,7 @@ test.describe.serial('API real: LGPD e selo da cadeia', () => {
     const json = JSON.parse(texto);
     expect(json.tipo).toBe('portaria-parque/lgpd-exportacao');
     expect(json.titular.nome).toBe(NOME);
-    expect(json.titular.cpf).toMatch(/^\*\*\*\.\d{3}\.\d{3}-\*\*$/);
+    expect(json.titular.cpf).toMatch(/^\d{3}\.\d{2}\*\.\*\*\*-\*\*$/); // cadastro novo: máscara com os 5 primeiros
     expect(texto).not.toContain(CPF);
     expect(texto).not.toContain(TELEFONE);
     expect(texto).not.toMatch(/documentoBusca|documento_busca/);

@@ -466,7 +466,7 @@ export function EntradaPage() {
                   <input id="busca-pessoa" ref={buscaRef} autoComplete="off" role="combobox" aria-expanded={sugestoes.length > 0}
                     aria-controls="lista-sugestoes" aria-activedescendant={sugestoes[idx] ? `sug-${sugestoes[idx].id}` : undefined}
                     className="h-12 w-full rounded-lg border border-[#9AA7B0] bg-white pl-11 pr-[14px] text-[16px] text-ink placeholder:text-[#56616B]/70"
-                    value={query} onChange={(e) => { enterPendente.current = false; setQuery(e.target.value); }} placeholder="Nome, CPF ou placa da pessoa"
+                    value={query} onChange={(e) => { enterPendente.current = false; setQuery(e.target.value); }} placeholder="Nome, início do CPF ou placa da pessoa"
                     onKeyDown={(e) => {
                       if (e.key === 'ArrowDown') { e.preventDefault(); setIdx((i) => Math.min(i + 1, sugestoes.length - 1)); }
                       else if (e.key === 'ArrowUp') { e.preventDefault(); setIdx((i) => Math.max(i - 1, 0)); }
