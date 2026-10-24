@@ -95,6 +95,8 @@ export function EntradaPage() {
   const pickerRef = useRef<TowerUnitPickerHandle>(null);
   const grupoMeioRef = useRef<HTMLFieldSetElement>(null);
   const focarMeio = useRef(false);
+  /** Onde estava o foco quando a consulta da unidade começou: se o operador já foi para outro campo, não roubamos o foco. */
+  const focoAntesDaConsulta = useRef<Element | null>(null);
   const enterPendente = useRef(false);
 
   useEffect(() => { buscaRef.current?.focus(); }, []);
@@ -184,6 +186,7 @@ export function EntradaPage() {
     if (!pessoa || !areaAtual) return;
     let vivo = true;
     setCarregandoUnidade(true); setMeio(null); setResidenteId(null); setErro('');
+    focoAntesDaConsulta.current = document.activeElement;
     (async () => {
       try {
         const rest = await api.restricoes.verificar(pessoa.id, null);
@@ -214,6 +217,7 @@ export function EntradaPage() {
     }
     let vivo = true;
     setCarregandoUnidade(true); setMeio(null); setResidenteId(null); setErro('');
+    focoAntesDaConsulta.current = document.activeElement;
     (async () => {
       try {
         const rest = await api.restricoes.verificar(pessoa.id, unidadeAtual);
@@ -236,6 +240,11 @@ export function EntradaPage() {
   useEffect(() => {
     if (!carregandoUnidade && focarMeio.current && (unidadeAtual || areaAtual)) {
       focarMeio.current = false;
+      const atual = document.activeElement;
+      const antes = focoAntesDaConsulta.current;
+      focoAntesDaConsulta.current = null;
+      // O operador mexeu em outro campo enquanto a unidade carregava (ex.: tipo de visita): não roubar o foco.
+      if (antes && atual && atual !== antes && atual !== document.body) return;
       const alvo = grupoMeioRef.current?.querySelector<HTMLInputElement>('input[type=radio]:checked:not(:disabled)')
         ?? grupoMeioRef.current?.querySelector<HTMLInputElement>('input[type=radio]:not(:disabled)');
       alvo?.focus();
