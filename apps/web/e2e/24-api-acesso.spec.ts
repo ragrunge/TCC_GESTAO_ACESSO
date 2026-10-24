@@ -164,6 +164,9 @@ test.describe.serial('API real: registro de acesso na portaria', () => {
     // A saída comum do visitante do interfone, pela mesma tela
     const outro = page.getByRole('table', { name: 'Pessoas atualmente no condomínio' }).getByRole('row').filter({ hasText: V.interfone });
     await outro.getByRole('button', { name: 'Registrar saída' }).click();
+    // A saída comum pede confirmação (um clique errado só se desfaz com evento de correção)
+    const confirmar = page.getByRole('dialog', { name: `Registrar saída · ${V.interfone}` });
+    await confirmar.getByRole('button', { name: 'Confirmar saída' }).click();
     await expect(toast(page, new RegExp(`Saída de ${V.interfone} registrada`))).toBeVisible();
     await expect(outro).toHaveCount(0);
   });
