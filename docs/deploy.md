@@ -1069,8 +1069,9 @@ valendo nos dois casos); trocar por `~*` na próxima mexida no nginx.
 
 ### 18.5 Criar condomínio pela tela
 
-1. Backup (`sudo systemctl start tcc-portaria-backup.service`) e ligar o provisionador:
-   `docker compose --profile provisionar up -d provisionador`.
+1. Backup (`sudo systemctl start tcc-portaria-backup.service`). O provisionador fica **sempre ligado** desde
+   2026-10-24 (sem perfil no `docker-compose.prod.yml`, `restart: unless-stopped`; sobe com o `up -d` do deploy).
+   Se alguém o parou: `docker compose up -d provisionador`.
 2. No app da plataforma: Licenças → Novo condomínio. É um assistente em 4 passos (Voltar mantém o que foi
    preenchido):
    1. **Condomínio**: nome; o código é sugerido a partir do nome (editável; é o que a portaria digita no login e não
@@ -1093,8 +1094,10 @@ valendo nos dois casos); trocar por `~*` na próxima mexida no nginx.
    `GET /plataforma/provisionador/saude` e manda `unidades`; a API antiga responde 404 e 400). A imagem do serviço
    provisionador é a mesma da API: um container `provisionador` antigo ainda de pé responde 404 no `/saude`, e a tela
    mostra "desligado" até ele ser recriado (`docker compose --profile provisionar up -d provisionador`). Sem migração.
-3. Desligar: `docker compose stop provisionador` (o CREATEDB e a senha do `app_migrator` só ficam num processo vivo
-   enquanto há onboarding a fazer).
+3. Sempre ligado por decisão do usuário (2026-10-24), trocando a defesa extra por comodidade. Risco aceito: quem
+   invadir a API pode pedir condomínios novos enquanto ele está de pé (não lê dado, não apaga, não toca trilha; o
+   CREATEDB e a senha do `app_migrator` ficam só neste container, não na API). Para voltar ao modo "ligar só para
+   criar": `docker compose stop provisionador` e recolocar `profiles: [provisionar]` no compose de produção.
 
 Falhou no meio (rede, timeout, provisionador derrubado): o condomínio fica `provisionando`, como na CLI; reenviar o
 MESMO formulário retoma. Se a resposta se perdeu depois da ativação (a senha não chegou à tela), reenviar responde

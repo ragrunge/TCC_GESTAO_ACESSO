@@ -167,13 +167,12 @@ services:
 
   # App do Master, F5 entrega 1 (docs/deploy.md, seção 18). Serviço provisionador: o MESMO provisionar() da CLI acima,
   # atrás de um HTTP mínimo, chamado pela API em POST /plataforma/condominios. A API não tem as senhas de
-  # app_provisionador e app_migrator: só este container, que fica DESLIGADO (perfil) e só na rede interna `banco`, sem
-  # porta publicada. Ligar para criar condomínios pela tela e desligar depois:
-  #   docker compose --profile provisionar up -d provisionador   ...   docker compose stop provisionador
+  # app_provisionador e app_migrator: só este container, só na rede interna `banco`, sem porta publicada. SEMPRE LIGADO
+  # desde 2026-10-24 (decisão do usuário: criar condomínio pela tela sem ssh). Risco aceito: quem invadir a API pode
+  # pedir condomínios novos (não lê, não apaga, não toca trilha). Para desligar: docker compose stop provisionador.
   # Token compartilhado com a API (PROVISIONADOR_TOKEN). Sem log em disco: a resposta leva a senha do síndico (o
   # serviço nunca a loga; o `logging: none` é a segunda rede).
   provisionador:
-    profiles: [provisionar]
     image: tcc-portaria-api:${API_TAG:-atual}
     pull_policy: never
     command: ["node", "dist/cli/servidor-provisionador.js"]
@@ -196,7 +195,9 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: 256m
-    restart: "no"
+    cpus: 0.5
+    pids_limit: 100
+    restart: unless-stopped
     logging:
       driver: none
 
