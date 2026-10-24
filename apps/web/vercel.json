@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd ../.. && npm ci --include-workspace-root --workspaces --no-audit --no-fund",
   "git": {
     "deploymentEnabled": {
       "main": true,
