@@ -6,6 +6,7 @@ import type { CategoriaPessoa, Pessoa } from '@portaria/domain/types';
 import { useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
 import { InputMascara } from '../../components/InputMascara';
+import { SeletorCor } from '../../components/SeletorCor';
 import { Badge, SeloVinculo } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
@@ -438,7 +439,10 @@ function VeiculoModal({ unidade, atual, onClose, onFeito }: { unidade: string; a
       <form id="f-vei" onSubmit={salvar} className="flex flex-col gap-[14px]">
         <Field label="Placa"><InputMascara tipo="placa" data-autofocus className="input font-mono uppercase" value={f.placa} onChange={(placa) => setF({ ...f, placa })} /></Field>
         <Field label="Modelo"><input className="input" value={f.modelo} onChange={(e) => setF({ ...f, modelo: e.target.value })} /></Field>
-        <Field label="Cor"><input className="input" value={f.cor} onChange={(e) => setF({ ...f, cor: e.target.value })} /></Field>
+        <div className="flex flex-col gap-2">
+          <span id="rotulo-cor-veiculo" className="text-[14px] font-medium">Cor</span>
+          <SeletorCor rotuloId="rotulo-cor-veiculo" valor={f.cor} onChange={(cor) => setF({ ...f, cor })} />
+        </div>
         {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
       </form>
     </Modal>
