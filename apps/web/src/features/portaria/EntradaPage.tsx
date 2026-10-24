@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Clock, History, Plus, Search } from 'lucide-react
 import { useApi, ehApiError, type Autorizador, type AutorizacaoView, type NovaPessoaInput, type PessoaBusca, type RestricaoView } from '../../api';
 import { useAuth } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
+import { InputMascara } from '../../components/InputMascara';
 import { SeloVinculo } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { CartaoPasso } from '../../components/Card';
@@ -502,8 +503,8 @@ export function EntradaPage() {
             {novoModo && !pessoa && (
               <form onSubmit={cadastrarNova} className="grid grid-cols-1 gap-[14px] sm:grid-cols-2">
                 <Field label="Nome completo" className="sm:col-span-2"><input className="input" autoFocus required value={np.nome} onChange={(e) => setNp({ ...np, nome: e.target.value })} /></Field>
-                <Field label="CPF" dica="Só CPF. Guardado mascarado, com hash para busca."><input className="input font-mono" inputMode="numeric" placeholder="000.000.000-00" disabled={np.semCpf} required={!np.semCpf} value={np.documento} onChange={(e) => setNp({ ...np, documento: e.target.value })} /></Field>
-                <Field label="Telefone (obrigatório)"><input className="input" inputMode="tel" required placeholder="(11) 9____-____" value={np.telefone} onChange={(e) => setNp({ ...np, telefone: e.target.value })} /></Field>
+                <Field label="CPF" dica="Só CPF. Guardado mascarado, com hash para busca."><InputMascara tipo="cpf" className="input font-mono" disabled={np.semCpf} required={!np.semCpf} value={np.documento} onChange={(documento) => setNp({ ...np, documento })} /></Field>
+                <Field label="Telefone (obrigatório)"><InputMascara tipo="telefone" required value={np.telefone} onChange={(telefone) => setNp({ ...np, telefone })} /></Field>
                 <label className="sm:col-span-2 flex cursor-pointer items-start gap-3 rounded-lg border border-[#B9C3CA] p-3">
                   <input type="checkbox" className="mt-1" checked={np.semCpf} onChange={(e) => setNp({ ...np, semCpf: e.target.checked, documento: '' })} />
                   <span><span className="font-medium">Pessoa sem CPF</span><span className="block text-[13px] text-[#56616B]">Exceção: nome e telefone continuam obrigatórios e a pessoa só entra por exceção do porteiro, com justificativa.</span></span>

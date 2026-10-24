@@ -5,6 +5,7 @@ import { useApi, type AutorizacaoView, type PessoaBusca, type RestricaoView, typ
 import type { CategoriaPessoa, Pessoa } from '@portaria/domain/types';
 import { useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
+import { InputMascara } from '../../components/InputMascara';
 import { Badge, SeloVinculo } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
@@ -473,7 +474,7 @@ function VeiculoModal({ unidade, atual, onClose, onFeito }: { unidade: string; a
     </>}>
       <UnidadeTitulo unidade={unidade} />
       <form id="f-vei" onSubmit={salvar} className="flex flex-col gap-[14px]">
-        <Field label="Placa"><input data-autofocus className="input font-mono uppercase" value={f.placa} onChange={(e) => setF({ ...f, placa: e.target.value })} placeholder="ABC-1D23" /></Field>
+        <Field label="Placa"><InputMascara tipo="placa" data-autofocus className="input font-mono uppercase" value={f.placa} onChange={(placa) => setF({ ...f, placa })} /></Field>
         <Field label="Modelo"><input className="input" value={f.modelo} onChange={(e) => setF({ ...f, modelo: e.target.value })} /></Field>
         <Field label="Cor"><input className="input" value={f.cor} onChange={(e) => setF({ ...f, cor: e.target.value })} /></Field>
         {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}

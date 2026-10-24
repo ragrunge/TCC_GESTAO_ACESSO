@@ -4,6 +4,7 @@ import { ApiError, useApi, type NovaPessoaInput } from '../../api';
 import { useCan } from '../../auth/AuthContext';
 import { type Pessoa } from '@portaria/domain/types';
 import { Alert } from '../../components/Alert';
+import { InputMascara } from '../../components/InputMascara';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { Modal } from '../../components/Modal';
@@ -56,9 +57,9 @@ export function NovaPessoaForm({ onFeito, nomeInicial, aviso = AVISO_PADRAO, cat
     <form id={ID_FORM_PESSOA} onSubmit={salvar} className="grid grid-cols-1 gap-[14px] sm:grid-cols-2">
         <Field label="Nome completo" className="sm:col-span-2"><input data-autofocus className="input" value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} /></Field>
         <Field label={f.menorIdade ? 'CPF (opcional para menor)' : 'CPF'} dica="Só o CPF é aceito. Fica guardado mascarado, com um hash para busca.">
-          <input className="input font-mono" inputMode="numeric" placeholder="000.000.000-00" disabled={f.semCpf} required={!f.semCpf && !f.menorIdade} value={f.documento ?? ''} onChange={(e) => setF({ ...f, documento: e.target.value })} />
+          <InputMascara tipo="cpf" className="input font-mono" disabled={f.semCpf} required={!f.semCpf && !f.menorIdade} value={f.documento ?? ''} onChange={(documento) => setF({ ...f, documento })} />
         </Field>
-        <Field label={f.menorIdade ? 'Telefone (opcional para menor)' : 'Telefone (obrigatório)'}><input className="input" inputMode="tel" required={!f.menorIdade} placeholder="(11) 9____-____" value={f.telefone} onChange={(e) => setF({ ...f, telefone: e.target.value })} /></Field>
+        <Field label={f.menorIdade ? 'Telefone (opcional para menor)' : 'Telefone (obrigatório)'}><InputMascara tipo="telefone" required={!f.menorIdade} value={f.telefone} onChange={(telefone) => setF({ ...f, telefone })} /></Field>
         <Field label="Tipo"><select className="input" value={f.categoria} onChange={(e) => setF({ ...f, categoria: e.target.value as CategoriaPessoa, semCpf: e.target.value === 'morador' ? false : f.semCpf, menorIdade: e.target.value === 'morador' ? f.menorIdade : false })}><option value="morador">Morador</option><option value="visitante">Visitante</option><option value="prestador">Prestador</option></select></Field>
         {f.categoria === 'prestador' && <><Field label="Empresa"><input className="input" value={f.empresa ?? ''} onChange={(e) => setF({ ...f, empresa: e.target.value })} /></Field><Field label="Serviço"><input className="input" value={f.servico ?? ''} onChange={(e) => setF({ ...f, servico: e.target.value })} /></Field></>}
         {f.categoria === 'morador' && (

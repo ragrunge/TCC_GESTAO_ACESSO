@@ -55,3 +55,38 @@ export function formatarTelefone(t: string | null | undefined): string {
   if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return d || '—';
 }
+
+// ---- Máscaras de entrada (digitação progressiva). Puras e idempotentes: mascaraX(mascaraX(s)) === mascaraX(s).
+// Aceitam texto colado com ou sem pontuação, descartam o que não cabe e limitam o tamanho. Só apresentação:
+// a API normaliza (só dígitos / sem hífen) e continua aceitando os dois formatos.
+
+/** CPF progressivo: "123" -> "123", "1234" -> "123.4", 11 dígitos -> "123.456.789-09". */
+export function mascaraCpf(texto: string | null | undefined): string {
+  const d = soDigitos(texto ?? '').slice(0, 11);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
+  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+}
+
+/**
+ * Telefone progressivo: fixo "(11) 3456-7890" (10 dígitos), celular "(11) 98765-4321" (11). Celular = 9 logo após o DDD.
+ * Descarta o "55" de quem cola "+55 11 ..." (só quando passaria de 11 dígitos).
+ */
+export function mascaraTelefone(texto: string | null | undefined): string {
+  let d = soDigitos(texto ?? '');
+  if (d.length > 11 && d.startsWith('55')) d = d.slice(2);
+  d = d.slice(0, 11);
+  if (d.length === 0) return '';
+  if (d.length <= 2) return `(${d}`;
+  const celular = d[2] === '9';
+  const corte = celular ? 7 : 6; // dígitos antes do hífen, contando o DDD
+  if (d.length <= corte) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, corte)}-${d.slice(corte)}`;
+}
+
+/** Placa: maiúsculas, 7 caracteres. Antiga com hífen ("ABC-1234", 5º caractere dígito); Mercosul sem ("ABC1D23"). */
+export function mascaraPlaca(texto: string | null | undefined): string {
+  const p = (texto ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7);
+  return /^[A-Z]{3}\d/.test(p) ? `${p.slice(0, 3)}-${p.slice(3)}` : p; // ABC-1234 e ABC-1D23, como o formatarPlaca da exibição
+}

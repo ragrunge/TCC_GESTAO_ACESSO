@@ -13,6 +13,15 @@ test.describe('3. Cadastro de nova pessoa na entrada', () => {
     await expect(page.getByLabel('Nome completo')).toBeVisible();
   });
 
+  test('CPF e telefone são mascarados enquanto se digita', async ({ page }) => {
+    const cpf = page.getByRole('textbox', { name: 'CPF', exact: true });
+    await cpf.pressSequentially('90890123896');
+    await expect(cpf).toHaveValue('908.901.238-96');
+    const tel = page.getByLabel('Telefone (obrigatório)');
+    await tel.pressSequentially('11912345678');
+    await expect(tel).toHaveValue('(11) 91234-5678');
+  });
+
   test('CPF inválido mostra erro e não cadastra', async ({ page }) => {
     await page.getByLabel('Nome completo').fill('Carlos Teste Cpf');
     await page.getByRole('textbox', { name: 'CPF', exact: true }).fill(CPF_INVALIDO);

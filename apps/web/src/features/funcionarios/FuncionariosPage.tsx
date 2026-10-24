@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useApi, type FuncionarioView } from '../../api';
 import { useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
+import { InputMascara } from '../../components/InputMascara';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
@@ -84,8 +85,8 @@ function FuncionarioModal({ atual, onClose, onFeito }: { atual?: FuncionarioView
         {!atual && (
           <>
             <Field label="Nome completo" className="sm:col-span-2"><input data-autofocus className="input" value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
-            <Field label="CPF" dica="Obrigatório; guardado mascarado."><input className="input font-mono" inputMode="numeric" placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(e.target.value)} /></Field>
-            <Field label="Telefone"><input className="input" inputMode="tel" placeholder="(11) 9____-____" value={telefone} onChange={(e) => setTelefone(e.target.value)} /></Field>
+            <Field label="CPF" dica="Obrigatório; guardado mascarado."><InputMascara tipo="cpf" className="input font-mono" value={cpf} onChange={setCpf} /></Field>
+            <Field label="Telefone"><InputMascara tipo="telefone" value={telefone} onChange={setTelefone} /></Field>
           </>
         )}
         <Field label="Função" className="sm:col-span-2"><input {...(atual ? { 'data-autofocus': true } : {})} className="input" value={funcao} onChange={(e) => setFuncao(e.target.value)} placeholder="Zelador, vigia, jardineiro…" /></Field>

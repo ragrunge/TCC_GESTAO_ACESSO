@@ -366,3 +366,46 @@ describe('desativação do cadastro (RF-02)', () => {
     expect(pessoaDesativada({ desativadaEm: 1 })).toBe(true);
   });
 });
+
+import { mascaraCpf, mascaraPlaca, mascaraTelefone } from './cpf';
+
+describe('máscaras de entrada', () => {
+  it('CPF: progressivo, com ou sem pontuação, limitado a 11 dígitos', () => {
+    expect(['', '1', '123', '1234', '123456', '1234567', '123456789', '1234567890', '12345678909'].map(mascaraCpf))
+      .toEqual(['', '1', '123', '123.4', '123.456', '123.456.7', '123.456.789', '123.456.789-0', '123.456.789-09']);
+    expect(mascaraCpf('123.456.789-09')).toBe('123.456.789-09');
+    expect(mascaraCpf(' 123 456 789 09 99')).toBe('123.456.789-09');
+    expect(mascaraCpf('abc12x')).toBe('12');
+    expect(mascaraCpf(null)).toBe('');
+    expect(mascaraCpf(mascaraCpf('12345678909'))).toBe('123.456.789-09');
+  });
+  it('telefone: fixo (10) e celular (11), progressivo', () => {
+    expect(mascaraTelefone('1')).toBe('(1');
+    expect(mascaraTelefone('11')).toBe('(11');
+    expect(mascaraTelefone('113')).toBe('(11) 3');
+    expect(mascaraTelefone('1134567')).toBe('(11) 3456-7');
+    expect(mascaraTelefone('1134567890')).toBe('(11) 3456-7890');
+    expect(mascaraTelefone('119')).toBe('(11) 9');
+    expect(mascaraTelefone('119876')).toBe('(11) 9876');
+    expect(mascaraTelefone('1198765')).toBe('(11) 98765');
+    expect(mascaraTelefone('11987654')).toBe('(11) 98765-4');
+    expect(mascaraTelefone('11987654321')).toBe('(11) 98765-4321');
+    expect(mascaraTelefone('119876543219999')).toBe('(11) 98765-4321');
+    expect(mascaraTelefone('(11) 98765-4321')).toBe('(11) 98765-4321');
+    expect(mascaraTelefone('+55 11 98765-4321')).toBe('(11) 98765-4321');
+    expect(mascaraTelefone('')).toBe('');
+    expect(mascaraTelefone(mascaraTelefone('1134567890'))).toBe('(11) 3456-7890');
+  });
+  it('placa: hífen depois das 3 letras (antiga e Mercosul, como na exibição), maiúsculas, 7 caracteres', () => {
+    expect(mascaraPlaca('abc')).toBe('ABC');
+    expect(mascaraPlaca('abc1')).toBe('ABC-1');
+    expect(mascaraPlaca('abc12')).toBe('ABC-12');
+    expect(mascaraPlaca('abc1234')).toBe('ABC-1234');
+    expect(mascaraPlaca('ABC-1234')).toBe('ABC-1234');
+    expect(mascaraPlaca('abc1d23')).toBe('ABC-1D23');
+    expect(mascaraPlaca('ABC-1D23')).toBe('ABC-1D23');
+    expect(mascaraPlaca('abc1234999')).toBe('ABC-1234');
+    expect(mascaraPlaca('  ab-c 1.2')).toBe('ABC-12');
+    expect(mascaraPlaca(mascaraPlaca('abc1234'))).toBe('ABC-1234');
+  });
+});

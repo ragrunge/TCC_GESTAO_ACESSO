@@ -4,6 +4,7 @@ import { Info } from 'lucide-react';
 import { useApi, type ResultadoAnonimizacao } from '../../api';
 import { useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
+import { InputMascara } from '../../components/InputMascara';
 import { Badge, SeloVinculo } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { ConfirmarModal } from '../../components/ConfirmarModal';
@@ -203,9 +204,9 @@ function EditarCadastro({ pessoa, onCancelar, onSalvo }: { pessoa: Pessoa; onCan
     <form onSubmit={salvar} aria-label="Editar cadastro" className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 rounded-[10px] border border-[#DCE1E5] p-4">
       <Field label="Nome completo" className="sm:col-span-2"><input className="input" autoFocus value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
       <Field label={pessoa.semCpf ? 'CPF (informar tira a pessoa de “sem CPF”)' : 'Novo CPF (só para corrigir)'} dica={`Atual: ${pessoa.documentoMascarado}. O número não é guardado.`}>
-        <input className="input font-mono" inputMode="numeric" placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(e.target.value)} />
+        <InputMascara tipo="cpf" className="input font-mono" value={cpf} onChange={setCpf} />
       </Field>
-      <Field label="Telefone"><input className="input" inputMode="tel" value={telefone} onChange={(e) => setTelefone(e.target.value)} /></Field>
+      <Field label="Telefone"><InputMascara tipo="telefone" value={telefone} onChange={setTelefone} /></Field>
       {pessoa.menorIdade && (
         <label className="sm:col-span-2 flex cursor-pointer items-start gap-3 rounded-lg border border-[#B9C3CA] p-3">
           <input type="checkbox" className="mt-1" checked={deixouDeSerMenor} onChange={(e) => setDeixouDeSerMenor(e.target.checked)} />
