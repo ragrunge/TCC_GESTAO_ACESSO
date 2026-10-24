@@ -14,7 +14,6 @@ import { useToast } from '../../components/Toast';
 import type { Escala } from '@portaria/domain/types';
 import { descreverJanela, hhmmAtravessaMeiaNoite, validarEscala } from './escala';
 import { DIAS_SEMANA_ABREV } from '@portaria/domain/time';
-import { formatarTelefone } from '@portaria/domain/cpf';
 import { mensagemErro } from '../../app/useAsync';
 import { APOS_FUNCIONARIO, CHAVES, useInvalidar } from '../../app/consultas';
 
@@ -40,7 +39,7 @@ export function FuncionariosPage() {
         <ListaCab rotulos={['Nome', 'Função', 'Escala', 'Situação', '']} />
         {dados.map((f) => (
           <ListaLinha key={f.pessoaId} minH={56} padY={8}>
-            <Cel className="flex flex-col"><span className="font-medium">{f.pessoa.nome}</span><span className="font-mono text-[13px] text-[#56616B]">{f.pessoa.documentoMascarado} · {f.pessoa.telefone ? formatarTelefone(f.pessoa.telefone) : f.pessoa.telefoneMascarado ?? '—'}</span></Cel>
+            <Cel className="flex flex-col"><span className="font-medium">{f.pessoa.nome}</span><span className="font-mono text-[13px] text-[#56616B]">{f.pessoa.documentoMascarado} · {f.pessoa.telefoneMascarado ?? '—'}</span></Cel>
             <Cel className="text-[14px]">{f.funcao}</Cel>
             <Cel className="text-[14px]">{descreverJanela(f.escala)}{hhmmAtravessaMeiaNoite(f.escala) ? ' (atravessa a meia-noite)' : ''}</Cel>
             <Cel className="flex flex-wrap gap-1">

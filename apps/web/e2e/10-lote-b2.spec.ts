@@ -95,10 +95,11 @@ test.describe('10. Lote B2', () => {
     await entrarComo(page, 'Administração');
     let ficha = await abrirFicha(page, 'Marcos Pereira');
     await ficha.getByRole('button', { name: 'Editar cadastro' }).click();
-    await ficha.getByRole('form', { name: 'Editar cadastro' }).getByLabel('Telefone').fill('(11) 93333-2222');
+    await ficha.getByRole('form', { name: 'Editar cadastro' }).getByLabel('Novo telefone (só para corrigir)').fill('(11) 93333-2222');
     await ficha.getByRole('button', { name: 'Salvar correção' }).click();
     await expect(toast(page, /Cadastro atualizado/)).toBeVisible();
-    await expect(ficha.getByText(/\(11\) 93333-2222/)).toBeVisible();
+    await expect(ficha.getByText(/\(\*\*\) \*\*\*\*\*-2222/).first()).toBeVisible(); // ficha mostra só mascarado (LGPD)
+    await expect(ficha.getByText(/93333-2222/)).toHaveCount(0);
     const [download] = await Promise.all([page.waitForEvent('download'), ficha.getByRole('button', { name: 'Exportar dados (LGPD)' }).click()]);
     expect(download.suggestedFilename()).toMatch(/^lgpd-.*\.json$/);
     await expect(ficha.getByRole('button', { name: 'Anonimizar…' })).toHaveCount(0); // só o síndico

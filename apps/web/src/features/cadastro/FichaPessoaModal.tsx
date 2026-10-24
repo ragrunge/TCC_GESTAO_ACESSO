@@ -13,7 +13,6 @@ import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
 import { Avatar } from '../../components/UnitTag';
 import { ROTULO_CATEGORIA, ROTULO_VINCULO, type Pessoa } from '@portaria/domain/types';
-import { formatarTelefone } from '@portaria/domain/cpf';
 import { agora, fmtData, fmtDataHora } from '@portaria/domain/time';
 import { MIN_JUSTIFICATIVA, justificativaValida } from '@portaria/domain/rules';
 import { mensagemErro } from '../../app/useAsync';
@@ -107,7 +106,7 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
             <Avatar nome={f.pessoa.nome} tamanho={44} />
             <div className="min-w-0 flex-1">
               <p className="text-[18px] font-semibold">{f.pessoa.nome}</p>
-              <p className="text-[14px] text-[#33424B]"><span className="font-mono">{f.pessoa.documentoMascarado}</span>{f.pessoa.telefone ? <> · {formatarTelefone(f.pessoa.telefone)}</> : f.pessoa.telefoneMascarado ? <> · {f.pessoa.telefoneMascarado}</> : null}{f.pessoa.empresa && <> · {f.pessoa.empresa}{f.pessoa.servico ? ` (${f.pessoa.servico})` : ''}</>}</p>
+              <p className="text-[14px] text-[#33424B]"><span className="font-mono">{f.pessoa.documentoMascarado}</span>{f.pessoa.telefoneMascarado ? <> · {f.pessoa.telefoneMascarado}</> : null}{f.pessoa.empresa && <> · {f.pessoa.empresa}{f.pessoa.servico ? ` (${f.pessoa.servico})` : ''}</>}</p>
             </div>
             {desativada && <Badge tom="ambar">Desativado</Badge>}
             <Badge tom="neutro">{ROTULO_CATEGORIA[f.pessoa.categoria]}</Badge>
@@ -181,7 +180,7 @@ export function FichaPessoaModal({ id, onClose }: { id: string; onClose: () => v
 function EditarCadastro({ pessoa, onCancelar, onSalvo }: { pessoa: Pessoa; onCancelar: () => void; onSalvo: () => void }) {
   const api = useApi();
   const [nome, setNome] = useState(pessoa.nome);
-  const [telefone, setTelefone] = useState(pessoa.telefone ? formatarTelefone(pessoa.telefone) : '');
+  const [telefone, setTelefone] = useState(''); // em branco: o número atual só aparece mascarado (LGPD)
   const [cpf, setCpf] = useState('');
   const [empresa, setEmpresa] = useState(pessoa.empresa ?? '');
   const [servico, setServico] = useState(pessoa.servico ?? '');
@@ -206,7 +205,7 @@ function EditarCadastro({ pessoa, onCancelar, onSalvo }: { pessoa: Pessoa; onCan
       <Field label={pessoa.semCpf ? 'CPF (informar tira a pessoa de “sem CPF”)' : 'Novo CPF (só para corrigir)'} dica={`Atual: ${pessoa.documentoMascarado}. O número não é guardado.`}>
         <InputMascara tipo="cpf" className="input font-mono" value={cpf} onChange={setCpf} />
       </Field>
-      <Field label="Telefone"><InputMascara tipo="telefone" value={telefone} onChange={setTelefone} /></Field>
+      <Field label="Novo telefone (só para corrigir)" dica={pessoa.telefoneMascarado ? `Atual: ${pessoa.telefoneMascarado}.` : 'Sem telefone cadastrado.'}><InputMascara tipo="telefone" value={telefone} onChange={setTelefone} /></Field>
       {pessoa.menorIdade && (
         <label className="sm:col-span-2 flex cursor-pointer items-start gap-3 rounded-lg border border-[#B9C3CA] p-3">
           <input type="checkbox" className="mt-1" checked={deixouDeSerMenor} onChange={(e) => setDeixouDeSerMenor(e.target.checked)} />
