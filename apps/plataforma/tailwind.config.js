@@ -10,6 +10,8 @@ export default {
         canvas: '#F3F5F6',
         ink: { DEFAULT: '#1A2126', suave: '#4A5861' },
         linha: '#D5DDE2',
+        /** Borda dos campos (Input, Select, Textarea, botão secundário). */
+        campo: '#B9C3CA',
         neutro: { bg: '#EEF2F4', fg: '#33424B', borda: '#D5DDE2' },
         perigo: { DEFAULT: '#B42318', bg: '#FEE4E2', borda: '#FDA29B' },
         aviso: { DEFAULT: '#93370D', bg: '#FEF0C7', borda: '#FEC84B' },
