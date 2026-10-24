@@ -14,7 +14,7 @@ type Estado =
 interface Valor {
   api: ApiPlataforma;
   estado: Estado;
-  entrar(email: string, senha: string, codigo: string): Promise<void>;
+  entrar(email: string, senha: string): Promise<void>;
   sair(): Promise<void>;
   trocarSenha(atual: string, nova: string): Promise<void>;
 }
@@ -53,8 +53,8 @@ export function SessaoProvider({ api, children }: { api: ApiPlataforma; children
   const valor = useMemo<Valor>(() => ({
     api,
     estado,
-    async entrar(email, senha, codigo) {
-      const r = await api.login(email, senha, codigo);
+    async entrar(email, senha) {
+      const r = await api.login(email, senha);
       setEstado({ fase: 'logado', usuario: r.usuario });
     },
     async sair() {

@@ -1,6 +1,6 @@
 import type { PapelPlataforma } from '@portaria/domain/rbac-plataforma';
 
-/** Visão pública do usuário da plataforma (sem hash, sem segredo TOTP). */
+/** Visão pública do usuário da plataforma (sem hash). */
 export interface UsuarioPlataforma {
   id: string;
   nome: string;

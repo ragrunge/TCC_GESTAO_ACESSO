@@ -143,9 +143,8 @@ export async function iniciarServidorE2e(o: OpcoesServidorE2e) {
     );
   };
   const http = app.getHttpAdapter().getInstance();
-  // O reset também devolve os usuários da plataforma ao estado semeado e zera o anti-replay do TOTP e os limites de login
-  // da plataforma (sem isso, dois logins do Master no mesmo intervalo de 30 s seriam recusados). Condomínios criados pelo
-  // e2e do app do Master ficam (códigos únicos por execução).
+  // O reset também devolve os usuários da plataforma ao estado semeado (senha, troca pendente) e zera os limites de login
+  // da plataforma. Condomínios criados pelo e2e do app do Master ficam (códigos únicos por execução).
   http.post('/__e2e/reset', rota(async () => { await trocarBanco(); await semearMasters(); return {}; }));
   // Adultera um evento sem recalcular o hash (o que um DBA mal-intencionado faria): a verificação da trilha deve apontar.
   // session_replication_role=replica desliga os triggers de imutabilidade só nesta transação do banco de teste.

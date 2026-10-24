@@ -398,14 +398,14 @@ jobs:
           d="$RUNNER_TEMP/master"; mkdir -p "$d"
           # 1. Bootstrap do Master como app_plataforma (GRANTs reais): cria; a 2a vez recusa (código 1) sem mudar nada.
           node dist/cli/criar-usuario-plataforma.js --email master.ci@exemplo.test --nome "Master de CI" >"$d/c1.txt" 2>&1 || { cat "$d/c1.txt"; falha "criar-usuario-plataforma falhou"; }
-          grep -q "otpauth://totp/" "$d/c1.txt" || falha "a CLI não mostrou a URI otpauth"
+          if grep -qi "otpauth\|totp" "$d/c1.txt"; then falha "a CLI ainda fala de TOTP"; fi
           grep -q "senha temporária:" "$d/c1.txt" || falha "a CLI não mostrou a senha temporária"
           if node dist/cli/criar-usuario-plataforma.js --email MASTER.ci@exemplo.test --nome "Outro" >"$d/c2.txt" 2>&1; then falha "e-mail repetido foi aceito"; fi
           grep -q "RECUSADO" "$d/c2.txt" || falha "a recusa do e-mail repetido não foi explicada"
-          node dist/cli/criar-usuario-plataforma.js --email master.ci@exemplo.test --reemitir-totp >"$d/c3.txt" 2>&1 || { cat "$d/c3.txt"; falha "reemissão do TOTP falhou"; }
+          node dist/cli/criar-usuario-plataforma.js --email master.ci@exemplo.test --nova-senha >"$d/c3.txt" 2>&1 || { cat "$d/c3.txt"; falha "reemissão da senha falhou"; }
           export PGPASSWORD="$POSTGRES_PASSWORD"
-          m="$(psql -U postgres -d plataforma -tAc "select format('%s|%s|%s', deve_trocar_senha, totp_mestra_versao, (select count(*) from plataforma_audit where acao in ('master.criar','master.reemitir_credencial'))) from master_usuario where email = 'master.ci@exemplo.test'")"
-          [ "$m" = "t|1|2" ] || falha "master_usuario/trilha fora do esperado: $m"
+          m="$(psql -U postgres -d plataforma -tAc "select format('%s|%s', deve_trocar_senha, (select count(*) from plataforma_audit where acao in ('master.criar','master.reemitir_credencial'))) from master_usuario where email = 'master.ci@exemplo.test'")"
+          [ "$m" = "t|2" ] || falha "master_usuario/trilha fora do esperado: $m"
           mid="$(psql -U postgres -d plataforma -tAc "select id from master_usuario where email = 'master.ci@exemplo.test'")"
           # 2. Serviço provisionador: sem token 401; com token cria o condomínio e devolve a senha do síndico UMA vez.
           PORT=3299 node dist/cli/servidor-provisionador.js >"$d/srv.txt" 2>&1 &

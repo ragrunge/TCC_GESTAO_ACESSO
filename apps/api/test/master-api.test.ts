@@ -1,13 +1,15 @@
-// App do Master na API (F5, entrega 1; src/master): login em um passo (senha + TOTP), sessão e cookie próprios, guarda,
+// App do Master na API (F5, entrega 1; src/master): login com e-mail e senha (sem 2º fator desde 2026-10-23, SAAS-08),
+// sessão e cookie próprios, guarda,
 // trilha da plataforma, troca de senha obrigatória, limite de tentativas, cookies cruzados com o condomínio, lista de
 // condomínios, provisionamento pela tela (provisionar() de verdade sobre PGlite) e módulos.
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as s from '../src/db/schema';
+import { SENHA_MIN_MASTER } from '@portaria/domain/rbac-plataforma';
+import { problemasDaSenha, SenhaService } from '../src/auth/senha.service';
 import { CondominiosMasterService } from '../src/master/condominios-master.service';
 import { nomeCookieMaster } from '../src/master/cookie-master';
 import { ProvisionadorHttp, provisionadorDoAmbiente } from '../src/master/provisionador';
-import { deBase32, hotp, passoDe } from '../src/master/totp';
 import { criarUsuario } from '../src/master/usuario-plataforma';
 import { masterSessao, masterUsuario, plataformaAudit, condominio } from '../src/saas/schema-plataforma';
 import { type ApiDeTeste, novaApi, novoIp, trilha } from './helpers/app';
@@ -28,27 +30,20 @@ const ENTRADA = {
 };
 
 let api: ApiDeTeste;
-const segredos = new Map<string, Buffer>();
 const logs: string[] = [];
 
 async function novoMaster(email: string, o: { papel?: 'master' | 'suporte'; trocaPendente?: boolean } = {}) {
-  const c = await criarUsuario(api.plataforma.db, MESTRA_TESTE, {
+  const c = await criarUsuario(api.plataforma.db, {
     hashSenha: (x) => hash(x, { memoryCost: 1024, timeCost: 1, parallelism: 1 }), gerarSenha: () => SENHA_M, agora: () => api.relogio.agora(),
   }, { email, nome: `Operador ${email.split('@')[0]}`, papel: o.papel ?? 'master' });
   if (!o.trocaPendente) {
     await api.plataforma.db.update(masterUsuario).set({ deveTrocarSenha: false, senhaTemporariaExpiraEm: null }).where(eq(masterUsuario.id, c.id));
   }
-  segredos.set(email, deBase32(c.totp!.segredo));
   return c.id;
 }
 
-/** Código do passo atual do relógio da API (ou deslocado). */
-const codigo = (email: string, desloc = 0) => hotp(segredos.get(email)!, passoDe(api.relogio.agora()) + desloc);
-/** Próximo passo: cada login bem-sucedido consome o passo (anti-replay). */
-const proximoPasso = () => api.relogio.avancarMin(0.5);
-
-function login(email: string, senha = SENHA_M, cod = codigo(email), ip = novoIp()) {
-  return api.http().post(`${P}/auth/login`).set('X-Forwarded-For', ip).send({ email, senha, codigo: cod });
+function login(email: string, senha = SENHA_M, ip = novoIp()) {
+  return api.http().post(`${P}/auth/login`).set('X-Forwarded-For', ip).send({ email, senha });
 }
 
 function cookieM(r: { headers: Record<string, unknown> }) {
@@ -58,7 +53,6 @@ function cookieM(r: { headers: Record<string, unknown> }) {
 }
 
 async function entrarMaster(email: string) {
-  proximoPasso();
   const r = await login(email);
   expect(r.status, JSON.stringify(r.body)).toBe(200);
   return cookieM(r);
@@ -87,10 +81,10 @@ afterAll(async () => {
   await api.client.close();
 });
 
-describe('login em um passo (senha + TOTP)', () => {
-  it('sucesso: cookie próprio (nome, Path, HttpOnly, Secure, SameSite=Strict), sessão de 8 h com 15 min de inatividade, trilha', async () => {
-    proximoPasso();
-    const r = await login('Master@Exemplo.test', SENHA_M, codigo('master@exemplo.test'));
+describe('login com e-mail e senha (sem segundo fator)', () => {
+  it('sucesso: cookie próprio (nome, Path, HttpOnly, Secure, SameSite=Strict), sessão de 8 h com 15 min de inatividade, trilha com IP', async () => {
+    const ip = novoIp();
+    const r = await login('Master@Exemplo.test', SENHA_M, ip);
     expect(r.status).toBe(200);
     expect(r.body.data.usuario).toEqual({ id: expect.any(String), nome: 'Operador master', email: 'master@exemplo.test', papel: 'master', deveTrocarSenha: false });
     expect(r.body.data.sessao.inatividadeMin).toBe(15);
@@ -107,56 +101,51 @@ describe('login em um passo (senha + TOTP)', () => {
     expect(me.body.data.usuario.email).toBe('master@exemplo.test');
     const [l] = (await trilhaP('auth.login')).slice(-1);
     expect(l!.masterUsuarioId).toBe(r.body.data.usuario.id);
+    expect((l!.detalhes as { ip: string }).ip).toBe(ip);
     // Só o hash do token no banco.
     const [sess] = await api.plataforma.db.select().from(masterSessao).where(eq(masterSessao.masterUsuarioId, r.body.data.usuario.id));
     expect(sess!.tokenHash).toMatch(/^[0-9a-f]{64}$/);
     expect(cookieM(r)).not.toContain(sess!.tokenHash);
+    const [u] = await api.plataforma.db.select().from(masterUsuario).where(eq(masterUsuario.id, r.body.data.usuario.id));
+    expect(u!.ultimoAcesso).not.toBeNull();
   });
 
-  it('senha errada, código errado e e-mail inexistente: mesma resposta, motivo na trilha, e-mail digitado nunca gravado', async () => {
-    proximoPasso();
-    const respostas = [
-      await login('master@exemplo.test', 'senha-errada-errada'),
-      await login('master@exemplo.test', SENHA_M, codigo('master@exemplo.test', 5)),
-      await login('ninguem@exemplo.test', SENHA_M, '123456'),
-    ];
+  it('senha errada e e-mail inexistente: mesma resposta, mesmo argon2 (hash fictício), motivo e IP na trilha, e-mail digitado nunca gravado', async () => {
+    const senhas = api.app.get(SenhaService, { strict: false });
+    const ficticio = vi.spyOn(senhas, 'verificarFicticio');
+    const ip = novoIp();
+    const respostas = [await login('master@exemplo.test', 'senha-errada-errada', ip), await login('ninguem@exemplo.test', SENHA_M, ip)];
     for (const r of respostas) {
-      expect([r.status, r.body.code, r.body.message]).toEqual([401, 'CREDENCIAIS_INVALIDAS', 'E-mail, senha ou código inválidos.']);
+      expect([r.status, r.body.code, r.body.message]).toEqual([401, 'CREDENCIAIS_INVALIDAS', 'E-mail ou senha inválidos.']);
       expect(r.headers['set-cookie']).toBeUndefined();
     }
-    const falhas = (await trilhaP('auth.login_falha')).slice(-3).map((l) => (l.detalhes as { motivo: string }).motivo);
-    expect(falhas).toEqual(['senha_incorreta', 'codigo_incorreto', 'login_inexistente']);
+    // Só o e-mail inexistente passa pelo hash fictício (que roda o argon2 do mesmo jeito): o custo das duas é igual.
+    expect(ficticio.mock.calls.length).toBe(1);
+    ficticio.mockRestore();
+    const falhas = (await trilhaP('auth.login_falha')).slice(-2).map((l) => l.detalhes as { motivo: string; ip: string });
+    expect(falhas).toEqual([{ motivo: 'senha_incorreta', ip }, { motivo: 'login_inexistente', ip }]);
     const tudo = JSON.stringify(await api.plataforma.db.select().from(plataformaAudit));
     expect(tudo).not.toContain('ninguem@exemplo.test');
     expect(tudo).not.toContain('senha-errada');
   });
 
-  it('código em formato inválido: 400 de validação, sem tocar no limite', async () => {
-    const r = await login('master@exemplo.test', SENHA_M, '12ab');
-    expect(r.status).toBe(400);
+  it('o corpo é estrito: o antigo campo `codigo` (ou qualquer outro) é 400, sem tocar no limite', async () => {
+    const r = await api.http().post(`${P}/auth/login`).set('X-Forwarded-For', novoIp()).send({ email: 'master@exemplo.test', senha: SENHA_M, codigo: '123456' });
+    expect([r.status, r.body.code]).toEqual([400, 'DADOS_INVALIDOS']);
+    expect(r.headers['set-cookie']).toBeUndefined();
+    expect((await api.http().post(`${P}/auth/login`).send({ email: 'master@exemplo.test' })).status).toBe(400);
   });
 
-  it('anti-replay: o mesmo código não abre segunda sessão, nem em outro IP', async () => {
-    proximoPasso();
-    const cod = codigo('master@exemplo.test');
-    expect((await login('master@exemplo.test', SENHA_M, cod)).status).toBe(200);
-    const r = await login('master@exemplo.test', SENHA_M, cod);
-    expect([r.status, r.body.code]).toEqual([401, 'CREDENCIAIS_INVALIDAS']);
-    expect(((await trilhaP('auth.login_falha')).at(-1)!.detalhes as { motivo: string }).motivo).toBe('codigo_reutilizado');
-    // Código do passo anterior (dentro da janela) também não: é mais antigo que o último aceito.
-    expect((await login('master@exemplo.test', SENHA_M, codigo('master@exemplo.test', -1))).status).toBe(401);
-  });
-
-  it('bloqueio pelo par e-mail+IP: a 11ª tentativa recebe 429 com Retry-After, mesmo com tudo certo', async () => {
+  it('bloqueio pelo par e-mail+IP: a 11ª tentativa recebe 429 com Retry-After, mesmo com a senha certa', async () => {
     const ip = novoIp();
-    for (let i = 0; i < 10; i++) expect((await login('alvo@exemplo.test', 'senha-errada-x', '000000', ip)).status).toBe(401);
-    proximoPasso();
-    const r = await login('alvo@exemplo.test', SENHA_M, codigo('alvo@exemplo.test'), ip);
+    for (let i = 0; i < 10; i++) expect((await login('alvo@exemplo.test', 'senha-errada-x', ip)).status).toBe(401);
+    const r = await login('alvo@exemplo.test', SENHA_M, ip);
     expect([r.status, r.body.code]).toEqual([429, 'LOGIN_BLOQUEADO']);
     expect(Number(r.headers['retry-after'])).toBeGreaterThan(0);
-    expect((await trilhaP('auth.bloqueio')).some((l) => (l.detalhes as { tipo: string }).tipo === 'master_ip')).toBe(true);
+    const bloqueio = (await trilhaP('auth.bloqueio')).find((l) => (l.detalhes as { tipo: string }).tipo === 'master_ip');
+    expect((bloqueio!.detalhes as { ip: string }).ip).toBe(ip);
     // Outro IP continua entrando (o login sozinho não bloqueia).
-    expect((await login('alvo@exemplo.test', SENHA_M, codigo('alvo@exemplo.test'))).status).toBe(200);
+    expect((await login('alvo@exemplo.test', SENHA_M)).status).toBe(200);
   });
 });
 
@@ -210,6 +199,9 @@ describe('troca de senha obrigatória', () => {
     expect((await api.http().get(`${P}/auth/me`).set('Cookie', m)).body.data.usuario.deveTrocarSenha).toBe(true);
     const fraca = await api.http().post(`${P}/auth/trocar-senha`).set('Cookie', m).send({ senhaAtual: SENHA_M, novaSenha: 'curta' });
     expect([fraca.status, fraca.body.code]).toEqual([422, 'SENHA_FRACA']);
+    // 15 caracteres: valeria no condomínio (mínimo 12), não no Master (16).
+    const quinze = await api.http().post(`${P}/auth/trocar-senha`).set('Cookie', m).send({ senhaAtual: SENHA_M, novaSenha: 'frase-de-15-car' });
+    expect([quinze.status, quinze.body.code, quinze.body.message]).toEqual([422, 'SENHA_FRACA', 'A senha precisa ter pelo menos 16 caracteres.']);
     const errada = await api.http().post(`${P}/auth/trocar-senha`).set('Cookie', m).send({ senhaAtual: 'nao-e-essa-senha', novaSenha: 'uma-senha-nova-bem-longa' });
     expect([errada.status, errada.body.code]).toEqual([422, 'SENHA_ATUAL_INCORRETA']);
     const ok = await api.http().post(`${P}/auth/trocar-senha`).set('Cookie', m).send({ senhaAtual: SENHA_M, novaSenha: 'uma-senha-nova-bem-longa' });
@@ -222,10 +214,18 @@ describe('troca de senha obrigatória', () => {
     expect((await trilha(api)).filter((l) => l.acao === 'acesso.negado' && JSON.stringify(l.depois).includes('plataforma'))).toEqual([]);
   });
 
-  it('senha temporária vencida: revelada só a quem acerta senha e código', async () => {
+  it('a regra de 16 é só do Master: a do condomínio continua 12', () => {
+    expect('frase-de-15-car'.length).toBe(15);
+    expect(SENHA_MIN_MASTER).toBe(16);
+    expect(problemasDaSenha('frase-de-15-car')).toEqual([]);
+    expect(problemasDaSenha('frase-de-15-car', { minimo: SENHA_MIN_MASTER })).toEqual(['A senha precisa ter pelo menos 16 caracteres.']);
+    expect(problemasDaSenha('frase-de-16-cara', { minimo: SENHA_MIN_MASTER })).toEqual([]);
+    expect(problemasDaSenha('curtinha', { minimo: 4 })).toEqual(['A senha precisa ter pelo menos 12 caracteres.']);
+  });
+
+  it('senha temporária vencida: revelada só a quem acerta a senha', async () => {
     const id = await novoMaster('vencido@exemplo.test', { trocaPendente: true });
     await api.plataforma.db.update(masterUsuario).set({ senhaTemporariaExpiraEm: new Date(api.relogio.agora().getTime() - 60_000) }).where(eq(masterUsuario.id, id));
-    proximoPasso();
     expect((await login('vencido@exemplo.test', 'senha-errada-errada')).body.code).toBe('CREDENCIAIS_INVALIDAS');
     expect((await login('vencido@exemplo.test')).body.code).toBe('SENHA_TEMPORARIA_EXPIRADA');
   });

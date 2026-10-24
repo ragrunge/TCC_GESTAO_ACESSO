@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "App do Master (administração do SaaS): login com TOTP, licenças, criação de condomínio e módulos. Servido em /admin do mesmo site (projeto Vercel) do apps/web, como bundle separado.",
+  "description": "App do Master (administração do SaaS): login com e-mail e senha, licenças, criação de condomínio e módulos. Servido em /admin do mesmo site (projeto Vercel) do apps/web, como bundle separado.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

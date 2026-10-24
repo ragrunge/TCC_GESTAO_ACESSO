@@ -1,8 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
-import { API_E2E, codigoTotp, MASTER, NOVO_MASTER, SENHA_E2E } from './ambiente';
+import { API_E2E, MASTER, NOVO_MASTER, SENHA_E2E } from './ambiente';
 
-// O reset do servidor de e2e devolve os usuários da plataforma ao estado semeado e zera o anti-replay do TOTP: sem ele,
-// o segundo login no mesmo intervalo de 30 s seria recusado (o mesmo código nunca vale duas vezes).
+// O reset do servidor de e2e devolve os usuários da plataforma ao estado semeado (senha, troca pendente) e zera os
+// limites de login: cada teste começa do mesmo lugar.
 test.beforeEach(async ({ request }) => {
   expect((await request.post(`${API_E2E}/__e2e/reset`)).ok()).toBe(true);
 });
@@ -11,11 +11,12 @@ async function entrar(page: Page, email = MASTER, senha = SENHA_E2E) {
   await page.goto('/admin/');
   await page.getByLabel('E-mail').fill(email);
   await page.getByLabel('Senha', { exact: true }).fill(senha);
-  await page.getByLabel('Código do autenticador').fill(codigoTotp());
   await page.getByRole('button', { name: 'Entrar' }).click();
 }
 
-test('login com senha e TOTP mostra as licenças com o piloto', async ({ page }) => {
+test('login com e-mail e senha (sem código) mostra as licenças com o piloto', async ({ page }) => {
+  await page.goto('/admin/');
+  await expect(page.getByLabel(/código/i)).toHaveCount(0);
   await entrar(page);
   await expect(page.getByRole('heading', { name: 'Licenças' })).toBeVisible();
   await expect(page.getByText('parque', { exact: true }).first()).toBeVisible();
@@ -26,7 +27,7 @@ test('login com senha e TOTP mostra as licenças com o piloto', async ({ page })
 
 test('senha errada: mensagem única', async ({ page }) => {
   await entrar(page, MASTER, 'senha-errada-qualquer');
-  await expect(page.getByRole('alert')).toHaveText(/E-mail, senha ou código inválidos\./);
+  await expect(page.getByRole('alert')).toHaveText(/E-mail ou senha inválidos\./);
 });
 
 test('troca de senha obrigatória antes da lista', async ({ page }) => {

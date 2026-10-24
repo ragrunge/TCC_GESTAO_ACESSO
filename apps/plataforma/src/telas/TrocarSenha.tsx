@@ -1,5 +1,7 @@
-// Troca de senha obrigatória (senha temporária da CLI). A API valida a política (mínimo 12, lista de comuns, sem o
-// e-mail); aqui só o mínimo e a confirmação, para não gastar ida.
+// Troca de senha obrigatória (senha temporária da CLI). A API valida a política (mínimo SENHA_MIN_MASTER = 16, maior que
+// os 12 do condomínio porque o Master entra sem segundo fator; lista de comuns; sem o e-mail); aqui só o mínimo e a
+// confirmação, para não gastar ida.
+import { SENHA_MIN_MASTER } from '@portaria/domain/rbac-plataforma';
 import { useState, type FormEvent } from 'react';
 import { ApiError, errosDeCampo } from '../api/cliente';
 import { useSessao } from '../sessao/SessaoMaster';
@@ -17,7 +19,7 @@ export function TrocarSenha() {
   async function enviar(e: FormEvent) {
     e.preventDefault();
     setErro(null);
-    if (nova.length < 12) { setCampos({ novaSenha: 'A senha precisa ter pelo menos 12 caracteres.' }); return; }
+    if (nova.length < SENHA_MIN_MASTER) { setCampos({ novaSenha: `A senha precisa ter pelo menos ${SENHA_MIN_MASTER} caracteres.` }); return; }
     if (nova !== confirma) { setCampos({ confirmacao: 'A confirmação não confere com a nova senha.' }); return; }
     setCampos({});
     setEnviando(true);
@@ -40,13 +42,13 @@ export function TrocarSenha() {
         <div>
           <h1 id="titulo-troca" className="text-[22px] font-semibold">Troque a senha provisória</h1>
           <p className="text-[14px] text-ink-suave">
-            {estado.fase === 'logado' ? `${estado.usuario.email}: ` : ''}a senha temporária vale uma vez. Escolha uma senha sua, com pelo menos 12 caracteres.
+            {estado.fase === 'logado' ? `${estado.usuario.email}: ` : ''}a senha temporária vale uma vez. Escolha uma senha sua, com pelo menos {SENHA_MIN_MASTER} caracteres, e guarde-a num gerenciador de senhas.
           </p>
         </div>
         <Field label="Senha atual (temporária)" erro={campos.senhaAtual}>
           <input className="input" type="password" autoComplete="current-password" value={atual} onChange={(e) => setAtual(e.target.value)} />
         </Field>
-        <Field label="Nova senha" erro={campos.novaSenha} dica="Mínimo de 12 caracteres. Uma frase longa é mais fácil de lembrar.">
+        <Field label="Nova senha" erro={campos.novaSenha} dica={`Mínimo de ${SENHA_MIN_MASTER} caracteres. Uma frase longa é mais fácil de lembrar.`}>
           <input className="input" type="password" autoComplete="new-password" value={nova} onChange={(e) => setNova(e.target.value)} />
         </Field>
         <Field label="Confirme a nova senha" erro={campos.confirmacao}>

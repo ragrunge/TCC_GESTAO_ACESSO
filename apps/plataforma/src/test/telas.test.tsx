@@ -35,37 +35,25 @@ beforeEach(() => { window.history.pushState({}, '', '/admin/'); });
 afterEach(() => { cleanup(); window.history.pushState({}, '', '/admin/'); });
 
 describe('login', () => {
-  it('envia e-mail, senha e código num único envio e mostra a lista', async () => {
+  it('envia só e-mail e senha (sem campo de código) e mostra a lista', async () => {
     const api = apiFalsa();
     iniciar(api);
     fireEvent.change(await screen.findByLabelText('E-mail'), { target: { value: ' master@exemplo.test ' } });
     fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'uma-senha-longa' } });
-    fireEvent.change(screen.getByLabelText('Código do autenticador'), { target: { value: '12a3456' } });
-    expect((screen.getByLabelText('Código do autenticador') as HTMLInputElement).value).toBe('123456');
+    expect(screen.queryByLabelText(/código/i)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
     await screen.findByRole('heading', { name: 'Licenças' });
-    expect(api.login).toHaveBeenCalledWith('master@exemplo.test', 'uma-senha-longa', '123456');
+    expect(api.login).toHaveBeenCalledWith('master@exemplo.test', 'uma-senha-longa');
     expect(await screen.findByRole('heading', { name: 'Residencial do Parque' })).toBeTruthy();
   });
 
-  it('erro único da API e o código limpo para o próximo envio', async () => {
-    const api = apiFalsa({ login: vi.fn(async () => { throw new ApiError(401, 'CREDENCIAIS_INVALIDAS', 'E-mail, senha ou código inválidos.'); }) });
+  it('erro único da API', async () => {
+    const api = apiFalsa({ login: vi.fn(async () => { throw new ApiError(401, 'CREDENCIAIS_INVALIDAS', 'E-mail ou senha inválidos.'); }) });
     iniciar(api);
     fireEvent.change(await screen.findByLabelText('E-mail'), { target: { value: 'x@exemplo.test' } });
     fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'errada' } });
-    fireEvent.change(screen.getByLabelText('Código do autenticador'), { target: { value: '000000' } });
     fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
-    expect((await screen.findByRole('alert')).textContent).toContain('E-mail, senha ou código inválidos.');
-    expect((screen.getByLabelText('Código do autenticador') as HTMLInputElement).value).toBe('');
-  });
-
-  it('código com menos de 6 dígitos nem vai à API', async () => {
-    const api = apiFalsa();
-    iniciar(api);
-    fireEvent.change(await screen.findByLabelText('Código do autenticador'), { target: { value: '123' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
-    await screen.findByRole('alert');
-    expect(api.login).not.toHaveBeenCalled();
+    expect((await screen.findByRole('alert')).textContent).toContain('E-mail ou senha inválidos.');
   });
 });
 
@@ -75,6 +63,12 @@ describe('troca de senha obrigatória', () => {
     iniciar(api);
     await screen.findByRole('heading', { name: 'Troque a senha provisória' });
     fireEvent.change(screen.getByLabelText('Senha atual (temporária)'), { target: { value: 'temp' } });
+    // 15 caracteres: o mínimo do Master é 16 (o do condomínio é 12); nem vai à API.
+    fireEvent.change(screen.getByLabelText('Nova senha'), { target: { value: 'frase-de-15-car' } });
+    fireEvent.change(screen.getByLabelText('Confirme a nova senha'), { target: { value: 'frase-de-15-car' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Trocar senha' }));
+    await screen.findByText('A senha precisa ter pelo menos 16 caracteres.');
+    expect(api.trocarSenha).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('Nova senha'), { target: { value: 'uma-senha-nova-longa' } });
     fireEvent.change(screen.getByLabelText('Confirme a nova senha'), { target: { value: 'outra-coisa-qualquer' } });
     fireEvent.click(screen.getByRole('button', { name: 'Trocar senha' }));

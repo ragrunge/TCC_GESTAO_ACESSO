@@ -1,4 +1,4 @@
-// Login do Master em UM envio: e-mail, senha e código do aplicativo autenticador (TOTP). Erro único vindo da API.
+// Login do Master: e-mail e senha (sem segundo fator desde 2026-10-23, SAAS-08). Erro único vindo da API.
 import { useState, type FormEvent } from 'react';
 import { ApiError } from '../api/cliente';
 import { useSessao } from '../sessao/SessaoMaster';
@@ -8,20 +8,17 @@ export function Login({ aviso }: { aviso?: string }) {
   const { entrar } = useSessao();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
-  const [codigo, setCodigo] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
   async function enviar(e: FormEvent) {
     e.preventDefault();
-    if (!/^\d{6}$/.test(codigo)) { setErro('Informe o código de 6 dígitos do aplicativo autenticador.'); return; }
     setErro(null);
     setEnviando(true);
     try {
-      await entrar(email.trim(), senha, codigo);
+      await entrar(email.trim(), senha);
     } catch (err) {
       setErro(err instanceof ApiError ? err.message : 'Não foi possível entrar.');
-      setCodigo(''); // o código é de uso único: o próximo envio precisa de outro
     } finally {
       setEnviando(false);
     }
@@ -42,10 +39,6 @@ export function Login({ aviso }: { aviso?: string }) {
         </Field>
         <Field label="Senha">
           <input className="input" type="password" autoComplete="current-password" required value={senha} onChange={(e) => setSenha(e.target.value)} />
-        </Field>
-        <Field label="Código do autenticador" dica="6 dígitos do aplicativo (Google Authenticator, Authy e similares).">
-          <input className="input font-mono tracking-[0.2em]" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6}
-            required value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))} />
         </Field>
         {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
         <Button type="submit" variante="primario" carregando={enviando}>Entrar</Button>

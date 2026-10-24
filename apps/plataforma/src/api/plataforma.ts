@@ -23,7 +23,7 @@ export interface ResultadoCriacao { situacao: 'provisionado' | 'retomado' | 'ja_
 
 export interface ApiPlataforma {
   cliente: ClienteHttp;
-  login(email: string, senha: string, codigo: string): Promise<{ usuario: UsuarioPlataforma; sessao: SessaoInfo }>;
+  login(email: string, senha: string): Promise<{ usuario: UsuarioPlataforma; sessao: SessaoInfo }>;
   me(): Promise<{ usuario: UsuarioPlataforma; sessao: SessaoInfo }>;
   logout(): Promise<void>;
   trocarSenha(senhaAtual: string, novaSenha: string): Promise<UsuarioPlataforma>;
@@ -37,7 +37,7 @@ export function criarApi(cliente: ClienteHttp = criarCliente(import.meta.env.VIT
   const dados = <T>(p: Promise<{ data: { data: T } }>) => p.then((r) => r.data.data);
   return {
     cliente,
-    login: (email, senha, codigo) => dados(http.post('/plataforma/auth/login', { email, senha, codigo })),
+    login: (email, senha) => dados(http.post('/plataforma/auth/login', { email, senha })),
     me: () => dados(http.get('/plataforma/auth/me')),
     logout: async () => { await http.post('/plataforma/auth/logout'); },
     trocarSenha: (senhaAtual, novaSenha) => dados<{ usuario: UsuarioPlataforma }>(http.post('/plataforma/auth/trocar-senha', { senhaAtual, novaSenha })).then((r) => r.usuario),

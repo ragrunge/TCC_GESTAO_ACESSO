@@ -1,29 +1,26 @@
-// Login do Master em UM passo: e-mail + senha + código TOTP no mesmo envio (docs/05_arquitetura_saas.md §5.3).
-// Por que um passo: em dois passos, o "senha certa, agora o código" confirma a senha a quem não tem o celular, e o meio
-// do caminho exige um estado de pré-sessão (mais um token, mais uma tabela, mais uma rota). Aqui qualquer falha (e-mail
-// inexistente, usuário inativo, senha errada, código errado ou reutilizado) dá a MESMA resposta, no mesmo custo de argon2
-// (inexistente gasta o hash fictício), sob o mesmo limite de tentativas. A senha temporária vencida só é revelada a quem
-// acerta senha E código (como no condomínio, que a revela a quem acerta a senha).
+// Login do Master: e-mail + senha, sem segundo fator desde 2026-10-23 (decisão do usuário; docs/05_arquitetura_saas.md
+// SAAS-08 e §5.3; o TOTP da entrega 1 saiu na migração 0004). Qualquer falha (e-mail inexistente, usuário inativo,
+// senha errada) dá a MESMA resposta, no mesmo custo de argon2 (inexistente gasta o hash fictício), sob o mesmo limite de
+// tentativas (login, par login+IP e IP). A senha temporária vencida só é revelada a quem acerta a senha (como no
+// condomínio). Compensações pela falta do 2º fator: senha mínima de 16 na troca (SENHA_MIN_MASTER), limite de
+// tentativas, sessão curta (15 min / 8 h) e o IP em toda linha de login, falha e bloqueio da trilha da plataforma.
 import { Inject, Injectable } from '@nestjs/common';
 import { senhaTemporariaVencida } from '@portaria/domain/rules';
-import type { PapelPlataforma } from '@portaria/domain/rbac-plataforma';
-import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { type PapelPlataforma, SENHA_MIN_MASTER } from '@portaria/domain/rbac-plataforma';
+import { eq, sql } from 'drizzle-orm';
 import { erroApi } from '../comum/erros';
 import { RELOGIO, type Relogio } from '../comum/relogio';
 import { EsperaLogin } from '../auth/login-sem-condominio';
 import { normalizarLogin } from '../auth/limite-login.service';
 import { problemasDaSenha, SenhaService } from '../auth/senha.service';
-import type { ChaveMestra } from '../saas/chave-mestra';
-import { CHAVE_MESTRA, type DbPlataforma, PLATAFORMA_DB } from '../saas/plataforma-db';
+import { type DbPlataforma, PLATAFORMA_DB } from '../saas/plataforma-db';
 import { masterUsuario } from '../saas/schema-plataforma';
 import { LimiteMasterService, type ReservaMaster } from './limite-master.service';
-import { decifrarSegredoTotp } from './segredo-totp';
 import { SessaoMasterService } from './sessao-master.service';
 import type { AuthMaster, UsuarioPlataforma } from './tipos';
-import { verificarTotp } from './totp';
 import { registrarPlataforma } from './trilha-plataforma';
 
-export const MENSAGEM_CREDENCIAIS_MASTER = 'E-mail, senha ou código inválidos.';
+export const MENSAGEM_CREDENCIAIS_MASTER = 'E-mail ou senha inválidos.';
 export const MENSAGEM_TEMPORARIA_EXPIRADA_MASTER = 'Senha temporária vencida. Peça uma nova ao operador da plataforma.';
 
 export type ResultadoLoginMaster =
@@ -38,13 +35,10 @@ const colunas = {
 const publico = (u: { id: string; nome: string; email: string; papel: string; deveTrocarSenha: boolean }): UsuarioPlataforma =>
   ({ id: u.id, nome: u.nome, email: u.email, papel: u.papel as PapelPlataforma, deveTrocarSenha: u.deveTrocarSenha });
 
-class Reutilizado extends Error {}
-
 @Injectable()
 export class AuthMasterService {
   constructor(
     @Inject(PLATAFORMA_DB) private readonly db: DbPlataforma,
-    @Inject(CHAVE_MESTRA) private readonly mestra: ChaveMestra,
     @Inject(RELOGIO) private readonly relogio: Relogio,
     @Inject(SenhaService) private readonly senhas: SenhaService,
     @Inject(SessaoMasterService) private readonly sessoes: SessaoMasterService,
@@ -57,7 +51,7 @@ export class AuthMasterService {
     return new Date(fins.length ? Math.max(...fins) : agora.getTime() + this.limite.bloqueioMs());
   }
 
-  async login(email: string, senha: string, codigo: string, ip: string | null): Promise<ResultadoLoginMaster> {
+  async login(email: string, senha: string, ip: string | null): Promise<ResultadoLoginMaster> {
     const agora = this.relogio.agora();
     const chLogin = this.limite.chave('master', email);
     const chPar = this.limite.chavePar(email, ip);
@@ -67,9 +61,7 @@ export class AuthMasterService {
     const rIp = chIp ? await this.limite.reservar(chIp, agora) : null;
 
     const [u] = await this.db.select({
-      ...colunas, ativo: masterUsuario.ativo, senhaHash: masterUsuario.senhaHash, totpCifrado: masterUsuario.totpCifrado,
-      totpMestraVersao: masterUsuario.totpMestraVersao, totpUltimoPasso: masterUsuario.totpUltimoPasso,
-      senhaTemporariaExpiraEm: masterUsuario.senhaTemporariaExpiraEm,
+      ...colunas, ativo: masterUsuario.ativo, senhaHash: masterUsuario.senhaHash, senhaTemporariaExpiraEm: masterUsuario.senhaTemporariaExpiraEm,
     }).from(masterUsuario).where(sql`lower(${masterUsuario.email}) = ${normalizarLogin(email)}`).limit(1);
     // O e-mail digitado NÃO vai para a trilha (append-only): login existente = o id do ator; inexistente = só o motivo.
     const falha = (motivo: string) => registrarPlataforma(this.db, {
@@ -77,7 +69,7 @@ export class AuthMasterService {
     });
 
     if (this.limite.estaBloqueada(rPar, agora) || (rIp && this.limite.estaBloqueada(rIp, agora))) {
-      await falha('bloqueado'); // sem argon2 nem TOTP
+      await falha('bloqueado'); // sem argon2
       return { ok: false, motivo: 'bloqueado', ate: this.fimDoBloqueio([rPar, rIp], agora) };
     }
 
@@ -85,44 +77,21 @@ export class AuthMasterService {
     if (u && u.ativo) senhaOk = await this.senhas.verificar(u.senhaHash, senha);
     else await this.senhas.verificarFicticio(senha);
 
-    let passo: number | null = null;
-    let reutilizado = false;
-    if (senhaOk) {
-      const segredo = decifrarSegredoTotp(this.mestra, u!.id, u!);
-      try {
-        passo = verificarTotp(segredo, codigo, agora, u!.totpUltimoPasso);
-        reutilizado = passo === null && u!.totpUltimoPasso !== null && verificarTotp(segredo, codigo, agora, null) !== null;
-      } finally {
-        segredo.fill(0);
-      }
-    }
-    const vencida = senhaOk && passo !== null
+    const vencida = senhaOk
       && senhaTemporariaVencida({ deveTrocarSenha: u!.deveTrocarSenha, senhaTemporariaExpiraEm: u!.senhaTemporariaExpiraEm?.getTime() ?? null }, agora.getTime());
 
-    if (!senhaOk || passo === null || vencida) {
-      const motivo = !u ? 'login_inexistente' : !u.ativo ? 'usuario_inativo' : !senhaOk ? 'senha_incorreta'
-        : reutilizado ? 'codigo_reutilizado' : passo === null ? 'codigo_incorreto' : 'senha_temporaria_expirada';
+    if (!senhaOk || vencida) {
+      const motivo = !u ? 'login_inexistente' : !u.ativo ? 'usuario_inativo' : !senhaOk ? 'senha_incorreta' : 'senha_temporaria_expirada';
       return this.recusar(motivo, falha, u?.id ?? null, ip, [rPar, rIp], rLogin, agora, vencida);
     }
 
     const usuario = u!;
-    let criada: Awaited<ReturnType<SessaoMasterService['criar']>>;
-    try {
-      criada = await this.db.transaction(async (tx) => {
-        // Anti-replay atômico: só grava se o passo for maior que o último aceito. Dois logins com o mesmo código ao mesmo
-        // tempo: um vence, o outro não acha a linha e vira falha.
-        const marcado = await tx.update(masterUsuario).set({ totpUltimoPasso: passo!, ultimoAcesso: agora })
-          .where(and(eq(masterUsuario.id, usuario.id), or(isNull(masterUsuario.totpUltimoPasso), lt(masterUsuario.totpUltimoPasso, passo!))))
-          .returning({ id: masterUsuario.id });
-        if (!marcado.length) throw new Reutilizado();
-        const s = await this.sessoes.criar(tx, usuario.id, agora, ip);
-        await registrarPlataforma(tx, { masterUsuarioId: usuario.id, acao: 'auth.login', detalhes: { sessao_id: s.sessaoId, expira_em: s.expiraEm, ip } });
-        return s;
-      });
-    } catch (e) {
-      if (!(e instanceof Reutilizado)) throw e;
-      return this.recusar('codigo_reutilizado', falha, usuario.id, ip, [rPar, rIp], rLogin, agora, false);
-    }
+    const criada = await this.db.transaction(async (tx) => {
+      await tx.update(masterUsuario).set({ ultimoAcesso: agora }).where(eq(masterUsuario.id, usuario.id));
+      const s = await this.sessoes.criar(tx, usuario.id, agora, ip);
+      await registrarPlataforma(tx, { masterUsuarioId: usuario.id, acao: 'auth.login', detalhes: { sessao_id: s.sessaoId, expira_em: s.expiraEm, ip } });
+      return s;
+    });
     await this.limite.sucesso(chLogin, chPar, chIp, agora);
     return { ok: true, token: criada.token, expiraEm: criada.expiraEm, usuario: publico(usuario) };
   }
@@ -159,7 +128,7 @@ export class AuthMasterService {
   }
 
   async trocarSenha(m: AuthMaster, senhaAtual: string, novaSenha: string): Promise<UsuarioPlataforma> {
-    const problemas = problemasDaSenha(novaSenha, { login: m.usuario.email });
+    const problemas = problemasDaSenha(novaSenha, { login: m.usuario.email, minimo: SENHA_MIN_MASTER });
     if (problemas.length) throw erroApi(422, 'SENHA_FRACA', problemas[0]!, problemas.map((message) => ({ field: 'novaSenha', message })));
     const agora = this.relogio.agora();
     // A senha atual é um segredo sendo adivinhado (sessão roubada): conta no limite do par login+IP, o mesmo do login.

@@ -34,7 +34,7 @@ export class SessaoMasterService {
     const token = randomBytes(32).toString('base64url');
     const expiraEm = new Date(agora.getTime() + SESSAO_MASTER_ABSOLUTA_MIN * 60_000);
     const [s] = await tx.insert(masterSessao).values({
-      tokenHash: hashTokenMaster(token), masterUsuarioId, criadaEm: agora, ultimoUsoEm: agora, expiraEm, totpConfirmadoEm: agora,
+      tokenHash: hashTokenMaster(token), masterUsuarioId, criadaEm: agora, ultimoUsoEm: agora, expiraEm,
       ip: ip && ip.length <= 45 ? ip : null,
     }).returning({ id: masterSessao.id });
     return { token, sessaoId: s!.id, expiraEm };
@@ -45,13 +45,11 @@ export class SessaoMasterService {
     const agora = this.relogio.agora();
     const [l] = await this.db.select({
       id: masterSessao.id, ultimoUsoEm: masterSessao.ultimoUsoEm, expiraEm: masterSessao.expiraEm, revogadaEm: masterSessao.revogadaEm,
-      totpConfirmadoEm: masterSessao.totpConfirmadoEm,
       usuarioId: masterUsuario.id, nome: masterUsuario.nome, email: masterUsuario.email, papel: masterUsuario.papel, ativo: masterUsuario.ativo,
       deveTrocarSenha: masterUsuario.deveTrocarSenha, senhaTemporariaExpiraEm: masterUsuario.senhaTemporariaExpiraEm,
     }).from(masterSessao).innerJoin(masterUsuario, eq(masterUsuario.id, masterSessao.masterUsuarioId))
       .where(eq(masterSessao.tokenHash, hashTokenMaster(token))).limit(1);
-    // Sem `totp_confirmado_em` a sessão não passou pelo segundo fator: não vale (falha fechada; o login grava sempre).
-    if (!l || l.revogadaEm || !l.ativo || !l.totpConfirmadoEm) return null;
+    if (!l || l.revogadaEm || !l.ativo) return null;
     if (l.expiraEm <= agora) return null;
     if (agora.getTime() - l.ultimoUsoEm.getTime() >= SESSAO_MASTER_INATIVIDADE_MIN * 60_000) return null;
     if (senhaTemporariaVencida({ deveTrocarSenha: l.deveTrocarSenha, senhaTemporariaExpiraEm: l.senhaTemporariaExpiraEm?.getTime() ?? null }, agora.getTime())) return null;

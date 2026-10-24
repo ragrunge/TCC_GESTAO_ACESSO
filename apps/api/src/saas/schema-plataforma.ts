@@ -104,22 +104,18 @@ export const condominioChave = pgTable('condominio_chave', {
 export const PAPEIS_PLATAFORMA = ['master', 'suporte'] as const;
 
 /**
- * Usuário da plataforma (SAAS-07): fora do RBAC de condomínio. 2FA obrigatório (`totp_cifrado` NOT NULL de propósito).
- * O e-mail é o login. `totp_cifrado` = nonce (12) || cifrado || tag (16), AES-256-GCM pela chave mestra de versão
- * `totp_mestra_versao`, AAD `portaria:totp:<id>` (src/master/segredo-totp.ts). `totp_ultimo_passo`: último passo de
- * 30 s aceito (anti-replay: um código nunca vale duas vezes). Migração 0003 (entrega 1 da F5).
+ * Usuário da plataforma (SAAS-07): fora do RBAC de condomínio. O e-mail é o login. Sem segundo fator desde a migração
+ * 0004 (2026-10-23, decisão do usuário; SAAS-08): login só com e-mail e senha (mínimo 16 na troca, limite de
+ * tentativas, sessão curta). As colunas de TOTP da 0003 e a tabela de códigos de recuperação da 0000 saíram na 0004.
  */
 export const masterUsuario = pgTable('master_usuario', {
   id: pk(),
   nome: text('nome').notNull(),
   email: text('email').notNull(),
   senhaHash: text('senha_hash').notNull(),
-  totpCifrado: bytea('totp_cifrado').notNull(),
   papel: text('papel').notNull(),
   ativo: boolean('ativo').notNull().default(true),
   criadoEm: instante('criado_em').notNull().defaultNow(),
-  totpMestraVersao: smallint('totp_mestra_versao').notNull(),
-  totpUltimoPasso: bigint('totp_ultimo_passo', { mode: 'number' }),
   deveTrocarSenha: boolean('deve_trocar_senha').notNull().default(true),
   senhaTemporariaExpiraEm: instante('senha_temporaria_expira_em'),
   ultimoAcesso: instante('ultimo_acesso'),
@@ -128,19 +124,7 @@ export const masterUsuario = pgTable('master_usuario', {
   check('master_usuario_senha_ck', sql`senha_hash LIKE '$argon2id$%'`),
   check('master_usuario_papel_ck', sql`papel IN ('master', 'suporte')`),
   check('master_usuario_email_ck', sql`email ~ '^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$' AND length(email) <= 254`),
-  // 12 de nonce + 20 do segredo (160 bits, RFC 4226) + 16 de tag = 48; folga para segredo maior.
-  check('master_usuario_totp_ck', sql`length(totp_cifrado) BETWEEN 44 AND 108 AND totp_mestra_versao > 0`),
-  check('master_usuario_totp_passo_ck', sql`totp_ultimo_passo IS NULL OR totp_ultimo_passo > 0`),
   check('master_usuario_temporaria_ck', sql`deve_trocar_senha OR senha_temporaria_expira_em IS NULL`),
-]);
-
-export const masterCodigoRecuperacao = pgTable('master_codigo_recuperacao', {
-  masterUsuarioId: uuid('master_usuario_id').notNull().references(() => masterUsuario.id),
-  codigoHash: text('codigo_hash').notNull(),
-  usadoEm: instante('usado_em'),
-}, (t) => [
-  primaryKey({ name: 'master_codigo_recuperacao_pk', columns: [t.masterUsuarioId, t.codigoHash] }),
-  check('master_codigo_recuperacao_hash_ck', sql`codigo_hash LIKE '$argon2id$%'`),
 ]);
 
 /** Mesmo desenho de `sessao` (src/db/schema.ts), outra tabela em outro banco. */
@@ -152,7 +136,6 @@ export const masterSessao = pgTable('master_sessao', {
   ultimoUsoEm: instante('ultimo_uso_em').notNull().defaultNow(),
   expiraEm: instante('expira_em').notNull(),
   revogadaEm: instante('revogada_em'),
-  totpConfirmadoEm: instante('totp_confirmado_em'),
   ip: inet('ip'),
   /** Migração 0003. Nulo enquanto a sessão não foi revogada. */
   motivoRevogacao: text('motivo_revogacao'),

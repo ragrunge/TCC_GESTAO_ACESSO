@@ -38,10 +38,10 @@ describe('cliente HTTP', () => {
   it('a API desembrulha { data } e manda o corpo do contrato', async () => {
     const adapter = vi.fn(responder(200, { data: { usuario: { id: '1' }, sessao: {} } }));
     const api = criarApi(criarCliente('/api/v1', { adapter }));
-    const r = await api.login('m@exemplo.test', 'senha', '123456');
+    const r = await api.login('m@exemplo.test', 'senha');
     expect(r.usuario.id).toBe('1');
     const cfg = adapter.mock.calls[0]![0];
-    expect([cfg.method, cfg.url, JSON.parse(cfg.data as string)]).toEqual(['post', '/plataforma/auth/login', { email: 'm@exemplo.test', senha: 'senha', codigo: '123456' }]);
+    expect([cfg.method, cfg.url, JSON.parse(cfg.data as string)]).toEqual(['post', '/plataforma/auth/login', { email: 'm@exemplo.test', senha: 'senha' }]);
     expect(cfg.withCredentials).toBe(true);
   });
 });

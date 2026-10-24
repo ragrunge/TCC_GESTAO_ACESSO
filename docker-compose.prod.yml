@@ -200,8 +200,8 @@ services:
     logging:
       driver: none
 
-  # Bootstrap do primeiro Master e reemissão de credencial (docs/deploy.md, seção 18). Rodar num TERMINAL COMUM, nunca
-  # pelo `!` do Claude Code: a saída traz a senha temporária e o segredo TOTP. Argumentos vão direto (entrypoint):
+  # Bootstrap do primeiro Master e reemissão de senha (docs/deploy.md, seção 18). Rodar num TERMINAL COMUM, nunca
+  # pelo `!` do Claude Code: a saída traz a senha temporária. Argumentos vão direto (entrypoint):
   #   docker compose --profile plataforma run --rm usuario-plataforma-cli --email <e-mail> --nome "<nome>"
   usuario-plataforma-cli:
     profiles: [plataforma]
@@ -212,8 +212,6 @@ services:
       NODE_ENV: production
       TZ: UTC
       DATABASE_URL_PLATAFORMA: postgres://app_plataforma:${APP_PLATAFORMA_PASSWORD:-}@db:5432/plataforma
-      PORTARIA_CHAVE_MESTRA: ${PORTARIA_CHAVE_MESTRA:-}
-      PORTARIA_CHAVE_MESTRA_VERSAO: ${PORTARIA_CHAVE_MESTRA_VERSAO:-}
     depends_on:
       db:
         condition: service_healthy

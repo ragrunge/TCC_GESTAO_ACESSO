@@ -19,8 +19,6 @@ import type { AuthMaster } from './tipos';
 const LoginDto = z.strictObject({
   email: z.string().trim().min(1, 'Informe o e-mail.').max(254),
   senha: z.string().min(1, 'Informe a senha.').max(SENHA_MAX),
-  // Só o formato aqui; qualquer código errado cai na mensagem única do login.
-  codigo: z.string().trim().regex(/^\d{6}$/, 'Informe o código de 6 dígitos do autenticador.'),
 });
 
 const TrocarSenhaDto = z.strictObject({
@@ -43,7 +41,7 @@ export class AuthMasterController {
   @PlataformaPublica()
   @HttpCode(200)
   async login(@Body(new ZodPipe(LoginDto)) body: z.infer<typeof LoginDto>, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const r = await this.auth.login(body.email, body.senha, body.codigo, ipDe(req));
+    const r = await this.auth.login(body.email, body.senha, ipDe(req));
     if (!r.ok && r.motivo === 'bloqueado') {
       res.setHeader('Retry-After', String(Math.max(1, Math.ceil((r.ate.getTime() - Date.now()) / 1000))));
       throw erroApi(429, 'LOGIN_BLOQUEADO', 'Muitas tentativas de login. Aguarde alguns minutos e tente novamente.');

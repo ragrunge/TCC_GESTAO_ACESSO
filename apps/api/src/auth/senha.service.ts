@@ -24,10 +24,15 @@ const SENHAS_COMUNS = new Set([
 export const SENHA_MIN = 12;
 export const SENHA_MAX = 256;
 
-/** Problemas da senha nova; vazio = aceita. Sem regra de composição (NIST 800-63B): tamanho + lista + contexto. */
-export function problemasDaSenha(senha: string, contexto: { login?: string } = {}): string[] {
+/**
+ * Problemas da senha nova; vazio = aceita. Sem regra de composição (NIST 800-63B): tamanho + lista + contexto.
+ * `minimo` só para quem exige mais que o padrão (o Master: SENHA_MIN_MASTER, de @portaria/domain/rbac-plataforma);
+ * abaixo de SENHA_MIN é ignorado.
+ */
+export function problemasDaSenha(senha: string, contexto: { login?: string; minimo?: number } = {}): string[] {
   const p: string[] = [];
-  if (senha.length < SENHA_MIN) p.push(`A senha precisa ter pelo menos ${SENHA_MIN} caracteres.`);
+  const minimo = Math.max(SENHA_MIN, contexto.minimo ?? SENHA_MIN);
+  if (senha.length < minimo) p.push(`A senha precisa ter pelo menos ${minimo} caracteres.`);
   if (senha.length > SENHA_MAX) p.push(`A senha pode ter no máximo ${SENHA_MAX} caracteres.`);
   const baixa = senha.toLowerCase();
   if (SENHAS_COMUNS.has(baixa)) p.push('Esta senha é muito comum. Escolha outra.');

@@ -268,7 +268,7 @@ export function gerarOpenApiComRelatorio(app: INestApplication, opcoes: OpcoesOp
       securitySchemes: {
         sessaoPlataforma: {
           type: 'apiKey', in: 'cookie', name: nomeCookieMaster(true),
-          description: `Cookie da sessão do Master (app da plataforma), Path=${CAMINHO_COOKIE_MASTER}, criado por \`POST /plataforma/auth/login\` (e-mail, senha e código TOTP). Nunca aceito nas rotas de condomínio, e o de condomínio nunca é aceito aqui. No modo local (http) o nome é \`${nomeCookieMaster(false)}\`.`,
+          description: `Cookie da sessão do Master (app da plataforma), Path=${CAMINHO_COOKIE_MASTER}, criado por \`POST /plataforma/auth/login\` (e-mail e senha; sem segundo fator desde 2026-10-23, SAAS-08). Nunca aceito nas rotas de condomínio, e o de condomínio nunca é aceito aqui. No modo local (http) o nome é \`${nomeCookieMaster(false)}\`.`,
         },
         sessao: {
           type: 'apiKey', in: 'cookie', name: COOKIE_PRODUCAO,
