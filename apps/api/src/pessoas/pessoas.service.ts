@@ -36,7 +36,7 @@ import { filtroEfetivo, semSaidaSql } from '../eventos/efetivo';
 import { vinculoValidoSql } from '../vinculos/vinculo-valido';
 import { carregarVinculos } from '../vinculos/vinculo-view';
 import { BuscaService, nomeSemAcentoSql, normalizar } from './busca.service';
-import { colunasPessoa, paraPessoaApi, veMotivoDesativacao, veTelefoneCompleto, type LinhaPessoa, type PessoaApi } from './pessoa-view';
+import { colunasPessoa, paraPessoaApi, veMotivoDesativacao, type LinhaPessoa, type PessoaApi } from './pessoa-view';
 
 type Categoria = (typeof pessoa.categoria.enumValues)[number];
 
@@ -134,7 +134,7 @@ export class PessoasService {
         const valores = await this.valoresNovaPessoa(tx, i, agora, ctx.ator);
         const [nova] = await tx.insert(pessoa).values(valores).returning(colunasPessoa);
         await this.auditoria.registrar(tx, { ator: ctx.ator, ip: ctx.ip, acao: 'pessoa.criar', entidade: 'pessoa', registroId: nova!.id, depois: nova });
-        return paraPessoaApi(nova!, { telefoneCompleto: veTelefoneCompleto(ctx.ator.papel) });
+        return paraPessoaApi(nova!);
       });
     } catch (e) {
       if (codigoPg(e) === '23505') throw duplicada();
@@ -190,10 +190,10 @@ export class PessoasService {
         if (i.servico !== undefined && vazioParaNulo(i.servico) !== antes.servico) mudancas.servico = vazioParaNulo(i.servico);
         const empresaFinal = 'empresa' in mudancas ? mudancas.empresa : antes.empresa;
         if (antes.categoria === 'prestador' && !(empresaFinal ?? '').trim()) throw erroApi(422, 'EMPRESA_OBRIGATORIA', 'Prestador exige empresa (RF-36).');
-        if (Object.keys(mudancas).length === 0) return paraPessoaApi(antes, { telefoneCompleto: true, motivoDesativacao: motivo }); // nada mudou: sem trilha
+        if (Object.keys(mudancas).length === 0) return paraPessoaApi(antes, { motivoDesativacao: motivo }); // nada mudou: sem trilha
         const [depois] = await tx.update(pessoa).set({ ...mudancas, atualizadoEm: agora }).where(eq(pessoa.id, id)).returning(colunasPessoa);
         await this.auditoria.registrar(tx, { ator: ctx.ator, ip: ctx.ip, acao: 'pessoa.editar', entidade: 'pessoa', registroId: id, antes, depois });
-        return paraPessoaApi(depois!, { telefoneCompleto: true, motivoDesativacao: motivo });
+        return paraPessoaApi(depois!, { motivoDesativacao: motivo });
       });
     } catch (e) {
       if (codigoPg(e) === '23505') throw duplicada();
@@ -267,7 +267,7 @@ export class PessoasService {
     const [f] = await this.db.select().from(funcionario).where(eq(funcionario.pessoaId, id));
     const vinculos = await carregarVinculos(this.db, eq(vinculoUnidade.pessoaId, id), hoje);
     return {
-      pessoa: paraPessoaApi(p as LinhaPessoa, { telefoneCompleto: veTelefoneCompleto(ctx.ator.papel), motivoDesativacao: veMotivoDesativacao(ctx.ator.papel) }),
+      pessoa: paraPessoaApi(p as LinhaPessoa, { motivoDesativacao: veMotivoDesativacao(ctx.ator.papel) }),
       funcionario: f ? {
         pessoaId: f.pessoaId, funcao: f.funcao, ativo: f.ativo,
         escala: { diasSemana: f.diasSemana, horaInicio: f.horaInicio.slice(0, 5), horaFim: f.horaFim.slice(0, 5) },
@@ -319,7 +319,7 @@ export class PessoasService {
           antes: { ...a, revogadaEm: null, revogadaPorId: null }, depois: { ...a, motivo: 'desativacao_da_pessoa', pessoaDesativadaId: id },
         })));
       }
-      return { ...paraPessoaApi(depois!, { telefoneCompleto: veTelefoneCompleto(ctx.ator.papel), motivoDesativacao: true }), autorizacoesRevogadas: revogadas.length };
+      return { ...paraPessoaApi(depois!, { motivoDesativacao: true }), autorizacoesRevogadas: revogadas.length };
     });
   }
 
@@ -334,7 +334,7 @@ export class PessoasService {
       const [depois] = await tx.update(pessoa).set({ desativadaEm: null, desativadaPorId: null, desativacaoMotivo: null, atualizadoEm: agora })
         .where(and(eq(pessoa.id, id), isNotNull(pessoa.desativadaEm))).returning(colunasPessoa);
       await this.auditoria.registrar(tx, { ator: ctx.ator, ip: ctx.ip, acao: 'pessoa.reativar', entidade: 'pessoa', registroId: id, antes, depois });
-      return paraPessoaApi(depois!, { telefoneCompleto: veTelefoneCompleto(ctx.ator.papel), motivoDesativacao: true });
+      return paraPessoaApi(depois!, { motivoDesativacao: true });
     });
   }
 }

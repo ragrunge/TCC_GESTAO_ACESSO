@@ -1,7 +1,7 @@
 // Pessoa como a API devolve (minimização, LGPD art. 6º, III):
 // - documento_busca (HMAC do CPF) NUNCA sai da API;
-// - telefone completo só para quem pode corrigir o cadastro (pessoa.editar: SI, AD) e só onde ele é preciso (ficha e
-//   resposta de escrita). Nas listas, só `telefoneMascarado`.
+// - telefone completo NUNCA sai da API (decisão de 2026-10-24): nem na ficha, nem nas respostas de escrita, para
+//   nenhum papel. Só `telefoneMascarado`; a correção do cadastro envia o número novo sem precisar ler o atual.
 import { pode } from '@portaria/domain/rbac';
 import type { Papel } from '@portaria/domain/types';
 import { mascararTelefone } from '../auditoria/snapshot';
@@ -34,7 +34,6 @@ export interface PessoaApi {
   /** Dependente menor de idade (art. 14): CPF e telefone opcionais. */
   menorIdade: boolean;
   documentoMascarado: string;
-  telefone?: string;
   telefoneMascarado: string | null;
   empresa?: string;
   servico?: string;
@@ -47,17 +46,13 @@ export interface PessoaApi {
   criadoEm: number;
 }
 
-/** Telefone completo só para quem tem pessoa.editar (correção do cadastro, art. 18). */
-export const veTelefoneCompleto = (papel: Papel) => pode(papel, 'pessoa.editar');
-
 /** Motivo da desativação só para quem pode desativar/reativar (SI, AD). */
 export const veMotivoDesativacao = (papel: Papel) => pode(papel, 'pessoa.desativar');
 
-export function paraPessoaApi(p: LinhaPessoa, o: { telefoneCompleto?: boolean; motivoDesativacao?: boolean } = {}): PessoaApi {
+export function paraPessoaApi(p: LinhaPessoa, o: { motivoDesativacao?: boolean } = {}): PessoaApi {
   const documento = p.anonimizadaEm ? ANONIMIZADO : p.semCpf ? SEM_CPF : (p.documentoMascarado ?? (p.menorIdade ? MENOR_SEM_CPF : SEM_CPF));
   return {
     id: p.id, nome: p.nome, documentoTipo: 'cpf', categoria: p.categoria, semCpf: p.semCpf, menorIdade: p.menorIdade, documentoMascarado: documento,
-    ...(o.telefoneCompleto && p.telefone ? { telefone: p.telefone } : {}),
     telefoneMascarado: p.telefone ? mascararTelefone(p.telefone) : null,
     ...(p.empresa ? { empresa: p.empresa } : {}),
     ...(p.servico ? { servico: p.servico } : {}),

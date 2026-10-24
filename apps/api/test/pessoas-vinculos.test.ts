@@ -77,10 +77,11 @@ describe('pessoas: cadastro (RF-02)', () => {
     expect(negados.at(-1)!.depois).toMatchObject({ acao: 'pessoa.cadastrar_morador', metodo: 'POST' });
   });
 
-  it('administração cadastra morador e recebe o telefone completo', async () => {
+  it('administração cadastra morador e recebe só o telefone mascarado', async () => {
     const r = await novaPessoa('administracao', { nome: 'Morador Novo', documento: cpf(), categoria: 'morador' });
     expect(r.status).toBe(201);
-    expect(r.body.data.telefone).toBe('11912345678');
+    expect(r.body.data.telefone).toBeUndefined();
+    expect(r.body.data.telefoneMascarado).toBe('(**) *****-5678');
   });
 
   it('regras: nome, telefone, CPF obrigatório e com dígito verificador, empresa do prestador', async () => {
@@ -137,7 +138,8 @@ describe('pessoas: correção do cadastro (art. 18)', () => {
     expect((await patch('auditor', `/pessoas/${p.id}`, { nome: 'X' })).status).toBe(403);
     const r = await patch('administracao', `/pessoas/${p.id}`, { nome: 'Marcos Pereira Lima', telefone: '(11) 97777-0012' });
     expect(r.status).toBe(200);
-    expect(r.body.data).toMatchObject({ nome: 'Marcos Pereira Lima', telefone: '11977770012' });
+    expect(r.body.data).toMatchObject({ nome: 'Marcos Pereira Lima', telefoneMascarado: '(**) *****-0012' });
+    expect(r.body.data.telefone).toBeUndefined();
     const t = (await trilha(api, 'pessoa.editar')).at(-1)!;
     expect(t.registroId).toBe(p.id);
     expect(t.antes).toMatchObject({ nome: 'Marcos Pereira', telefone: '(**) *****-0012' });
@@ -193,11 +195,12 @@ describe('pessoas: listagem e ficha (MATRIZ e minimização)', () => {
     expect((await get('administracao', `/pessoas?q=${CPF_ANA}`)).status).toBe(400);
   });
 
-  it('ficha: telefone completo só para SI/AD; vínculos com nomes; eventos ainda null', async () => {
+  it('ficha: telefone só mascarado para todos; vínculos com nomes; eventos ainda null', async () => {
     const ana = await pessoaPorNome('Ana Ribeiro');
     const adm = await get('administracao', `/pessoas/${ana.id}`);
     expect(adm.status).toBe(200);
-    expect(adm.body.data.pessoa.telefone).toBe('11987650001');
+    expect(adm.body.data.pessoa.telefone).toBeUndefined();
+    expect(adm.body.data.pessoa.telefoneMascarado).toBe('(**) *****-0001');
     expect(adm.body.data.eventos).toBeNull();
     expect(adm.body.data.vinculos[0]).toMatchObject({ unidadeCodigo: 'D-32', status: 'aprovado', conferencia: { tipoDocumento: 'escritura' }, conferidoPorNome: 'Paula Nogueira' });
     for (const papel of ['porteiro', 'auditor'] as const) {
