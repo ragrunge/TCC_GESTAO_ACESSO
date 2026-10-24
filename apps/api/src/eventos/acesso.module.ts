@@ -14,6 +14,7 @@ import { meioAutorizacao, tipoEvento, tipoVisita } from '../db/schema';
 import { UnidadesModule } from '../unidades/unidades.module';
 import { AutorizacoesService } from './autorizacoes.service';
 import { EventosService } from './eventos.service';
+import { Modulo } from '../saas/modulo.guard';
 
 const Instante = z.number().int().min(0).max(8_640_000_000_000);
 const Dia = z.string().refine(ehDiaValido, { message: 'data inválida (AAAA-MM-DD)' });
@@ -75,7 +76,7 @@ const FiltrosQuery = {
   somenteRetroativos: Booleano.optional(),
   excluirTipos: ListaTipos.optional(),
 };
-const ListarEventosDto = PaginacaoDto.extend(FiltrosQuery);
+export const ListarEventosDto = PaginacaoDto.extend(FiltrosQuery);
 /** Mesmos filtros no corpo, mais o nome (texto). */
 export const FiltrosCorpo = z.strictObject({
   eventoId: z.uuid().optional(), de: Instante.optional(), ate: Instante.optional(), unidadeId: z.uuid().optional(),
@@ -103,7 +104,7 @@ const NovaAutorizacaoDto = z.strictObject({
 });
 const VigentesDto = z.strictObject({ pessoaId: z.uuid(), unidadeId: z.uuid().optional(), areaComumId: z.uuid().optional() });
 const PrevistasDto = z.strictObject({ horas: z.coerce.number().int().min(1).max(24).default(12) });
-const DaUnidadeDto = z.strictObject({ unidadeId: z.uuid() });
+export const DaUnidadeDto = z.strictObject({ unidadeId: z.uuid() });
 const NovaRestricaoDto = z.strictObject({
   pessoaId: z.uuid(), unidadeId: z.uuid().nullable().default(null), motivo: Texto(300), validaAte: Dia.nullable(),
   solicitadaPorPessoaId: z.uuid().nullable().default(null), paraTodoCondominio: z.boolean().optional(),
@@ -193,14 +194,17 @@ export class AcessoController {
   }
 
   // ----- Autorizações prévias (RF-14, RN-07, RF-36) ---------------------------------------------------------------------
+  // Módulo `autorizacoes_previas` (SAAS-19), por handler: o resto deste controller (eventos, restrições) é núcleo.
 
   @Post('autorizacoes-previas')
+  @Modulo('autorizacoes_previas')
   @Acao('autorizacao.criar')
   criarAutorizacao(@Ctx() ctx: Contexto, @Body(new ZodPipe(NovaAutorizacaoDto)) b: z.infer<typeof NovaAutorizacaoDto>) {
     return this.autorizacoes.criarAutorizacao(ctx, b);
   }
 
   @Post('autorizacoes-previas/:id/revogar')
+  @Modulo('autorizacoes_previas')
   @Acao('autorizacao.criar')
   @HttpCode(204)
   async revogarAutorizacao(@Ctx() ctx: Contexto, @Param('id', uuidParam) id: string) {
@@ -208,6 +212,7 @@ export class AcessoController {
   }
 
   @Get('autorizacoes-previas/vigentes')
+  @Modulo('autorizacoes_previas')
   @Acao('autorizacao.criar')
   vigentes(@Query(new ZodPipe(VigentesDto)) q: z.infer<typeof VigentesDto>) {
     if (!!q.unidadeId === !!q.areaComumId) throw erroApi(400, 'DADOS_INVALIDOS', 'Informe a unidade OU a área comum.', [{ field: 'unidadeId', message: 'unidade ou área comum' }]);
@@ -215,6 +220,7 @@ export class AcessoController {
   }
 
   @Get('autorizacoes-previas/hoje')
+  @Modulo('autorizacoes_previas')
   @Acao('unidade.ver')
   autorizacoesHoje() {
     return this.autorizacoes.hoje();
@@ -222,6 +228,7 @@ export class AcessoController {
 
   /** Previstos nas próximas `horas` h (1 a 24, padrão 12), de quem ainda não está dentro. Mesma permissão de `hoje`. Sem CPF/telefone. */
   @Get('autorizacoes-previas/previstas')
+  @Modulo('autorizacoes_previas')
   @Acao('unidade.ver')
   previstas(@Query(new ZodPipe(PrevistasDto)) q: z.infer<typeof PrevistasDto>) {
     return this.autorizacoes.previstas(q.horas);
@@ -229,6 +236,7 @@ export class AcessoController {
 
   /** Detalhe da unidade: autorizações não revogadas e não vencidas. */
   @Get('autorizacoes-previas')
+  @Modulo('autorizacoes_previas')
   @Acao('unidade.ver')
   autorizacoesDaUnidade(@Query(new ZodPipe(DaUnidadeDto)) q: z.infer<typeof DaUnidadeDto>) {
     return this.autorizacoes.autorizacoesDaUnidade(q.unidadeId);

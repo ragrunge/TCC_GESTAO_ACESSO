@@ -36,6 +36,7 @@ import {
   usuarioSistema,
 } from '../db/schema';
 import { CofreDocumentos } from '../documentos/cofre';
+import { Modulo } from '../saas/modulo.guard';
 
 type Status = (typeof statusOcorrencia.enumValues)[number];
 const PROXIMO: Record<Status, Status | null> = { aberta: 'em_andamento', em_andamento: 'encerrada', encerrada: null };
@@ -53,7 +54,7 @@ const NovaDto = z.strictObject({
 const StatusDto = z.strictObject({ status: z.enum(['em_andamento', 'encerrada']) });
 const VincularDto = z.strictObject({ eventoIds: EventoIds.min(1) });
 const ListaStatus = z.string().max(40).transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean)).pipe(z.array(z.enum(statusOcorrencia.enumValues)).max(3));
-const ListarDto = PaginacaoDto.extend({
+export const ListarOcorrenciasDto = PaginacaoDto.extend({
   status: ListaStatus.optional(),
   tipo: z.enum(tipoOcorrencia.enumValues).optional(),
   unidadeId: z.uuid().optional(),
@@ -170,7 +171,7 @@ export class OcorrenciasService {
     return (await this.views(exec, [o]))[0]!;
   }
 
-  async listar(f: z.infer<typeof ListarDto>): Promise<Pagina<OcorrenciaViewApi>> {
+  async listar(f: z.infer<typeof ListarOcorrenciasDto>): Promise<Pagina<OcorrenciaViewApi>> {
     const depois = f.cursor ? decodificarCursor(f.cursor, CursorOcorrencias) : null;
     const filtros: SQL[] = [];
     if (f.status?.length) filtros.push(inArray(ocorrencia.status, f.status));
@@ -316,26 +317,36 @@ export class OcorrenciasService {
     return this.view(this.db, id);
   }
 
-  /** Conteúdo decifrado de um anexo DESTA ocorrência (o vínculo é conferido: id de documento de outra não serve). */
+  /** Conteúdo decifrado de um anexo DESTA ocorrência, com a leitura na trilha (`documento.ler`). */
   async conteudo(ctx: Contexto, ocorrenciaId: string, documentoId: string) {
+    const a = await this.lerAnexo(ocorrenciaId, documentoId);
+    await this.auditoria.registrar(this.db, {
+      ator: ctx.ator, ip: ctx.ip, acao: 'documento.ler', entidade: 'documento', registroId: documentoId, depois: { ocorrenciaId },
+    });
+    return a;
+  }
+
+  /**
+   * Conteúdo decifrado de um anexo DESTA ocorrência (o vínculo é conferido: id de documento de outra não serve), sem
+   * trilha: quem chama registra (`conteudo` acima; o app do Master como `plataforma.exportar`).
+   */
+  async lerAnexo(ocorrenciaId: string, documentoId: string) {
     const [d] = await this.db.select({ doc: documento }).from(ocorrenciaAnexo).innerJoin(documento, eq(documento.id, ocorrenciaAnexo.documentoId))
       .where(and(eq(ocorrenciaAnexo.ocorrenciaId, ocorrenciaId), eq(ocorrenciaAnexo.documentoId, documentoId)));
     if (!d) throw erroApi(404, 'ANEXO_NAO_ENCONTRADO', 'Anexo não encontrado nesta ocorrência.');
     const conteudo = await this.cofre.ler(d.doc);
-    await this.auditoria.registrar(this.db, {
-      ator: ctx.ator, ip: ctx.ip, acao: 'documento.ler', entidade: 'documento', registroId: documentoId, depois: { ocorrenciaId },
-    });
     return { conteudo, mime: d.doc.mime, nome: nomeAnexo(documentoId, d.doc.mime) };
   }
 }
 
+@Modulo('ocorrencias')
 @Controller('ocorrencias')
 export class OcorrenciasController {
   constructor(@Inject(OcorrenciasService) private readonly s: OcorrenciasService) {}
 
   @Get()
   @Acao('ocorrencia.ver')
-  listar(@Query(new ZodPipe(ListarDto)) q: z.infer<typeof ListarDto>) {
+  listar(@Query(new ZodPipe(ListarOcorrenciasDto)) q: z.infer<typeof ListarOcorrenciasDto>) {
     return this.s.listar(q);
   }
 

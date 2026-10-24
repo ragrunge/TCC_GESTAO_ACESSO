@@ -18,13 +18,14 @@ import { DB, type Db } from '../database/database.module';
 import { categoriaPessoa, encomenda, meioAutorizacao, unidade, usuarioSistema, vinculoUnidade } from '../db/schema';
 import { corrigidosComSql, efetivoSql, responsavelExcecaoSql } from '../eventos/efetivo';
 import { vinculoValidoSql } from '../vinculos/vinculo-valido';
+import { Modulo } from '../saas/modulo.guard';
 
 const Dia = z.string().refine(ehDiaValido, { message: 'data inválida (AAAA-MM-DD)' });
-const FiltroDto = z.strictObject({
+export const FiltroRelatorioDto = z.strictObject({
   de: Dia.optional(), ate: Dia.optional(), unidadeId: z.uuid().optional(),
   categoria: z.enum(categoriaPessoa.enumValues).optional(), meio: z.enum(meioAutorizacao.enumValues).optional(),
 });
-type Filtro = z.infer<typeof FiltroDto>;
+type Filtro = z.infer<typeof FiltroRelatorioDto>;
 
 interface Grupo { dia: string; tipo: string; meio: MeioAutorizacao | null; resp: string | null; retroativo: boolean; n: number; s: number }
 
@@ -118,18 +119,19 @@ export class RelatoriosService {
   }
 }
 
+@Modulo('relatorios')
 @Controller('relatorios')
 export class RelatoriosController {
   constructor(@Inject(RelatoriosService) private readonly servico: RelatoriosService) {}
 
   @Get('resumo')
   @Acao('relatorio.ver')
-  resumo(@Query(new ZodPipe(FiltroDto)) q: Filtro) { return this.servico.resumo(q); }
+  resumo(@Query(new ZodPipe(FiltroRelatorioDto)) q: Filtro) { return this.servico.resumo(q); }
 
   /** `{ nomeArquivo, conteudo, quantidade }` (UTF-8 com BOM, separador ";"). */
   @Get('resumo/csv')
   @Acao('relatorio.ver')
-  csv(@Query(new ZodPipe(FiltroDto)) q: Filtro) { return this.servico.csv(q); }
+  csv(@Query(new ZodPipe(FiltroRelatorioDto)) q: Filtro) { return this.servico.csv(q); }
 }
 
 @Module({ controllers: [RelatoriosController], providers: [RelatoriosService] })

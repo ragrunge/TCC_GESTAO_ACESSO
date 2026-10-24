@@ -9,6 +9,7 @@ import type { z } from 'zod';
 import { erroApi } from '../comum/erros';
 import { log } from '../comum/log';
 import { type DbPlataforma, PLATAFORMA_DB } from '../saas/plataforma-db';
+import { ResolvedorCondominio } from '../saas/resolvedor';
 import { EntradaJson, ErroProvisionamento, validarEntrada } from '../saas/provisionar';
 import { condominio } from '../saas/schema-plataforma';
 import { PROVISIONADOR, type Provisionador, ProvisionadorIndisponivel, ProvisionamentoOcupado } from './provisionador';
@@ -54,6 +55,7 @@ export class CondominiosMasterService {
   constructor(
     @Inject(PLATAFORMA_DB) private readonly db: DbPlataforma,
     @Inject(PROVISIONADOR) private readonly provisionador: Provisionador,
+    @Inject(ResolvedorCondominio) private readonly resolvedor: ResolvedorCondominio,
   ) {}
 
   /** GET /plataforma/provisionador/saude: só o booleano (sem URL, token nem motivo). */
@@ -103,8 +105,17 @@ export class CondominiosMasterService {
     }
   }
 
-  /** Liga/desliga módulos (SAAS-19). A recusa de rota no condomínio (ModuloGuard) é da entrega seguinte. */
+  /**
+   * Liga/desliga módulos (SAAS-19). O ModuloGuard do condomínio lê do cache do resolvedor: este processo o invalida na
+   * hora; outras réplicas da API pegam a mudança na renovação seguinte (até 1 min).
+   */
   async modulos(m: AuthMaster, id: string, pedidos: Modulo[]): Promise<CondominioPlataforma> {
+    const r = await this.gravarModulos(m, id, pedidos);
+    this.resolvedor.invalidar();
+    return r;
+  }
+
+  private gravarModulos(m: AuthMaster, id: string, pedidos: Modulo[]): Promise<CondominioPlataforma> {
     const depois = MODULOS.filter((x) => pedidos.includes(x));
     return this.db.transaction(async (tx) => {
       const [c] = await tx.select(colunas).from(condominio).where(eq(condominio.id, id)).for('update');

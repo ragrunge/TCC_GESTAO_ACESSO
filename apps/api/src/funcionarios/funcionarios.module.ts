@@ -20,6 +20,7 @@ import { funcionario, pessoa } from '../db/schema';
 import { colunasPessoa, paraPessoaApi, type LinhaPessoa, type PessoaApi } from '../pessoas/pessoa-view';
 import { PessoasModule } from '../pessoas/pessoas.module';
 import { PessoasService } from '../pessoas/pessoas.service';
+import { Modulo } from '../saas/modulo.guard';
 
 interface Escala { diasSemana: number[]; horaInicio: string; horaFim: string }
 export interface FuncionarioApi {
@@ -136,6 +137,7 @@ export class FuncionariosService {
   }
 }
 
+@Modulo('funcionarios')
 @Controller('funcionarios')
 export class FuncionariosController {
   constructor(@Inject(FuncionariosService) private readonly funcionarios: FuncionariosService) {}

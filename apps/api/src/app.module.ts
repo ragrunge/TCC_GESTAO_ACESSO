@@ -24,6 +24,7 @@ import { SeloModule } from './selo/selo.module';
 import { LgpdModule } from './lgpd/lgpd.module';
 import { JobsModule } from './jobs/agendador';
 import { MasterModule } from './master/master.module';
+import { ModuloGuard } from './saas/modulo.guard';
 
 @Module({
   imports: [ConfigModule, DatabaseModule, AuditoriaModule, AuthModule, UsuariosModule, UnidadesModule, PessoasModule, VinculosModule,
@@ -40,6 +41,8 @@ import { MasterModule } from './master/master.module';
     // dos por requisição, e a autorização não pode rodar antes da autenticação.
     { provide: APP_GUARD, useClass: SessaoGuard, scope: Scope.REQUEST, durable: true },
     { provide: APP_GUARD, useClass: PapelGuard, scope: Scope.REQUEST, durable: true },
+    // Módulos por condomínio (SAAS-19): depois da autenticação e da autorização, também durável para manter a ordem.
+    { provide: APP_GUARD, useClass: ModuloGuard, scope: Scope.REQUEST, durable: true },
     { provide: APP_FILTER, useClass: FiltroExcecao },
     // Todo 2xx com corpo sai como { data } (ou { data, pagination }); 204 sem corpo.
     { provide: APP_INTERCEPTOR, useClass: EnvelopeInterceptor },

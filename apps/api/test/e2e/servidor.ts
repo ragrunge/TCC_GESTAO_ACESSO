@@ -35,6 +35,8 @@ import { novoBancoPlataforma } from '../helpers/plataforma';
 import { comSaas, KEK_TESTE, MESTRA_TESTE, registrarCondominio, RegistroDeTeste } from '../helpers/saas';
 import { provisionadorPglite } from '../helpers/provisionador';
 import { PROVISIONADOR } from '../../src/master/provisionador';
+import { ResolvedorCondominio } from '../../src/saas/resolvedor';
+import { condominio, MODULOS_PLATAFORMA } from '../../src/saas/schema-plataforma';
 import { semearMastersE2e } from './masters';
 import { semearDadosE2e, USUARIOS_E2E } from './dados';
 
@@ -117,7 +119,7 @@ export async function iniciarServidorE2e(o: OpcoesServidorE2e) {
 
   // Banco plataforma (SaaS, F2) com o piloto: o banco `portaria` do registro é o Proxy acima.
   const plataforma = await novoBancoPlataforma();
-  await registrarCondominio(plataforma.db, { codigo: CODIGO_PILOTO_E2E, banco: 'portaria', hmac: CHAVE_HMAC_TESTE, kek: KEK_TESTE });
+  const pilotoId = await registrarCondominio(plataforma.db, { codigo: CODIGO_PILOTO_E2E, banco: 'portaria', hmac: CHAVE_HMAC_TESTE, kek: KEK_TESTE });
   // App do Master (F5): usuários fictícios da plataforma e o provisionamento de verdade sobre PGlite (sem o sidecar).
   const masterHash = await hash(senha, { memoryCost: config.argon2.memoriaKib, timeCost: 1, parallelism: 1 });
   const semearMasters = () => semearMastersE2e(plataforma.db, masterHash);
@@ -143,9 +145,14 @@ export async function iniciarServidorE2e(o: OpcoesServidorE2e) {
     );
   };
   const http = app.getHttpAdapter().getInstance();
-  // O reset também devolve os usuários da plataforma ao estado semeado (senha, troca pendente) e zera os limites de login
-  // da plataforma. Condomínios criados pelo e2e do app do Master ficam (códigos únicos por execução).
-  http.post('/__e2e/reset', rota(async () => { await trocarBanco(); await semearMasters(); return {}; }));
+  // O reset também devolve os usuários da plataforma ao estado semeado (senha, troca pendente), zera os limites de login
+  // da plataforma e religa todos os módulos do piloto (o e2e de módulos desliga pelo app do Master; SAAS-19).
+  // Condomínios criados pelo e2e do app do Master ficam (códigos únicos por execução).
+  const religarModulos = async () => {
+    await plataforma.db.update(condominio).set({ modulos: [...MODULOS_PLATAFORMA] }).where(eq(condominio.id, pilotoId));
+    app.get(ResolvedorCondominio).invalidar();
+  };
+  http.post('/__e2e/reset', rota(async () => { await trocarBanco(); await semearMasters(); await religarModulos(); return {}; }));
   // Adultera um evento sem recalcular o hash (o que um DBA mal-intencionado faria): a verificação da trilha deve apontar.
   // session_replication_role=replica desliga os triggers de imutabilidade só nesta transação do banco de teste.
   http.post('/__e2e/adulterar-evento', rota(async (req) => {

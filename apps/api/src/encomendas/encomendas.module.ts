@@ -23,6 +23,7 @@ import { UnidadesModule } from '../unidades/unidades.module';
 import { UnidadesService } from '../unidades/unidades.service';
 import { vinculoValidoSql } from '../vinculos/vinculo-valido';
 import { codigoUnidade } from '@portaria/domain/units';
+import { Modulo } from '../saas/modulo.guard';
 
 const DIA_MS = 86_400_000;
 const Texto = (max: number) => z.string().max(max);
@@ -37,13 +38,13 @@ const ReceberDto = z.strictObject({
 });
 const EntregarDto = z.strictObject({ pessoaId: z.uuid({ message: 'pessoa inválida' }) });
 const AutorizarDto = z.strictObject({ pessoaId: z.uuid(), solicitadaPorPessoaId: z.uuid() });
-const ListarDto = PaginacaoDto.extend({
+export const ListarEncomendasDto = PaginacaoDto.extend({
   status: z.enum(['aguardando', 'entregue']).optional(),
   unidadeId: z.uuid().optional(),
   /** RF-26: só as aguardando há mais de N dias (a regra `encomendaAtrasada` do domain: diasDesde > N). */
   atrasadasDias: z.coerce.number().int().min(0).max(365).optional(),
 });
-const ResumoDto = z.strictObject({ dias: z.coerce.number().int().min(0).max(365).default(DIAS_ENCOMENDA_ATRASADA) });
+export const ResumoEncomendasDto = z.strictObject({ dias: z.coerce.number().int().min(0).max(365).default(DIAS_ENCOMENDA_ATRASADA) });
 const CursorEncomendas = z.object({ t: z.string().datetime(), id: z.uuid() });
 
 /** Formato da view de encomenda (instantes em epoch ms; transportadora e rastreio vazios como ''). */
@@ -159,7 +160,7 @@ export class EncomendasService {
   private limiteAtraso(dias: number) { return new Date(this.agora().getTime() - (dias + 1) * DIA_MS); }
 
   /** RF-26: filas por status, mais recentes primeiro (recebida_em + id, keyset). */
-  async listar(f: z.infer<typeof ListarDto>): Promise<Pagina<EncomendaViewApi>> {
+  async listar(f: z.infer<typeof ListarEncomendasDto>): Promise<Pagina<EncomendaViewApi>> {
     const depois = f.cursor ? decodificarCursor(f.cursor, CursorEncomendas) : null;
     const filtros: SQL[] = [];
     if (f.status === 'aguardando' || f.atrasadasDias !== undefined) filtros.push(isNull(encomenda.retiradaEm));
@@ -271,20 +272,21 @@ export class EncomendasService {
   }
 }
 
+@Modulo('encomendas')
 @Controller('encomendas')
 export class EncomendasController {
   constructor(@Inject(EncomendasService) private readonly s: EncomendasService) {}
 
   @Get()
   @Acao('encomenda.ver')
-  listar(@Query(new ZodPipe(ListarDto)) q: z.infer<typeof ListarDto>) {
+  listar(@Query(new ZodPipe(ListarEncomendasDto)) q: z.infer<typeof ListarEncomendasDto>) {
     return this.s.listar(q);
   }
 
   /** Contagens das abas e do painel: aguardando, atrasadas (há mais de `dias`, padrão 7) e entregues. */
   @Get('resumo')
   @Acao('encomenda.ver')
-  resumo(@Query(new ZodPipe(ResumoDto)) q: z.infer<typeof ResumoDto>) {
+  resumo(@Query(new ZodPipe(ResumoEncomendasDto)) q: z.infer<typeof ResumoEncomendasDto>) {
     return this.s.resumo(q.dias);
   }
 

@@ -8,6 +8,7 @@ import * as s from '../src/db/schema';
 import { SENHA_MIN_MASTER } from '@portaria/domain/rbac-plataforma';
 import { problemasDaSenha, SenhaService } from '../src/auth/senha.service';
 import { CondominiosMasterService } from '../src/master/condominios-master.service';
+import { ResolvedorCondominio } from '../src/saas/resolvedor';
 import { nomeCookieMaster } from '../src/master/cookie-master';
 import { ProvisionadorHttp, provisionadorDoAmbiente } from '../src/master/provisionador';
 import { criarUsuario } from '../src/master/usuario-plataforma';
@@ -369,7 +370,7 @@ describe('condomínios', () => {
 describe('provisionador', () => {
   it('desligado ou fora do ar: 503; configuração validada', async () => {
     const fake = { configurado: () => false, disponivel: vi.fn(async () => true), provisionar: vi.fn() };
-    const svc = new CondominiosMasterService(api.plataforma.db, fake);
+    const svc = new CondominiosMasterService(api.plataforma.db, fake, api.app.get(ResolvedorCondominio));
     const m = { sessaoId: 'x', expiraEm: new Date(), ip: null, usuario: { id: 'x', nome: 'x', email: 'x@x.x', papel: 'master' as const, deveTrocarSenha: false } };
     await expect(svc.criar(m, { ...ENTRADA, plano: 'padrao', estrutura: { ...ENTRADA.estrutura, agrupamento: 'Bloco' } } as never)).rejects.toMatchObject({ status: 503 });
     expect(fake.provisionar).not.toHaveBeenCalled();

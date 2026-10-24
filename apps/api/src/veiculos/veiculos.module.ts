@@ -15,6 +15,7 @@ import { DB, type Db } from '../database/database.module';
 import { veiculo } from '../db/schema';
 import { UnidadesModule } from '../unidades/unidades.module';
 import { UnidadesService } from '../unidades/unidades.service';
+import { Modulo } from '../saas/modulo.guard';
 
 const NovoVeiculoDto = z.strictObject({ unidadeId: z.uuid({ message: 'unidade inválida' }), placa: z.string().max(10), modelo: z.string().max(60), cor: z.string().max(30) });
 const EdicaoVeiculoDto = z.strictObject({ placa: z.string().max(10).optional(), modelo: z.string().max(60).optional(), cor: z.string().max(30).optional(), ativo: z.boolean().optional() });
@@ -90,6 +91,7 @@ export class VeiculosService {
   }
 }
 
+@Modulo('veiculos')
 @Controller('veiculos')
 export class VeiculosController {
   constructor(@Inject(VeiculosService) private readonly veiculos: VeiculosService) {}

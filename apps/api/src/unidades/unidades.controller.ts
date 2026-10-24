@@ -6,9 +6,11 @@ import { Acao, Autenticado, Ctx } from '../auth/decorators';
 import type { Contexto } from '../auth/tipos';
 import { PaginacaoDto } from '../comum/pagina';
 import { uuidParam, ZodPipe } from '../comum/zod.pipe';
+import { CONDOMINIO, type CondominioResolvido } from '../saas/condominio';
+import { ResolvedorCondominio } from '../saas/resolvedor';
 import { UnidadesService } from './unidades.service';
 
-const ListarUnidadesDto = PaginacaoDto.extend({ bloco: z.string().trim().regex(/^[A-Za-z0-9]{1,3}$/).optional() });
+export const ListarUnidadesDto = PaginacaoDto.extend({ bloco: z.string().trim().regex(/^[A-Za-z0-9]{1,3}$/).optional() });
 
 /** Corpo de criar/editar. A estrutura (bloco de 1 a 3 letras/dígitos, número de até 4 dígitos) é normalizada e
  *  validada no serviço com a regra do domain e responde 422 UNIDADE_INVALIDA; aqui só o tipo. */
@@ -19,12 +21,18 @@ const refParam = new ZodPipe(z.string().trim().min(1).max(40));
 
 @Controller()
 export class UnidadesController {
-  constructor(@Inject(UnidadesService) private readonly unidades: UnidadesService) {}
+  constructor(
+    @Inject(UnidadesService) private readonly unidades: UnidadesService,
+    @Inject(CONDOMINIO) private readonly condominio: CondominioResolvido | null,
+    @Inject(ResolvedorCondominio) private readonly resolvedor: ResolvedorCondominio,
+  ) {}
 
+  /** Catálogo leve e os módulos ligados do condomínio (SAAS-19), renovados a cada recarga do catálogo no front. */
   @Get('catalogo')
   @Autenticado()
-  catalogo() {
-    return this.unidades.catalogo();
+  async catalogo() {
+    const [c, modulos] = await Promise.all([this.unidades.catalogo(), this.condominio ? this.resolvedor.modulosDe(this.condominio.id) : []]);
+    return { ...c, modulos };
   }
 
   @Get('unidades')

@@ -31,6 +31,7 @@ import { documentoBusca, mascararCpf } from '../db/cpf';
 import { formatoParaCpf, mascarasAntigasEmUso } from '../pessoas/formato-cpf';
 import { importacao, importacaoInconsistencia, pessoa, unidade, vinculoUnidade } from '../db/schema';
 import { normalizar } from '../pessoas/busca.service';
+import { Modulo } from '../saas/modulo.guard';
 
 const MAX_LINHAS = 3000;
 const LOTE = 400;
@@ -234,6 +235,7 @@ export class ImportacaoService {
   }
 }
 
+@Modulo('importacao')
 @Controller('importacoes')
 export class ImportacaoController {
   constructor(@Inject(ImportacaoService) private readonly importacao: ImportacaoService) {}

@@ -2,9 +2,10 @@
 // em nome da parte de condomínio. Traduz código do login ou id do cookie em `CondominioResolvido` (banco + chaves
 // desembrulhadas) e confere tudo no boot.
 //
-// - Cache em memória da tabela `condominio` (só id, código, nome, banco, status: colunas não pessoais). Renovado a cada
-//   RENOVAR_MS (status novo, como `suspenso`, vale em até 1 min) e, num código ou id desconhecido, no máximo uma vez a
-//   cada RECARGA_MIN_MS: código inventado em rajada não vira uma consulta à plataforma por requisição.
+// - Cache em memória da tabela `condominio` (só id, código, nome, banco, status, módulos: colunas não pessoais). Renovado
+//   a cada RENOVAR_MS (status novo, como `suspenso`, e módulo desligado valem em até 1 min) e, num código ou id
+//   desconhecido, no máximo uma vez a cada RECARGA_MIN_MS: código inventado em rajada não vira uma consulta à plataforma
+//   por requisição. O app do Master invalida o cache deste processo ao mudar módulos (`invalidar`).
 // - Plataforma fora do ar na renovação: fica com o cache anterior (o log registra). Sem cache, nada é resolvido e as
 //   rotas de condomínio falham fechadas.
 // - Chaves: desembrulhadas na primeira resolução do condomínio e guardadas em memória (SAAS-04). Rotação de chave do
@@ -19,6 +20,7 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import { CODIGO_CONDOMINIO as CODIGO } from '@portaria/domain/condominio';
+import { MODULOS, type Modulo } from '@portaria/domain/modulos';
 import { AGRUPAMENTOS, type Agrupamento, ESTRUTURA_PADRAO } from '@portaria/domain/units';
 import { log } from '../comum/log';
 import { CONFIG, type Config } from '../config/config';
@@ -35,7 +37,19 @@ export const RENOVAR_MS = 60_000;
 export const RECARGA_MIN_MS = 5_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-interface Linha { id: string; codigo: string; nome: string; banco: string; status: string }
+interface Linha { id: string; codigo: string; nome: string; banco: string; status: string; modulos: string[] }
+
+/**
+ * Status em que o app do Master LÊ os dados do condomínio (SAAS-09, F5 entrega 2): os atendidos e o `encerrado`, cujo
+ * banco ainda existe até a exclusão (suporte e exportação de fim de contrato, SAAS-11). `provisionando` ainda não tem
+ * dado; `excluido` não tem mais banco.
+ */
+export const STATUS_LEITURA_PLATAFORMA = ['ativo', 'suspenso', 'encerrado'] as const;
+
+export type ResolucaoPlataforma =
+  | { tipo: 'ok'; condominio: CondominioResolvido; status: string }
+  | { tipo: 'inexistente' }
+  | { tipo: 'provisionando' };
 
 export interface Resolucao {
   condominio: CondominioResolvido;
@@ -92,8 +106,10 @@ export class ResolvedorCondominio implements OnModuleInit {
   private recarregar(): Promise<void> {
     this.recarga ??= (async () => {
       try {
-        const linhas = await this.db.select({ id: sp.condominio.id, codigo: sp.condominio.codigo, nome: sp.condominio.nome, banco: sp.condominio.banco, status: sp.condominio.status })
-          .from(sp.condominio);
+        const linhas = await this.db.select({
+          id: sp.condominio.id, codigo: sp.condominio.codigo, nome: sp.condominio.nome, banco: sp.condominio.banco, status: sp.condominio.status,
+          modulos: sp.condominio.modulos,
+        }).from(sp.condominio);
         this.porId = new Map(linhas.map((l) => [l.id, l]));
         this.porCodigo = new Map(linhas.map((l) => [l.codigo, l.id]));
         this.carregadoEm = Date.now();
@@ -160,6 +176,36 @@ export class ResolvedorCondominio implements OnModuleInit {
       }
     }
     return { resolvidos, falhas };
+  }
+
+  /**
+   * Módulos ligados do condomínio (SAAS-19), do cache renovado a cada RENOVAR_MS: desligar vale em até 1 min sem
+   * reiniciar. Condomínio fora do cache (não deveria acontecer numa requisição autenticada): nenhum, falha fechada.
+   */
+  async modulosDe(id: string): Promise<Modulo[]> {
+    await this.renovar(false);
+    const l = this.porId.get(id);
+    return l ? MODULOS.filter((m) => l.modulos.includes(m)) : [];
+  }
+
+  /** A próxima consulta recarrega a tabela `condominio` (o Master acabou de mudar módulos neste processo). */
+  invalidar(): void {
+    this.carregadoEm = 0;
+  }
+
+  /**
+   * Condomínio para a leitura do app do Master (SAAS-09): também o `encerrado` (STATUS_LEITURA_PLATAFORMA). Id
+   * desconhecido ou `excluido`: inexistente (404). Mesmas chaves e mesmo banco da subárvore das requisições dele.
+   */
+  async paraPlataforma(id: string): Promise<ResolucaoPlataforma> {
+    if (!UUID.test(id)) return { tipo: 'inexistente' };
+    await this.renovar(false);
+    if (!this.porId.has(id)) await this.renovar(true);
+    const l = this.porId.get(id);
+    if (!l) return { tipo: 'inexistente' };
+    if (l.status === 'provisionando') return { tipo: 'provisionando' };
+    if (!(STATUS_LEITURA_PLATAFORMA as readonly string[]).includes(l.status)) return { tipo: 'inexistente' };
+    return { tipo: 'ok', condominio: await this.resolver(l), status: l.status };
   }
 
   async atendidos(): Promise<Resolucao[]> {
