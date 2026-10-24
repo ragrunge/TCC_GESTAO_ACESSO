@@ -21,7 +21,7 @@ describe('lerLinhaUnidade: formatos aceitos', () => {
 
 describe('lerLinhaUnidade: recusas com motivo', () => {
   it.each([
-    ['101', /Falta o bloco/], ['Bloco 101', /Falta o bloco/], ['A101', /Separe o bloco/], ['ABCD-1', /1 a 3 letras/],
+    ['101', /Falta o bloco/], ['Bloco 101', /Falta o bloco/], ['B', /Falta o número/], ['A101', /Separe o bloco/], ['ABCD-1', /1 a 3 letras/],
     ['A-0', /maior que zero/], ['A-12345', /até 4/], ['A-B', /Formato não reconhecido/], ['A-101 A-102', /Formato não reconhecido/],
     ['A-101-x', /Formato não reconhecido/], ['Ç-1', /Formato não reconhecido/],
   ])('%s', (texto, motivo) => expect(codigo(texto)).toMatch(motivo));
@@ -40,7 +40,7 @@ describe('lerListaUnidades', () => {
     ]);
     expect(r.linhas[2]!.motivo).toBe('Repetida: A-101 já está na linha 3.');
     expect(r.linhas[5]!.motivo).toBe('Repetida: B-02 já está na linha 1.');
-    expect(r.linhas[3]!.motivo).toMatch(/Separe/);
+    expect(r.linhas[3]!.motivo).toMatch(/Falta o número/);
     expect(r.unidades.map(codigoUnidade)).toEqual(['A-03', 'A-101', 'B-02']);
     expect([r.invalidas, r.duplicadas, r.acimaDoLimite]).toEqual([1, 2, false]);
   });

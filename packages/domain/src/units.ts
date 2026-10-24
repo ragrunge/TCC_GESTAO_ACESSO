@@ -214,6 +214,7 @@ export function lerLinhaUnidade(texto: string, agrupamento: Agrupamento = 'Bloco
   const m = LINHA_UNIDADE.exec(t);
   if (!m) {
     if (/^(?:(?:bloco|torre)\s*)?[0-9]+$/i.test(t)) return { motivo: falta };
+    if (/^[a-z]+$/i.test(t)) return { motivo: 'Falta o número do apartamento (ex.: A-101).' };
     if (/^[a-z0-9]+$/i.test(t)) return { motivo: 'Separe o bloco do número com hífen ou espaço (ex.: A-101).' };
     return { motivo: 'Formato não reconhecido. Use BLOCO-NÚMERO (ex.: A-101).' };
   }
