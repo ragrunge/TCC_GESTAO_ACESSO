@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useApi, type PessoaBusca } from '../../api';
 import { useCan } from '../../auth/AuthContext';
 import { Alert } from '../../components/Alert';
@@ -24,6 +25,7 @@ export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onC
   const { avisar } = useToast();
   const podeCorrigir = useCan('evento.corrigir');
   const podeExportar = useCan('auditoria.exportar');
+  const podeSaida = useCan('evento.registrar');
   const catalogo = useCatalogo();
   const fmt = (campo: keyof ValoresCorrecao, v: unknown) => formatarValor(campo, v, catalogo.codigo);
   const [corrigindo, setCorrigindo] = useState(false);
@@ -122,7 +124,11 @@ export function EventoGaveta({ ev, onClose, onCorrigido }: { ev: EventoView; onC
         <div className="flex flex-col gap-0.5"><span className={rot}>Autorizado por</span><span className="font-semibold">{textoAutorizacao(ev)}</span></div>
         <div className="flex flex-col gap-0.5"><span className={rot}>Meio de autorização</span><span className="font-medium">{textoMeioLongo(ev)}</span></div>
         <div className="flex flex-col gap-0.5"><span className={rot}>Saída</span>
-          <span className="font-medium">{ev.saida ? `${fmtHora(ev.saida.em)} (${ev.saida.codigo})` : ev.tipo === 'entrada' && ev.dentro ? 'Ainda no condomínio' : '—'}</span></div>
+          <span className="font-medium">{ev.saida ? `${fmtHora(ev.saida.em)} (${ev.saida.codigo})` : ev.tipo === 'entrada' && ev.dentro ? 'Ainda no condomínio' : '—'}</span>
+          {/* Atalho para a tela de saída já com esta entrada escolhida (lá a saída ainda é confirmada) */}
+          {podeSaida && ev.tipo === 'entrada' && ev.dentro && !ev.saida && (
+            <Link to={`/saida?entrada=${ev.id}`} className="mt-1 inline-flex h-[44px] w-fit items-center rounded-lg border border-[#0B5563] bg-white px-3 text-[14px] font-semibold !text-[#0B5563] hover:bg-[#F0F8F9] lg:h-10">Registrar saída</Link>
+          )}</div>
       </div>
 
       {ev.valoresOriginais && ev.correcao && (

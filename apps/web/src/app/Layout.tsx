@@ -19,6 +19,7 @@ const GRUPOS: { titulo: string; itens: { rota: Rota; rotulo: string; contador?: 
   { titulo: 'Portaria', itens: [
     { rota: 'painel', rotulo: 'Painel' },
     { rota: 'entrada', rotulo: 'Registrar entrada' },
+    { rota: 'saida', rotulo: 'Registrar saída' },
     { rota: 'pessoas', rotulo: 'Presentes agora' },
     { rota: 'encomendas', rotulo: 'Encomendas' },
     { rota: 'ocorrencias', rotulo: 'Ocorrências' },
@@ -136,11 +137,13 @@ export function Layout() {
   // Gaveta aberta: foco preso, Esc fecha e o foco volta ao botão do menu (mesma armadilha dos modais).
   useArmadilhaDeFoco(menuRef, fecharMenu, menuAberto);
 
-  // Atalhos globais (RNF-07): F2 nova entrada, F3 encomenda, F4 ocorrência
+  // Atalhos globais (RNF-07): F2 nova entrada, F3 encomenda, F4 ocorrência, F8 saída. F8 e não F6: no navegador o F6
+  // leva o foco para a barra de endereço (F5 recarrega, F7 navegação por cursor), e o preventDefault não o segura sempre.
   useEffect(() => {
     function tecla(e: KeyboardEvent) {
       if (temModalAberto()) return;
       if (e.key === 'F2' && pode(papel, 'evento.registrar')) { e.preventDefault(); nav('/entrada'); }
+      else if (e.key === 'F8' && pode(papel, 'evento.registrar')) { e.preventDefault(); nav('/saida'); }
       else if (e.key === 'F3' && pode(papel, 'encomenda.operar')) { e.preventDefault(); nav('/encomendas?novo=1'); }
       else if (e.key === 'F4' && pode(papel, 'ocorrencia.operar')) { e.preventDefault(); nav('/ocorrencias?novo=1'); }
     }

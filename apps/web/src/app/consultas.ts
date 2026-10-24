@@ -23,6 +23,8 @@ export const CHAVES = {
   pessoasBusca: (q: string, desativadas = false) => ['pessoas', 'busca', q, desativadas] as const,
   /** Seletor de pessoa dos formulários (PessoaCombobox): mesma regra de memória da busca acima. */
   pessoasSeletor: (q: string) => ['pessoas', 'busca', 'seletor', q] as const,
+  /** CPF digitado na tela de saída (cruzado com os presentes): mesma regra de memória da busca acima. */
+  pessoasSaida: (digitos: string) => ['pessoas', 'busca', 'saida', digitos] as const,
   ficha: (id: string) => ['pessoas', 'ficha', id] as const,
   funcionarios: ['funcionarios'] as const,
   /** Prefixo da busca do topo. */

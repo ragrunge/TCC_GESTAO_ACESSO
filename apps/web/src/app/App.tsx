@@ -11,6 +11,7 @@ import { TrocarSenhaPage } from '../features/auth/TrocarSenhaPage';
 import { PainelPage } from '../features/portaria/PainelPage';
 import { EntradaPage } from '../features/portaria/EntradaPage';
 import { PessoasDentroPage } from '../features/portaria/PessoasDentroPage';
+import { SaidaPage } from '../features/portaria/SaidaPage';
 import { EncomendasPage } from '../features/encomendas/EncomendasPage';
 import { OcorrenciasPage } from '../features/ocorrencias/OcorrenciasPage';
 import { UnidadesPage } from '../features/unidades/UnidadesPage';
@@ -48,6 +49,7 @@ export function App() {
                 {/* o Layout exige apenas sessão; cada rota filtra pelo papel */}
                 <Route path="/painel" element={<RequireRole rota="painel"><PainelPage /></RequireRole>} />
                 <Route path="/entrada" element={<RequireRole rota="entrada"><EntradaPage /></RequireRole>} />
+                <Route path="/saida" element={<RequireRole rota="saida"><SaidaPage /></RequireRole>} />
                 <Route path="/pessoas" element={<RequireRole rota="pessoas"><PessoasDentroPage /></RequireRole>} />
                 <Route path="/encomendas" element={<RequireRole rota="encomendas"><EncomendasPage /></RequireRole>} />
                 <Route path="/ocorrencias" element={<RequireRole rota="ocorrencias"><OcorrenciasPage /></RequireRole>} />

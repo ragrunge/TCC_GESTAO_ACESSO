@@ -73,7 +73,7 @@ export const pode = (papel: Papel | undefined, acao: Acao): boolean => !!papel &
 // 2FA fica para a fase de segurança (pós-MVP).
 
 export type Rota =
-  | 'painel' | 'entrada' | 'pessoas' | 'encomendas' | 'ocorrencias'
+  | 'painel' | 'entrada' | 'saida' | 'pessoas' | 'encomendas' | 'ocorrencias'
   | 'unidades' | 'vinculos' | 'cadastro' | 'importar'
   | 'historico' | 'relatorios' | 'usuarios' | 'funcionarios';
 
@@ -81,6 +81,7 @@ export type Rota =
 export const ROTAS: Record<Rota, Papel[]> = {
   painel: [SI, AD, PO],
   entrada: [SI, AD, PO],
+  saida: [SI, AD, PO], // mesma permissão de registrar entrada (evento.registrar)
   pessoas: [SI, AD, PO, AU],
   encomendas: [SI, AD, PO, AU],
   ocorrencias: [SI, AD, PO, AU],
