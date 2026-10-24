@@ -13,12 +13,13 @@ import { Modal } from '../../components/Modal';
 import { ConfirmarModal } from '../../components/ConfirmarModal';
 import { PessoaPicker } from '../../components/PessoaPicker';
 import { useToast } from '../../components/Toast';
-import { ROTULO_VINCULO, type EventoView, type TipoVinculo, type Veiculo } from '@portaria/domain/types';
+import { ROTULO_VINCULO, type EventoView, type Veiculo } from '@portaria/domain/types';
 import { MIN_JUSTIFICATIVA, descreverJanela } from '@portaria/domain/rules';
 import { DIAS_SEMANA_ABREV, fmtData, fromInput, toInputDate, agora } from '@portaria/domain/time';
 import { acharUnidadePorTexto, codigoUnidade } from '@portaria/domain/units';
 import { mensagemErro, useAsync } from '../../app/useAsync';
-import { NovaPessoaForm, ID_FORM_PESSOA } from '../cadastro/NovaPessoaForm';
+import { NovaPessoaForm, ID_FORM_PESSOA, prefillDoTermo } from '../cadastro/NovaPessoaForm';
+import { NovoVinculoModalLazy, mensagemSucesso } from '../vinculos/NovoVinculoLazy';
 import { useCatalogo } from '../../app/catalogo';
 import { APOS_AUTORIZACAO, APOS_VEICULO, useInvalidar } from '../../app/consultas';
 import { useAcoesUnidade, useUnidadeDetalhe } from './useUnidades';
@@ -220,8 +221,14 @@ export function UnidadeDetalhe({ id }: { id: string }) {
       )}
 
       {evento && <EventoGaveta ev={evento} onClose={() => setEvento(null)} />}
-      {d && (modo === 'vinculo' || modo === 'morador') && <VinculoModal unidade={uid} incluir={modo === 'morador'} podeCadastrar={podeCadastrarMorador} onClose={() => setModo(null)}
-        onFeito={() => { feito('Vínculo solicitado. Fica pendente até a aprovação; pendente não dá acesso de morador.'); setPendenteAviso(true); }} />}
+      {d && (modo === 'vinculo' || modo === 'morador') && (
+        <NovoVinculoModalLazy titulo={modo === 'morador' ? 'Incluir morador' : 'Solicitar vínculo'} unidadeFixa={d.unidade} vinculosConhecidos={d.vinculos}
+          onClose={() => setModo(null)} onFeito={(v) => { feito(mensagemSucesso(v)); setPendenteAviso(v.status === 'pendente'); }}
+          cadastro={podeCadastrarMorador ? ({ texto, onEscolhida, onVoltar }) => (
+            <CadastroNoSeletor unidade={uid} texto={texto} onVoltar={onVoltar} onEscolhida={onEscolhida}
+              aviso="Depois de cadastrada, a pessoa já fica escolhida no vínculo. O vínculo continua pendente até a aprovação em Vínculos." />
+          ) : undefined} />
+      )}
       {revogando && (
         <ConfirmarModal titulo="Revogar autorização prévia" rotulo="Revogar autorização" onClose={() => setRevogando(null)} onConfirmar={() => revogarPrevia(revogando)}>
           <p>Revogar a autorização prévia de <strong>{revogando.pessoaNome}</strong>? Ela deixa de valer na portaria; o histórico é mantido.</p>
@@ -284,51 +291,6 @@ const rodapeForm = (onClose: () => void, form: string, rotulo: string) => (
   </>
 );
 
-function VinculoModal({ unidade, incluir, podeCadastrar, onClose, onFeito }: { unidade: string; incluir?: boolean; podeCadastrar?: boolean; onClose: () => void; onFeito: () => void }) {
-  const api = useApi();
-  const [pessoa, setPessoa] = useState<PessoaBusca | null>(null);
-  const [tipo, setTipo] = useState<TipoVinculo>('proprietario');
-  const [ini, setIni] = useState(toInputDate(agora()));
-  const [fim, setFim] = useState('');
-  const [erro, setErro] = useState('');
-  // Cadastro de pessoa no lugar do formulário (mesma janela: dois modais empilhados quebrariam o foco); o estado do vínculo fica.
-  const [cadastrando, setCadastrando] = useState<string | null>(null);
-  async function salvar(e: FormEvent) {
-    e.preventDefault();
-    if (!pessoa) { setErro('Escolha a pessoa.'); return; }
-    try {
-      await api.vinculos.criar({
-        pessoaId: pessoa.id, unidadeId: unidade, tipo, vigenciaInicio: fromInput(ini)!, vigenciaFim: fim ? fromInput(fim) : null,
-        solicitadoPor: '', // sem anexo: o comprovante é conferido e registrado na tela de Vínculos (RF-05) antes da aprovação
-      });
-      onFeito();
-    } catch (err) { setErro(mensagemErro(err)); }
-  }
-  if (cadastrando !== null) {
-    return (
-      <CadastroNoSeletor unidade={unidade} texto={cadastrando} onVoltar={() => setCadastrando(null)}
-        aviso="Depois de cadastrada, a pessoa já fica escolhida no vínculo. O vínculo continua pendente até a aprovação em Vínculos."
-        onEscolhida={(p) => { setPessoa(p); setCadastrando(null); setErro(''); }} />
-    );
-  }
-  const titulo = incluir ? 'Incluir morador' : 'Solicitar vínculo';
-  return (
-    <Modal titulo={titulo} onClose={onClose} largura={600} rodape={rodapeForm(onClose, "f-vinc", "Enviar solicitação")}>
-      <UnidadeTitulo unidade={unidade} />
-      <form id="f-vinc" onSubmit={salvar} className="flex flex-col gap-[14px]">
-        <PessoaPicker rotulo="Pessoa" valor={pessoa} onChange={setPessoa} autoFocus onCadastrar={podeCadastrar ? setCadastrando : undefined} />
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Tipo de vínculo"><select className="input" value={tipo} onChange={(e) => setTipo(e.target.value as TipoVinculo)}>{(Object.keys(ROTULO_VINCULO) as TipoVinculo[]).map((t) => <option key={t} value={t}>{ROTULO_VINCULO[t]}</option>)}</select></Field>
-          <Field label="Início da vigência"><input type="date" className="input" value={ini} onChange={(e) => setIni(e.target.value)} /></Field>
-          <Field label="Fim da vigência" dica={tipo === 'inquilino' ? 'Obrigatório para inquilino.' : 'Em branco = indeterminada.'}><input type="date" className="input" value={fim} onChange={(e) => setFim(e.target.value)} /></Field>
-        </div>
-        <Alert tom="neutro">O vínculo nasce <strong>pendente</strong> e só concede acesso depois da aprovação da administração ou do síndico.</Alert>
-        {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
-      </form>
-    </Modal>
-  );
-}
-
 /** Pessoa recém-cadastrada (ou o cadastro existente) no formato do seletor. */
 const paraSeletor = (p: Pessoa): PessoaBusca => ({ ...p, ultimoAcesso: '', unidadesVinculadas: [], unidadesVinculadasCodigos: [] });
 
@@ -344,7 +306,7 @@ function CadastroNoSeletor({ unidade, texto, aviso, categoriaInicial, onEscolhid
     <Modal titulo="Nova pessoa" onClose={onVoltar} largura={600} gap={14}
       rodape={<><Button type="submit" form={ID_FORM_PESSOA} variante="primario" grande className="flex-1">Cadastrar e escolher</Button><Button grande onClick={onVoltar}>Voltar</Button></>}>
       <UnidadeTitulo unidade={unidade} />
-      <NovaPessoaForm nomeInicial={/\d/.test(texto) ? '' : texto} aviso={aviso} categoriaInicial={categoriaInicial}
+      <NovaPessoaForm nomeInicial={prefillDoTermo(texto).nome} documentoInicial={prefillDoTermo(texto).documento} aviso={aviso} categoriaInicial={categoriaInicial}
         onFeito={(p) => onEscolhida(paraSeletor(p))}
         onExistente={async (id) => onEscolhida(paraSeletor((await api.pessoas.ficha(id)).pessoa))} />
     </Modal>

@@ -81,6 +81,20 @@ export async function escolherPessoa(page: Page, busca: string, nome = busca) {
   await expect(page.getByRole('button', { name: 'Trocar', exact: true })).toBeVisible();
 }
 
+/** Formulário de vínculo (Incluir morador / Solicitar vínculo / ficha): escolhe a pessoa no PessoaCombobox. */
+export async function escolherPessoaNoVinculo(modal: Locator, busca: string, nome = busca) {
+  await modal.getByRole('combobox', { name: 'Pessoa', exact: true }).fill(busca);
+  await modal.getByRole('option', { name: new RegExp(nome) }).first().click();
+  await expect(modal.getByRole('button', { name: new RegExp(`^Trocar pessoa \\(${nome}`) })).toBeVisible();
+}
+
+/** Formulário de vínculo: Revisar -> Confirmar (o vínculo nasce pendente). */
+export async function revisarEConfirmarVinculo(modal: Locator, resumo?: string | RegExp) {
+  await modal.getByRole('button', { name: 'Revisar vínculo' }).click();
+  if (resumo) await expect(modal.getByText(resumo)).toBeVisible();
+  await modal.getByRole('button', { name: 'Confirmar vínculo' }).click();
+}
+
 /** Escolhe a unidade pelo seletor de bloco (botões A–I) e campo de apartamento. Ex.: "D-32". */
 export async function escolherUnidade(page: Page, unidade: string) {
   const m = /^([A-Z0-9]{1,3})-(\d{2,4})$/.exec(unidade);

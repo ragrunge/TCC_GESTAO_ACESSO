@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test, entrarComo, toast } from './helpers';
+import { expect, test, entrarComo, escolherPessoaNoVinculo, revisarEConfirmarVinculo, toast } from './helpers';
 
 test.describe('6. Vínculo', () => {
   test.beforeEach(async ({ page }) => {
@@ -16,10 +16,9 @@ test.describe('6. Vínculo', () => {
     await expect(modal.locator('input[type=file]')).toHaveCount(0);
     await expect(modal.getByLabel(/documento|anexo|contrato|arquivo/i)).toHaveCount(0);
 
-    await modal.getByLabel('Pessoa', { exact: true }).fill('Larissa Gomes');
-    await modal.getByRole('button', { name: /Larissa Gomes/ }).click();
-    await modal.getByRole('combobox', { name: 'Tipo de vínculo' }).selectOption({ label: 'Dependente' });
-    await modal.getByRole('button', { name: 'Enviar solicitação' }).click();
+    await escolherPessoaNoVinculo(modal, 'Larissa Gomes');
+    await modal.getByRole('radio', { name: 'Dependente' }).click();
+    await revisarEConfirmarVinculo(modal, 'Vincular Larissa Gomes a Bloco C · AP 14 como Dependente');
     await expect(toast(page, /Vínculo solicitado\. Fica pendente/)).toBeVisible();
 
     // Aparece na fila de pendentes da administração
@@ -40,10 +39,9 @@ test.describe('6. Vínculo', () => {
     await page.goto('/unidades/C-14');
     await page.getByRole('button', { name: 'Solicitar vínculo' }).click();
     const modal = page.getByRole('dialog', { name: 'Solicitar vínculo' });
-    await modal.getByLabel('Pessoa', { exact: true }).fill('Yuri Menor');
-    await modal.getByRole('button', { name: /Yuri Menor Dependente/ }).click();
-    await modal.getByRole('combobox', { name: 'Tipo de vínculo' }).selectOption({ label: 'Dependente' });
-    await modal.getByRole('button', { name: 'Enviar solicitação' }).click();
+    await escolherPessoaNoVinculo(modal, 'Yuri Menor', 'Yuri Menor Dependente');
+    await modal.getByRole('radio', { name: 'Dependente' }).click();
+    await revisarEConfirmarVinculo(modal);
     await expect(toast(page, /Vínculo solicitado/)).toBeVisible();
 
     await page.goto('/vinculos');
@@ -68,9 +66,8 @@ test.describe('6. Vínculo', () => {
     await page.goto('/unidades/C-14');
     await page.getByRole('button', { name: 'Solicitar vínculo' }).click();
     const modal = page.getByRole('dialog', { name: 'Solicitar vínculo' });
-    await modal.getByLabel('Pessoa', { exact: true }).fill('Ximena Sem');
-    await modal.getByRole('button', { name: /Ximena Sem Documento/ }).click();
-    await modal.getByRole('button', { name: 'Enviar solicitação' }).click();
+    await escolherPessoaNoVinculo(modal, 'Ximena Sem', 'Ximena Sem Documento');
+    await revisarEConfirmarVinculo(modal);
     await expect(toast(page, /Vínculo solicitado/)).toBeVisible();
 
     // 3) Na fila, a aprovação é barrada: aviso "Cadastro incompleto" e botão Aprovar desabilitado

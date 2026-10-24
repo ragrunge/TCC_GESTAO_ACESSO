@@ -4,7 +4,7 @@
 // tenha regularizado.
 // Pessoas novas com nome e CPF fictícios aleatórios.
 import { expect, test, type Page } from '@playwright/test';
-import { SENHA_E2E, resetarBanco } from './helpers';
+import { SENHA_E2E, escolherPessoaNoVinculo, resetarBanco, revisarEConfirmarVinculo } from './helpers';
 
 
 /** Entra e espera a rota inicial: sem isso o próximo goto sai antes do cookie e cai no /login. */
@@ -76,10 +76,9 @@ test.describe.serial('API real: pessoas, vínculos, conferência e legado', () =
     await page.goto(`/unidades/${UNIDADE}`);
     await page.getByRole('button', { name: 'Solicitar vínculo' }).click();
     const modal = page.getByRole('dialog', { name: 'Solicitar vínculo' });
-    await modal.getByLabel('Pessoa', { exact: true }).fill(NOME);
-    await modal.getByRole('button', { name: new RegExp(NOME) }).click();
-    await modal.getByRole('combobox', { name: 'Tipo de vínculo' }).selectOption({ label: 'Dependente' });
-    await modal.getByRole('button', { name: 'Enviar solicitação' }).click();
+    await escolherPessoaNoVinculo(modal, NOME);
+    await modal.getByRole('radio', { name: 'Dependente' }).click();
+    await revisarEConfirmarVinculo(modal, new RegExp(`Vincular ${NOME} a Bloco A · AP 11 como Dependente`));
     await expect(toast(page, /Vínculo solicitado/)).toBeVisible();
 
     // 3) Fila: sem conferência, Aprovar fica desabilitado; com ela, aprova

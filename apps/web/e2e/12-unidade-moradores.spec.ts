@@ -1,4 +1,4 @@
-import { expect, test, diaSP, entrarComo, toast } from './helpers';
+import { expect, test, diaSP, entrarComo, revisarEConfirmarVinculo, toast } from './helpers';
 
 test.describe('12. Moradores na tela da unidade', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,10 +9,10 @@ test.describe('12. Moradores na tela da unidade', () => {
     await page.goto('/unidades/C-14');
     await page.getByRole('button', { name: 'Incluir morador' }).click();
     const modal = page.getByRole('dialog', { name: 'Incluir morador' });
-    await modal.getByLabel('Pessoa', { exact: true }).fill('Zulmira Inexistente');
+    await modal.getByRole('combobox', { name: 'Pessoa', exact: true }).fill('Zulmira Inexistente');
     await expect(modal.getByText('Nenhuma pessoa encontrada.')).toBeVisible();
 
-    await modal.getByRole('button', { name: 'Cadastrar nova pessoa' }).click();
+    await modal.getByRole('option', { name: 'Cadastrar nova pessoa' }).click();
     const cad = page.getByRole('dialog', { name: 'Nova pessoa' });
     await expect(cad.getByLabel('Nome completo')).toHaveValue('Zulmira Inexistente');
     await cad.getByLabel('CPF').fill('909.012.349-07');
@@ -21,8 +21,8 @@ test.describe('12. Moradores na tela da unidade', () => {
 
     // volta ao vínculo com a pessoa criada já escolhida
     const vinc = page.getByRole('dialog', { name: 'Incluir morador' });
-    await expect(vinc.getByText('Zulmira Inexistente')).toBeVisible();
-    await vinc.getByRole('button', { name: 'Enviar solicitação' }).click();
+    await expect(vinc.getByRole('button', { name: 'Trocar pessoa (Zulmira Inexistente)' })).toBeVisible();
+    await revisarEConfirmarVinculo(vinc, 'Vincular Zulmira Inexistente a Bloco C · AP 14 como Proprietário');
     await expect(toast(page, /Vínculo solicitado\. Fica pendente/)).toBeVisible();
     await expect(page.getByRole('link', { name: 'Vínculos', exact: true }).first()).toBeVisible();
     await expect(page.getByText(/fica pendente até a aprovação em/)).toBeVisible();

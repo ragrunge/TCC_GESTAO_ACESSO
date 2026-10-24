@@ -10,8 +10,17 @@ import { Field } from '../../components/Field';
 import { Modal } from '../../components/Modal';
 import { type CategoriaPessoa } from '@portaria/domain/types';
 import { mensagemErro } from '../../app/useAsync';
+import { mascaraCpf } from '@portaria/domain/cpf';
 
 export const ID_FORM_PESSOA = 'f-pessoa';
+
+/** Termo buscado num seletor -> pré-preenchimento do cadastro: só dígitos (e pontuação de CPF) vão para o CPF; texto sem dígito, para o nome. */
+export function prefillDoTermo(texto: string): { nome?: string; documento?: string } {
+  const t = texto.trim();
+  if (/^[\d.\-\s]+$/.test(t)) { const d = t.replace(/\D/g, ''); return d.length <= 11 ? { documento: d } : {}; }
+  return /\d/.test(t) ? {} : { nome: t };
+}
+
 const AVISO_PADRAO = 'Morador cadastrado aqui ainda não tem acesso: peça o vínculo na tela da unidade.';
 
 /**
@@ -29,13 +38,13 @@ function duplicataDe(err: unknown): { pessoaId: string; desativada: boolean } | 
  * `onExistente`: no CPF já cadastrado, oferece "Usar o cadastro existente" (ou "Reativar e usar", se desativado e o
  * perfil puder reativar) e entrega o id da pessoa a quem abriu o formulário (o seletor a escolhe; o Cadastro abre a ficha).
  */
-export function NovaPessoaForm({ onFeito, nomeInicial, aviso = AVISO_PADRAO, categoriaInicial = 'morador', onExistente, rotuloExistente = 'Usar o cadastro existente' }: {
-  onFeito: (p: Pessoa) => void; nomeInicial?: string; aviso?: ReactNode; categoriaInicial?: CategoriaPessoa;
+export function NovaPessoaForm({ onFeito, nomeInicial, documentoInicial, aviso = AVISO_PADRAO, categoriaInicial = 'morador', onExistente, rotuloExistente = 'Usar o cadastro existente' }: {
+  onFeito: (p: Pessoa) => void; nomeInicial?: string; /** Dígitos do CPF (o campo aplica a máscara). */ documentoInicial?: string; aviso?: ReactNode; categoriaInicial?: CategoriaPessoa;
   onExistente?: (pessoaId: string) => void | Promise<void>; rotuloExistente?: string;
 }) {
   const api = useApi();
   const podeReativar = useCan('pessoa.desativar');
-  const [f, setF] = useState<NovaPessoaInput>({ nome: nomeInicial ?? '', documento: '', telefone: '', categoria: categoriaInicial, semCpf: false, menorIdade: false });
+  const [f, setF] = useState<NovaPessoaInput>({ nome: nomeInicial ?? '', documento: documentoInicial ? mascaraCpf(documentoInicial) : '', telefone: '', categoria: categoriaInicial, semCpf: false, menorIdade: false });
   const [erro, setErro] = useState('');
   const [existente, setExistente] = useState<{ pessoaId: string; desativada: boolean } | null>(null);
   const [reativando, setReativando] = useState(false);

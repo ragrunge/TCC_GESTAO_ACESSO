@@ -21,6 +21,8 @@ export const CHAVES = {
   pessoasLista: (categoria: string, desativadas = false) => ['pessoas', 'lista', categoria, desativadas] as const,
   /** O termo pode ser CPF: a chave fica só na memória (gcTime curto, nada de persistir o cache). */
   pessoasBusca: (q: string, desativadas = false) => ['pessoas', 'busca', q, desativadas] as const,
+  /** Seletor de pessoa dos formulários (PessoaCombobox): mesma regra de memória da busca acima. */
+  pessoasSeletor: (q: string) => ['pessoas', 'busca', 'seletor', q] as const,
   ficha: (id: string) => ['pessoas', 'ficha', id] as const,
   funcionarios: ['funcionarios'] as const,
   /** Prefixo da busca do topo. */
