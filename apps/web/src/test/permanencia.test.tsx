@@ -6,7 +6,7 @@ import type { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { brt } from '@portaria/domain/time';
 import { createHttpApi } from '../api/http/createHttpApi';
-import { CelPermanencia } from '../features/portaria/PessoasDentroPage';
+import { CelPermanencia } from '../features/portaria/presentes';
 import { SeletorTipoVisita } from '../features/portaria/EntradaPage';
 
 afterEach(() => cleanup());
