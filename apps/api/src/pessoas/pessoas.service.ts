@@ -30,7 +30,8 @@ import { AcessoNegado, codigoPg, erroApi } from '../comum/erros';
 import { codificarCursor, decodificarCursor, Pagina } from '../comum/pagina';
 import { RELOGIO, type Relogio } from '../comum/relogio';
 import { DB, type Db, type Executor } from '../database/database.module';
-import { documentoBusca, mascararCpf } from '../db/cpf';
+import { documentoBusca } from '../db/cpf';
+import { mascaraParaCpf } from './formato-cpf';
 import { autorizacaoPrevia, eventoAcesso, funcionario, pessoa, unidade, vinculoUnidade } from '../db/schema';
 import { filtroEfetivo, semSaidaSql } from '../eventos/efetivo';
 import { vinculoValidoSql } from '../vinculos/vinculo-valido';
@@ -112,7 +113,7 @@ export class PessoasService {
       const cpf = soDigitos(i.documento ?? '');
       if (!cpf) throw erroApi(422, 'DOCUMENTO_OBRIGATORIO', 'Informe o CPF.');
       if (!cpfValido(cpf)) throw erroApi(422, 'CPF_INVALIDO', 'CPF inválido (confira os dígitos).');
-      mascarado = mascararCpf(cpf);
+      mascarado = await mascaraParaCpf(exec, cpf, null); // cadastro novo: formato novo (salvo a regra anti-reconstrução)
       busca = documentoBusca(cpf, chavesDe(this.condominio).hmacCpf);
       const [existe] = await exec.select({ id: pessoa.id, desativadaEm: pessoa.desativadaEm }).from(pessoa).where(eq(pessoa.documentoBusca, busca)).limit(1);
       if (existe) recusar(existe, 'Já existe cadastro com este CPF.');
@@ -170,7 +171,8 @@ export class PessoasService {
           if (outra && outra.id !== id) throw duplicada();
           if (!outra) {
             mudancas.documentoBusca = busca;
-            mudancas.documentoMascarado = mascararCpf(cpf);
+            // Formato de quem já tem máscara se mantém (antigo gera antigo); sem máscara, a regra do cadastro novo.
+            mudancas.documentoMascarado = await mascaraParaCpf(tx, cpf, antes.documentoMascarado);
             mudancas.semCpf = false;
           }
         }

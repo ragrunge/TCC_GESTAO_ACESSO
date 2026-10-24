@@ -309,7 +309,7 @@ describe('dependente menor de idade (LGPD art. 14)', () => {
 
   it('com CPF: o CPF é validado e único (HMAC) como sempre; regras do menor', async () => {
     const p = await m.ok(m.post('administracao', '/pessoas', { nome: 'Lia Ribeiro', categoria: 'morador', menorIdade: true, documento: '123.456.789-09' }));
-    expect(p.documentoMascarado).toBe('***.456.789-**');
+    expect(p.documentoMascarado).toBe('123.45*.***-**');
     expect((await m.post('administracao', '/pessoas', { nome: 'Outro', categoria: 'morador', documento: '12345678909', telefone: '11999990000' })).body.code).toBe('PESSOA_DUPLICADA');
     expect((await m.post('administracao', '/pessoas', { nome: 'Lia Bis', categoria: 'morador', menorIdade: true, documento: '12345678900' })).body.code).toBe('CPF_INVALIDO');
     expect((await m.post('administracao', '/pessoas', { nome: 'Visitante Menor', categoria: 'visitante', menorIdade: true })).body.code).toBe('MENOR_SO_MORADOR');
@@ -323,7 +323,7 @@ describe('dependente menor de idade (LGPD art. 14)', () => {
     expect((await m.patch('administracao', `/pessoas/${pedro}`, { menorIdade: false, documento: '111.444.777-35' })).body.code).toBe('TELEFONE_INVALIDO');
     const r = await m.patch('administracao', `/pessoas/${pedro}`, { menorIdade: false, documento: '111.444.777-35', telefone: '11988887777' });
     expect(r.status).toBe(200);
-    expect(r.body.data).toMatchObject({ menorIdade: false, documentoMascarado: '***.444.777-**' });
+    expect(r.body.data).toMatchObject({ menorIdade: false, documentoMascarado: '111.44*.***-**' }); // menor sem CPF (sem máscara) que informa: formato novo
     expect(await erroDe(m.api.client.query(`INSERT INTO pessoa (nome, categoria, menor_idade) VALUES ('X Y', 'visitante', true)`))).toMatch(/pessoa_menor_ck/);
     expect(await erroDe(m.api.client.query(`INSERT INTO pessoa (nome, categoria) VALUES ('X Y', 'morador')`))).toMatch(/pessoa_documento_coerente_ck|pessoa_telefone_obrigatorio_ck/);
   });

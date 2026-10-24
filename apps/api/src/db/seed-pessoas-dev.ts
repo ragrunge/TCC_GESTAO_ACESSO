@@ -1,6 +1,7 @@
 // Pessoas, vínculos e veículos FICTÍCIOS de desenvolvimento (só PORTARIA_AMBIENTE=dev), para a busca e o resumo das
 // unidades terem o que mostrar. Os e2e do front (apps/web/e2e) contam com estes nomes e unidades.
 // - CPF válido (dígitos verificadores corretos) e fictício; o banco recebe só a máscara e o HMAC com a chave do ambiente.
+//   Máscara no formato novo; Ana Ribeiro fica no antigo para cobrir a convivência dos dois (como em produção).
 // - Idempotente por família: se a primeira pessoa já existe (mesmo HMAC), a família inteira é pulada. Cada família numa
 //   transação: ou entra inteira, ou não entra.
 // - Vínculo aprovado segue o caminho real: nasce pendente com a conferência do comprovante e é aprovado depois (trigger
@@ -30,6 +31,8 @@ interface PessoaSeed {
   categoria: Categoria;
   /** 9 dígitos-base; sem `cpf` = cadastro "sem CPF" (exceção). */
   cpf?: string;
+  /** Máscara no formato antigo ("***.456.789-**"): a convivência dos dois formatos (decisão de 2026-10-24). Padrão: o novo. */
+  mascaraAntiga?: true;
   telefone: string;
   empresa?: string;
   servico?: string;
@@ -43,7 +46,7 @@ const un = (c: string) => parseCodigoUnidade(c)!;
 
 export const FAMILIAS_DEV: FamiliaSeed[] = [
   { unidade: 'D-32', pessoas: [
-    { nome: 'Ana Ribeiro', categoria: 'morador', cpf: '529982247', telefone: '11987650001', vinculo: { tipo: 'proprietario', status: 'aprovado' } },
+    { nome: 'Ana Ribeiro', categoria: 'morador', cpf: '529982247', mascaraAntiga: true, telefone: '11987650001', vinculo: { tipo: 'proprietario', status: 'aprovado' } },
     { nome: 'Paulo Ribeiro', categoria: 'morador', cpf: '318406253', telefone: '11987650002', vinculo: { tipo: 'dependente', status: 'aprovado' } },
     { nome: 'Lúcia Ribeiro', categoria: 'morador', cpf: '407152936', telefone: '11987650003', vinculo: { tipo: 'dependente', status: 'legado' } },
   ], veiculos: [{ placa: 'FKR2C41', modelo: 'Honda Fit', cor: 'prata' }, { placa: 'GHT8J20', modelo: 'VW T-Cross', cor: 'branco' }] },
@@ -93,7 +96,7 @@ export async function seedPessoasDev(db: PgDatabase<PgQueryResultHKT, any>, o: {
         const cpf = p.cpf ? cpfComDv(p.cpf) : null;
         const valores = {
           nome: p.nome, categoria: p.categoria, telefone: p.telefone, empresa: p.empresa ?? null, servico: p.servico ?? null,
-          semCpf: !cpf, documentoMascarado: cpf ? mascararCpf(cpf) : null, documentoBusca: cpf ? documentoBusca(cpf, o.chaveHmac) : null,
+          semCpf: !cpf, documentoMascarado: cpf ? mascararCpf(cpf, p.mascaraAntiga ? 'meio' : 'inicio') : null, documentoBusca: cpf ? documentoBusca(cpf, o.chaveHmac) : null,
           criadoEm: agora, atualizadoEm: agora,
         };
         let novo: { id: string } | undefined;

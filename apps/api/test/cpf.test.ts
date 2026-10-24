@@ -4,8 +4,9 @@ import { chaveHmacDoAmbiente, documentoBusca, mascararCpf } from '../src/db/cpf'
 
 describe('CPF: máscara e HMAC', () => {
   const chave = Buffer.alloc(32, 1);
-  it('máscara expõe só os 6 dígitos do meio', () => {
-    expect(mascararCpf('529.982.247-25')).toBe('***.982.247-**');
+  it('máscara: a da API é a do domain (5 primeiros por padrão; 6 do meio no formato antigo)', () => {
+    expect(mascararCpf('529.982.247-25')).toBe('529.98*.***-**');
+    expect(mascararCpf('529.982.247-25', 'meio')).toBe('***.982.247-**');
   });
   it('HMAC é determinístico, depende da chave e difere do SHA-256 puro', () => {
     const h = documentoBusca('52998224725', chave);

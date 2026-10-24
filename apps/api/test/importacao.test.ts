@@ -63,7 +63,7 @@ describe('importação: análise', () => {
     ]));
     expect(codigos).not.toContain('4:DUPLICIDADE_PLANILHA'); // mesmo CPF em OUTRA unidade não é duplicidade
     expect(d.avisos).toBe(d.inconsistencias.filter((i: { tipo: string }) => i.tipo === 'aviso').length);
-    expect(d.amostra[0].documento).toBe(`***.${CPF_NOVO.slice(3, 6)}.${CPF_NOVO.slice(6, 9)}-**`);
+    expect(d.amostra[0].documento).toBe(`${CPF_NOVO.slice(0, 3)}.${CPF_NOVO.slice(3, 5)}*.***-**`);
     expect(JSON.stringify(r.body)).not.toContain(CPF_NOVO);
     expect(JSON.stringify(r.body)).not.toContain(CPF_ANA);
     // Nada foi importado ainda.

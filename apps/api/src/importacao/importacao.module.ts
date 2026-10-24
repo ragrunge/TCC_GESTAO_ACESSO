@@ -28,6 +28,7 @@ import { RELOGIO, type Relogio } from '../comum/relogio';
 import { uuidParam, ZodPipe } from '../comum/zod.pipe';
 import { DB, type Db, type Executor } from '../database/database.module';
 import { documentoBusca, mascararCpf } from '../db/cpf';
+import { formatoParaCpf, mascarasAntigasEmUso } from '../pessoas/formato-cpf';
 import { importacao, importacaoInconsistencia, pessoa, unidade, vinculoUnidade } from '../db/schema';
 import { normalizar } from '../pessoas/busca.service';
 
@@ -57,7 +58,7 @@ const tipoDaLinha = (t?: string) => (/inquil/i.test(t ?? '') ? 'inquilino' : /de
 const ATIVOS = ['pendente', 'aprovado', 'legado'] as const;
 const em = <T>(xs: T[], n = 500) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
 
-/** Documento da amostra devolvida: nunca o CPF em claro (a tela já tem as linhas que leu). */
+/** Documento da amostra devolvida: nunca o CPF em claro (a tela já tem as linhas que leu). Não é gravado. */
 function documentoMascarado(doc: string) {
   const d = soDigitos(doc);
   if (!d) return '';
@@ -87,6 +88,7 @@ export class ImportacaoService {
     const inc: Inconsistencia[] = [];
     const candidatas: Omit<LinhaValida, 'existenteId' | 'reaproveitar'>[] = [];
     const vistos = new Set<string>();
+    const antigasEmUso = await mascarasAntigasEmUso(exec); // uma consulta para o lote (regra anti-reconstrução)
     let duplicadas = 0;
     for (const l of linhas) {
       // "A", "Bloco A", "4" ou o antigo "T4"; número só com dígitos e normalizado ("3" -> "03"), como no cadastro.
@@ -111,7 +113,7 @@ export class ImportacaoService {
       const tel = soDigitos(l.telefone);
       const telOk = /^\d{10,11}$/.test(tel);
       if (l.telefone.trim() && !telOk) inc.push({ linha: l.linha, codigo: 'TELEFONE_INVALIDO', mensagem: `${nome}: telefone fora do padrão (DDD + 8 ou 9 dígitos). Importado sem telefone.`, tipo: 'aviso' });
-      candidatas.push({ l, unidadeId: un.id, codigo, nome, hmac, mascarado: cpfOk ? mascararCpf(dig) : null, telefone: telOk ? tel : null, tipo: tipoDaLinha(l.tipo) });
+      candidatas.push({ l, unidadeId: un.id, codigo, nome, hmac, mascarado: cpfOk ? mascararCpf(dig, formatoParaCpf(dig, null, antigasEmUso)) : null, telefone: telOk ? tel : null, tipo: tipoDaLinha(l.tipo) });
     }
 
     // Quem já existe: pelo HMAC; sem CPF, pelo nome normalizado com algum vínculo NA MESMA unidade (nunca só pelo nome).

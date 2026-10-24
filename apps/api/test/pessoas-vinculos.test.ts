@@ -60,7 +60,7 @@ describe('pessoas: cadastro (RF-02)', () => {
   it('porteiro cadastra visitante e prestador; a resposta não traz telefone completo nem HMAC', async () => {
     const r = await novaPessoa('porteiro', { nome: 'Visitante Um', documento: cpf() });
     expect(r.status).toBe(201);
-    expect(r.body.data).toMatchObject({ nome: 'Visitante Um', categoria: 'visitante', semCpf: false, documentoMascarado: expect.stringMatching(/^\*\*\*\.\d{3}\.\d{3}-\*\*$/), telefoneMascarado: '(**) *****-5678' });
+    expect(r.body.data).toMatchObject({ nome: 'Visitante Um', categoria: 'visitante', semCpf: false, documentoMascarado: expect.stringMatching(/^\d{3}\.\d{2}\*\.\*\*\*-\*\*$/), telefoneMascarado: '(**) *****-5678' });
     expect(r.body.data).not.toHaveProperty('telefone');
     expect(r.body.data).not.toHaveProperty('documentoBusca');
     const p = await novaPessoa('porteiro', { nome: 'Prestador Um', documento: cpf(), categoria: 'prestador', empresa: 'Enel' });
@@ -157,7 +157,7 @@ describe('pessoas: correção do cadastro (art. 18)', () => {
     expect((await patch('administracao', `/pessoas/${p.id}`, { documento: '12345678900' })).body.code).toBe('CPF_INVALIDO');
     const r = await patch('administracao', `/pessoas/${p.id}`, { documento: cpf() });
     expect(r.status).toBe(200);
-    expect(r.body.data).toMatchObject({ semCpf: false, documentoMascarado: expect.stringMatching(/^\*\*\*\./) });
+    expect(r.body.data).toMatchObject({ semCpf: false, documentoMascarado: expect.stringMatching(/^\d{3}\.\d{2}\*\.\*\*\*-\*\*$/) }); // sem CPF que informa: formato novo
   });
 
   it('prestador não fica sem empresa; pessoa inexistente é 404', async () => {

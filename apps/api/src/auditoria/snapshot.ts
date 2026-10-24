@@ -33,7 +33,7 @@ function limpar(v: unknown, chave: string): unknown {
   }
   if (typeof v !== 'string') return v;
   if (chave === 'telefone') return mascararTelefone(v);
-  if (chave === 'documento_mascarado') return v; // já mascarado na origem (***.456.789-**)
+  if (chave === 'documento_mascarado') return v; // já mascarado na origem (123.45*.***-** ou o antigo ***.456.789-**)
   if (UUID.test(v) || chave === 'id' || chave.endsWith('_id')) return v;
   return mascararDigitos(v);
 }
