@@ -22,7 +22,12 @@ export function useArmadilhaDeFoco(ref: RefObject<HTMLElement>, onClose: () => v
     (auto ?? el.querySelector<HTMLElement>(FOCAVEIS) ?? el).focus();
 
     function tecla(e: KeyboardEvent) {
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); fecharRef.current(); return; }
+      if (e.key === 'Escape') {
+        // Esc fecha primeiro o popup aberto dentro do modal (lista de um combobox, popover do Radix), não o modal.
+        const alvo = e.target instanceof Element ? e.target : null;
+        if (alvo?.closest('[data-radix-popper-content-wrapper], [role="combobox"][aria-expanded="true"]')) return;
+        e.preventDefault(); e.stopPropagation(); fecharRef.current(); return;
+      }
       if (e.key !== 'Tab') return;
       const itens = Array.from(el.querySelectorAll<HTMLElement>(FOCAVEIS)).filter((x) => x.offsetParent !== null || x === document.activeElement);
       if (itens.length === 0) { e.preventDefault(); return; }
