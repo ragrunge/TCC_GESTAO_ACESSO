@@ -4,8 +4,12 @@
 import { SENHA_MIN_MASTER } from '@portaria/domain/rbac-plataforma';
 import { useState, type FormEvent } from 'react';
 import { ApiError, errosDeCampo } from '../api/cliente';
+import { Alert } from '../components/ui/alert';
+import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
+import { Field } from '../components/ui/field';
+import { Input } from '../components/ui/input';
 import { useSessao } from '../sessao/SessaoMaster';
-import { Alert, Button, Field } from '../ui/ui';
 
 export function TrocarSenha() {
   const { trocarSenha, sair, estado } = useSessao();
@@ -37,29 +41,30 @@ export function TrocarSenha() {
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
-      <form onSubmit={enviar} noValidate aria-labelledby="titulo-troca"
-        className="flex w-full max-w-[460px] flex-col gap-4 rounded-xl border border-linha bg-white p-6 shadow-cartao sm:p-8">
-        <div>
-          <h1 id="titulo-troca" className="text-[22px] font-semibold">Troque a senha provisória</h1>
-          <p className="text-[14px] text-ink-suave">
-            {estado.fase === 'logado' ? `${estado.usuario.email}: ` : ''}a senha temporária vale uma vez. Escolha uma senha sua, com pelo menos {SENHA_MIN_MASTER} caracteres, e guarde-a num gerenciador de senhas.
-          </p>
-        </div>
-        <Field label="Senha atual (temporária)" erro={campos.senhaAtual}>
-          <input className="input" type="password" autoComplete="current-password" value={atual} onChange={(e) => setAtual(e.target.value)} />
-        </Field>
-        <Field label="Nova senha" erro={campos.novaSenha} dica={`Mínimo de ${SENHA_MIN_MASTER} caracteres. Uma frase longa é mais fácil de lembrar.`}>
-          <input className="input" type="password" autoComplete="new-password" value={nova} onChange={(e) => setNova(e.target.value)} />
-        </Field>
-        <Field label="Confirme a nova senha" erro={campos.confirmacao}>
-          <input className="input" type="password" autoComplete="new-password" value={confirma} onChange={(e) => setConfirma(e.target.value)} />
-        </Field>
-        {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
-        <div className="flex flex-wrap gap-[10px]">
-          <Button type="submit" variante="primario" carregando={enviando} className="flex-1">Trocar senha</Button>
-          <Button variante="secundario" onClick={() => void sair()}>Sair</Button>
-        </div>
-      </form>
+      <Card className="w-full max-w-[460px]">
+        <form onSubmit={enviar} noValidate aria-labelledby="titulo-troca" className="flex flex-col gap-4 p-6 sm:p-8">
+          <div>
+            <h1 id="titulo-troca" className="text-[22px] font-semibold">Troque a senha provisória</h1>
+            <p className="text-[14px] text-ink-suave">
+              {estado.fase === 'logado' ? `${estado.usuario.email}: ` : ''}a senha temporária vale uma vez. Escolha uma senha sua, com pelo menos {SENHA_MIN_MASTER} caracteres, e guarde-a num gerenciador de senhas.
+            </p>
+          </div>
+          <Field label="Senha atual (temporária)" erro={campos.senhaAtual}>
+            <Input type="password" autoComplete="current-password" value={atual} onChange={(e) => setAtual(e.target.value)} />
+          </Field>
+          <Field label="Nova senha" erro={campos.novaSenha} dica={`Mínimo de ${SENHA_MIN_MASTER} caracteres. Uma frase longa é mais fácil de lembrar.`}>
+            <Input type="password" autoComplete="new-password" value={nova} onChange={(e) => setNova(e.target.value)} />
+          </Field>
+          <Field label="Confirme a nova senha" erro={campos.confirmacao}>
+            <Input type="password" autoComplete="new-password" value={confirma} onChange={(e) => setConfirma(e.target.value)} />
+          </Field>
+          {erro && <Alert variant="vermelho" role="alert">{erro}</Alert>}
+          <div className="flex flex-wrap gap-[10px]">
+            <Button type="submit" variant="default" loading={enviando} className="flex-1">Trocar senha</Button>
+            <Button variant="secondary" onClick={() => void sair()}>Sair</Button>
+          </div>
+        </form>
+      </Card>
     </main>
   );
 }

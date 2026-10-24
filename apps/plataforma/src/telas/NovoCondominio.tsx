@@ -1,159 +1,207 @@
-// Criar condomínio: o formulário equivalente ao JSON da CLI provisionar-condominio (docs/deploy.md §16.2). A prévia das
-// unidades usa o MESMO gerarUnidades do domain que a API e a CLI usam. O envio provisiona de ponta a ponta (banco,
-// migrações, chaves, estrutura, síndico) e pode levar alguns segundos.
-import { useMemo, useState, type FormEvent } from 'react';
+// "Novo condomínio": assistente em 4 passos (Condomínio, Unidades, Síndico, Revisar e criar). Cada passo valida antes de
+// avançar; voltar mantém tudo (um só rascunho em estado). As unidades vêm por lista colada ou planilha, lidas pelo
+// MESMO parser do domain que a API confere de novo. O envio provisiona de ponta a ponta (banco, migrações, chaves,
+// unidades, síndico) e só habilita com o provisionador respondendo (GET /plataforma/provisionador/saude).
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
-import { CODIGO_CONDOMINIO, normalizarCodigoCondominio, UFS } from '@portaria/domain/condominio';
-import { AGRUPAMENTOS, AREAS_COMUNS_INICIAIS, type Agrupamento, codigoUnidade, gerarUnidades } from '@portaria/domain/units';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { UFS } from '@portaria/domain/condominio';
 import { ApiError, errosDeCampo } from '../api/cliente';
-import { CHAVE_CONDOMINIOS, type NovoCondominio as Dados, type ResultadoCriacao } from '../api/plataforma';
+import { CHAVE_CONDOMINIOS, CHAVE_SAUDE_PROVISIONADOR, type ResultadoCriacao } from '../api/plataforma';
+import { Alert } from '../components/ui/alert';
+import { Button } from '../components/ui/button';
+import { Card, CardContent } from '../components/ui/card';
+import { Field } from '../components/ui/field';
+import { Input } from '../components/ui/input';
+import { NativeSelect } from '../components/ui/native-select';
+import { Stepper } from '../components/ui/stepper';
 import { useSessao } from '../sessao/SessaoMaster';
-import { Alert, Button, Field } from '../ui/ui';
+import { type EstadoSaude, MENSAGEM_PROVISIONADOR, PassoRevisao } from './novo/PassoRevisao';
+import { PassoUnidades } from './novo/PassoUnidades';
+import {
+  comCodigo, comNome, comSindicoLogin, comSindicoNome, errosDoPasso, lerUnidades, montarEntrada, PASSOS, passoDoCampo, type Rascunho, RASCUNHO_VAZIO,
+} from './novo/rascunho';
 import { SenhaSindicoModal } from './SenhaSindicoModal';
 
-const LOGIN_SINDICO = /^[a-z][a-z0-9._-]{2,39}$/;
-const lista = (s: string) => s.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
-const numeros = (s: string) => lista(s).map(Number);
-
-interface Form {
-  codigo: string; nome: string; cidade: string; uf: string; plano: string; agrupamento: Agrupamento;
-  blocos: string; andares: string; finais: string; ausentes: string; areas: string; sindicoNome: string; sindicoLogin: string;
-}
-const VAZIO: Form = {
-  codigo: '', nome: '', cidade: '', uf: 'SP', plano: 'padrao', agrupamento: 'Bloco', blocos: 'A, B', andares: '1, 2, 3', finais: '1, 2, 3, 4',
-  ausentes: '', areas: AREAS_COMUNS_INICIAIS.join('\n'), sindicoNome: '', sindicoLogin: '',
-};
-
-/** Form -> corpo da API (mesmo formato do JSON da CLI). */
-export function paraEntrada(f: Form): Dados {
-  return {
-    codigo: normalizarCodigoCondominio(f.codigo), nome: f.nome.trim(), cidade: f.cidade.trim(), uf: f.uf, plano: f.plano.trim() || 'padrao',
-    estrutura: { agrupamento: f.agrupamento, blocos: lista(f.blocos).map((b) => b.toUpperCase()), andares: numeros(f.andares), finais: numeros(f.finais), ausentes: lista(f.ausentes).map((a) => a.toUpperCase()) },
-    areasComuns: f.areas.split('\n').map((a) => a.trim()).filter(Boolean),
-    sindico: { nome: f.sindicoNome.trim(), login: f.sindicoLogin.trim().toLowerCase() },
-  };
-}
-
-function problemas(f: Form, e: Dados): Record<string, string> {
-  const p: Record<string, string> = {};
-  if (!CODIGO_CONDOMINIO.test(e.codigo)) p.codigo = '3 a 31 caracteres: letras minúsculas, dígitos e hífen, começando por letra.';
-  if (!e.nome) p.nome = 'Informe o nome.';
-  if (!e.cidade) p.cidade = 'Informe a cidade.';
-  if (e.sindico.nome.length < 3) p['sindico.nome'] = 'Informe o nome do síndico (3 caracteres ou mais).';
-  if (!LOGIN_SINDICO.test(e.sindico.login)) p['sindico.login'] = '3 a 40 caracteres, começando por letra (a-z, 0-9, ".", "-", "_").';
-  if (!f.blocos.trim()) p.estrutura = 'Informe ao menos um bloco ou torre.';
-  return p;
-}
+const DESCRICAO_PASSO = [
+  'Nome, código de acesso e cidade.',
+  'Bloco ou torre, a lista de unidades e as áreas comuns.',
+  'Quem recebe o primeiro acesso.',
+  'Confira tudo antes de criar.',
+];
 
 export function NovoCondominio() {
   const { api } = useSessao();
   const qc = useQueryClient();
   const navegar = useNavigate();
-  const [f, setF] = useState<Form>(VAZIO);
+  const [passo, setPasso] = useState(0);
+  const [r, setR] = useState<Rascunho>(RASCUNHO_VAZIO);
   const [erros, setErros] = useState<Record<string, string>>({});
-  const [senha, setSenha] = useState<{ r: ResultadoCriacao } | null>(null);
-  const [aviso, setAviso] = useState<string | null>(null);
-  const campo = (k: keyof Form) => ({ value: f[k], onChange: (ev: { target: { value: string } }) => setF({ ...f, [k]: ev.target.value }) });
+  const [confirmado, setConfirmado] = useState(false);
+  const tituloRef = useRef<HTMLHeadingElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const montado = useRef(false);
+  const [focarErro, setFocarErro] = useState(0);
 
-  const entrada = useMemo(() => paraEntrada(f), [f]);
-  const previa = useMemo(() => {
-    try { return { unidades: gerarUnidades({ ...entrada.estrutura }), erro: null }; } catch (e) { return { unidades: [], erro: (e as Error).message }; }
-  }, [entrada]);
+  // Só o que muda a lista: digitar o nome do condomínio não relê 5000 linhas.
+  const u = useMemo(() => lerUnidades(r), [r.fonte, r.textoLista, r.textoPlanilha, r.agrupamento]);
+  const atualizar = (f: (x: Rascunho) => Rascunho) => setR(f);
+
+  // Foco no título do passo ao trocar (não no primeiro render: aí o foco é da navegação).
+  useEffect(() => {
+    if (!montado.current) { montado.current = true; return; }
+    tituloRef.current?.focus();
+  }, [passo]);
+  // Foco no primeiro campo com erro depois de uma tentativa de avançar.
+  useEffect(() => {
+    if (focarErro) formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [focarErro]);
+
+  const saude = useQuery({
+    queryKey: CHAVE_SAUDE_PROVISIONADOR, queryFn: () => api.saudeProvisionador(), enabled: passo === 3, staleTime: 0, gcTime: 0, retry: false,
+  });
+  const estadoSaude: EstadoSaude = saude.isFetching ? 'verificando' : saude.isError ? 'erro' : saude.data?.disponivel ? 'disponivel' : saude.data ? 'indisponivel' : 'verificando';
 
   // Sem useMutation de propósito: o resultado traz a senha do síndico, e o React Query guardaria o `data` da mutação no
   // MutationCache. Aqui ele fica só no estado deste componente (e no modal), e some ao fechar.
   const [enviando, setEnviando] = useState(false);
-  const [falha, setFalha] = useState<string | null>(null);
+  const [falha, setFalha] = useState<{ mensagem: string; campos: [string, string][] } | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [senha, setSenha] = useState<ResultadoCriacao | null>(null);
 
-  async function enviar(ev: FormEvent) {
-    ev.preventDefault();
-    if (enviando) return;
+  function irPara(p: number) {
+    setErros({});
+    setPasso(p);
+  }
+
+  function avancar(ev?: FormEvent) {
+    ev?.preventDefault();
+    if (passo >= 3) return;
+    const e = errosDoPasso(passo, r, u);
+    setErros(e);
+    if (Object.keys(e).length) { setFocarErro((n) => n + 1); return; }
+    irPara(passo + 1);
+  }
+
+  async function criar() {
+    if (enviando || !confirmado || estadoSaude !== 'disponivel') return;
+    // Confere tudo de novo (o Master pode ter voltado e mudado algo).
+    for (let p = 0; p < 3; p++) {
+      const e = errosDoPasso(p, r, u);
+      if (Object.keys(e).length) { setErros(e); setPasso(p); setFocarErro((n) => n + 1); return; }
+    }
     setAviso(null);
     setFalha(null);
-    const p = problemas(f, entrada);
-    if (previa.erro) p.estrutura = previa.erro;
-    setErros(p);
-    if (Object.keys(p).length) return;
     setEnviando(true);
     try {
-      const r = await api.criarCondominio(entrada);
+      const res = await api.criarCondominio(montarEntrada(r, u));
       void qc.invalidateQueries({ queryKey: CHAVE_CONDOMINIOS });
-      if (r.sindico) setSenha({ r });
+      if (res.sindico) setSenha(res);
       else {
         setAviso('Este condomínio já estava provisionado com estes dados: nada mudou e nenhuma senha foi gerada. '
           + 'Para uma nova senha temporária do síndico, use a CLI provisionar-condominio com --nova-senha-sindico (docs/deploy.md, seção 16).');
       }
     } catch (e) {
-      setErros(errosDeCampo(e));
-      setFalha(e instanceof ApiError ? e.message : 'Não foi possível criar o condomínio.');
+      if (e instanceof ApiError && e.code === 'PROVISIONADOR_INDISPONIVEL') {
+        qc.setQueryData(CHAVE_SAUDE_PROVISIONADOR, { disponivel: false });
+        setFalha(e.message === MENSAGEM_PROVISIONADOR ? null : { mensagem: e.message, campos: [] });
+      } else {
+        const campos = errosDeCampo(e);
+        setErros(campos);
+        setFalha({ mensagem: e instanceof ApiError ? e.message : 'Não foi possível criar o condomínio.', campos: Object.entries(campos) });
+      }
     } finally {
       setEnviando(false);
     }
   }
 
-  const fecharSenha = () => { setSenha(null); navegar('/'); };
+  const fecharSenha = () => {
+    const codigo = senha?.condominio.codigo;
+    setSenha(null);
+    navegar('/', { state: { destaque: codigo } });
+  };
 
   return (
-    <section aria-labelledby="titulo-novo" className="flex max-w-[880px] flex-col gap-5">
+    <section aria-labelledby="titulo-novo" className="flex max-w-[960px] flex-col gap-5">
       <div>
         <h1 id="titulo-novo" className="text-[24px] font-semibold">Novo condomínio</h1>
-        <p className="text-[14px] text-ink-suave">Cria o banco do condomínio, a estrutura de unidades e o acesso do síndico (senha temporária mostrada uma vez).</p>
+        <p className="text-[14px] text-ink-suave">Cria o banco do condomínio, as unidades e o acesso do síndico (senha temporária mostrada uma vez).</p>
       </div>
-      <form onSubmit={enviar} noValidate className="flex flex-col gap-5">
-        <fieldset className="grid gap-4 rounded-xl border border-linha bg-white p-5 sm:grid-cols-2">
-          <legend className="px-1 text-[16px] font-semibold">Cadastro</legend>
-          <Field label="Código do condomínio" erro={erros.codigo} dica="O que a portaria digita no login. Não muda depois.">
-            <input className="input font-mono" autoComplete="off" {...campo('codigo')} onBlur={() => setF({ ...f, codigo: normalizarCodigoCondominio(f.codigo) })} />
-          </Field>
-          <Field label="Nome exibido" erro={erros.nome}><input className="input" {...campo('nome')} /></Field>
-          <Field label="Cidade" erro={erros.cidade}><input className="input" {...campo('cidade')} /></Field>
-          <Field label="UF"><select className="input" {...campo('uf')}>{UFS.map((u) => <option key={u} value={u}>{u}</option>)}</select></Field>
-          <Field label="Plano" dica="Rótulo comercial; as cotas ainda não são aplicadas."><input className="input" {...campo('plano')} /></Field>
-        </fieldset>
+      <Stepper passos={PASSOS} atual={passo} />
 
-        <fieldset className="grid gap-4 rounded-xl border border-linha bg-white p-5 sm:grid-cols-2">
-          <legend className="px-1 text-[16px] font-semibold">Estrutura de unidades</legend>
-          <Field label="Agrupamento">
-            <select className="input" {...campo('agrupamento')}>{AGRUPAMENTOS.map((a) => <option key={a} value={a}>{a}</option>)}</select>
-          </Field>
-          <Field label={`${f.agrupamento === 'Torre' ? 'Torres' : 'Blocos'} (separados por vírgula)`} dica="1 a 3 letras ou dígitos cada (ex.: A, B ou 1, 2, 3)">
-            <input className="input" {...campo('blocos')} />
-          </Field>
-          <Field label="Andares" dica="De 0 a 9 (número = andar × 10 + final)"><input className="input" {...campo('andares')} /></Field>
-          <Field label="Finais por andar" dica="De 1 a 9"><input className="input" {...campo('finais')} /></Field>
-          <Field label="Unidades que não existem (opcional)" dica={'"01" vale para todos; "A-01" só para um.'} className="sm:col-span-2">
-            <input className="input" {...campo('ausentes')} />
-          </Field>
-          <div className="sm:col-span-2" aria-live="polite">
-            {previa.erro || erros.estrutura
-              ? <Alert tom="vermelho" role="alert">{erros.estrutura ?? previa.erro}</Alert>
-              : <Alert tom="petroleo" titulo={`${previa.unidades.length} unidades`}>
-                  <span className="break-words font-mono text-[13px]">{previa.unidades.slice(0, 40).map(codigoUnidade).join(' ')}{previa.unidades.length > 40 ? ' …' : ''}</span>
-                </Alert>}
-          </div>
-          <Field label="Áreas comuns (uma por linha)" className="sm:col-span-2">
-            <textarea className="input" rows={4} {...campo('areas')} />
-          </Field>
-        </fieldset>
-
-        <fieldset className="grid gap-4 rounded-xl border border-linha bg-white p-5 sm:grid-cols-2">
-          <legend className="px-1 text-[16px] font-semibold">Síndico (primeiro acesso)</legend>
-          <Field label="Nome do síndico" erro={erros['sindico.nome']}><input className="input" autoComplete="off" {...campo('sindicoNome')} /></Field>
-          <Field label="Login do síndico" erro={erros['sindico.login']}><input className="input font-mono" autoComplete="off" {...campo('sindicoLogin')} /></Field>
-        </fieldset>
-
-        <div aria-live="polite">
-          {enviando && <Alert tom="petroleo" role="status">Provisionando… (pode levar alguns segundos; não feche a página)</Alert>}
-          {falha && <Alert tom="vermelho" role="alert">{falha}</Alert>}
-          {aviso && <Alert tom="ambar" role="status">{aviso}</Alert>}
+      <form ref={formRef} onSubmit={avancar} noValidate aria-labelledby="titulo-passo" className="flex flex-col gap-5">
+        <div>
+          <h2 id="titulo-passo" ref={tituloRef} tabIndex={-1} className="text-[20px] font-semibold">{PASSOS[passo]}</h2>
+          <p className="text-[14px] text-ink-suave">{DESCRICAO_PASSO[passo]}</p>
         </div>
-        <div className="flex flex-wrap gap-[10px]">
-          <Button type="submit" variante="primario" carregando={enviando}>Criar condomínio</Button>
-          <Button variante="secundario" onClick={() => navegar('/')} disabled={enviando}>Voltar</Button>
+
+        {passo === 0 && (
+          <Card><CardContent className="grid gap-4 sm:grid-cols-2">
+            <Field label="Nome do condomínio" erro={erros.nome} className="sm:col-span-2">
+              <Input autoComplete="off" value={r.nome} onChange={(e) => atualizar((x) => comNome(x, e.target.value))} />
+            </Field>
+            <Field label="Código do condomínio" erro={erros.codigo} className="sm:col-span-2"
+              dica={<>É o que a portaria digita no login; <span className="font-semibold">não muda depois</span>. Sugerido a partir do nome; pode editar (3 a 31 caracteres: minúsculas, números e hífen, começando por letra).</>}>
+              <Input className="font-mono sm:max-w-[360px]" autoComplete="off" spellCheck={false} value={r.codigo} onChange={(e) => atualizar((x) => comCodigo(x, e.target.value))} />
+            </Field>
+            <Field label="Cidade" erro={erros.cidade}>
+              <Input autoComplete="off" value={r.cidade} onChange={(e) => atualizar((x) => ({ ...x, cidade: e.target.value }))} />
+            </Field>
+            <Field label="UF">
+              <NativeSelect value={r.uf} onChange={(e) => atualizar((x) => ({ ...x, uf: e.target.value }))}>
+                {UFS.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
+              </NativeSelect>
+            </Field>
+          </CardContent></Card>
+        )}
+
+        {passo === 1 && <PassoUnidades r={r} atualizar={atualizar} u={u} erros={erros} />}
+
+        {passo === 2 && (
+          <Card><CardContent className="grid gap-4 sm:grid-cols-2">
+            <Field label="Nome do síndico" erro={erros['sindico.nome']} className="sm:col-span-2">
+              <Input autoComplete="off" value={r.sindicoNome} onChange={(e) => atualizar((x) => comSindicoNome(x, e.target.value))} />
+            </Field>
+            <Field label="Login do síndico" erro={erros['sindico.login']} className="sm:col-span-2"
+              dica="Sugerido a partir do nome (ex.: maria.souza); pode editar. 3 a 40 caracteres: minúsculas, números, ponto, hífen ou sublinhado, começando por letra. O síndico entra com o código do condomínio, este login e a senha temporária.">
+              <Input className="font-mono sm:max-w-[360px]" autoComplete="off" spellCheck={false} value={r.sindicoLogin} onChange={(e) => atualizar((x) => comSindicoLogin(x, e.target.value))} />
+            </Field>
+          </CardContent></Card>
+        )}
+
+        {passo === 3 && (
+          <PassoRevisao r={r} u={u} onEditar={irPara} saude={estadoSaude}
+            erroSaude={saude.error instanceof ApiError ? saude.error.message : saude.isError ? 'Não foi possível consultar o provisionador.' : null}
+            onVerificar={() => void saude.refetch()} confirmado={confirmado} onConfirmar={setConfirmado} bloqueado={enviando} />
+        )}
+
+        <div aria-live="polite" className="flex flex-col gap-3 empty:hidden">
+          {enviando && <Alert variant="petroleo" role="status">Provisionando… (pode levar alguns segundos; não feche a página)</Alert>}
+          {falha && (
+            <Alert variant="vermelho" role="alert" title="O condomínio não foi criado">
+              <p>{falha.mensagem}</p>
+              {falha.campos.length > 0 && (
+                <ul className="mt-1 list-disc pl-5">
+                  {falha.campos.map(([campo, msg]) => (
+                    <li key={campo}>{campo}: {msg} <Button size="sm" variant="ghost" onClick={() => irPara(passoDoCampo(campo))}>Ir para {PASSOS[passoDoCampo(campo)]}</Button></li>
+                  ))}
+                </ul>
+              )}
+            </Alert>
+          )}
+          {aviso && <Alert variant="ambar" role="status">{aviso}</Alert>}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-[10px] border-t border-linha pt-4">
+          {passo > 0 && <Button variant="secondary" onClick={() => irPara(passo - 1)} disabled={enviando}>Voltar</Button>}
+          {passo < 3 && <Button type="submit" variant="default">Avançar</Button>}
+          {passo === 3 && (
+            <Button variant="default" loading={enviando} disabled={!confirmado || estadoSaude !== 'disponivel'} onClick={() => void criar()}>Criar condomínio</Button>
+          )}
+          <Button variant="ghost" className="ml-auto" onClick={() => navegar('/')} disabled={enviando}>Cancelar</Button>
         </div>
       </form>
-      {senha?.r.sindico && <SenhaSindicoModal codigo={senha.r.condominio.codigo} nome={senha.r.condominio.nome} sindico={senha.r.sindico} onClose={fecharSenha} />}
+      {senha?.sindico && <SenhaSindicoModal codigo={senha.condominio.codigo} nome={senha.condominio.nome} sindico={senha.sindico} onClose={fecharSenha} />}
     </section>
   );
 }

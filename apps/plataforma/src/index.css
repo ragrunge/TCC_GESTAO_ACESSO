@@ -17,9 +17,3 @@
   .sobre-escuro :focus-visible { outline-color: #FFFFFF; }
   a { color: #0B5563; }
 }
-
-@layer components {
-  .input { @apply h-[44px] min-w-0 w-full rounded-lg border border-[#B9C3CA] bg-white px-3 text-[15px] text-ink placeholder:text-[#56616B]/70; }
-  textarea.input { @apply h-auto py-[10px]; }
-  .input:disabled { @apply bg-neutro-bg text-ink-suave; }
-}

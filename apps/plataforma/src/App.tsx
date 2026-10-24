@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ApiError } from './api/cliente';
@@ -6,9 +6,11 @@ import { criarApi, type ApiPlataforma } from './api/plataforma';
 import { SessaoProvider, useSessao } from './sessao/SessaoMaster';
 import { Licencas } from './telas/Licencas';
 import { Login } from './telas/Login';
-import { NovoCondominio } from './telas/NovoCondominio';
 import { TrocarSenha } from './telas/TrocarSenha';
-import { Button } from './ui/ui';
+import { Button } from './components/ui/button';
+
+// O assistente "Novo condomínio" (abas, planilha, prévia) só carrega quando aberto: a lista abre sem ele.
+const NovoCondominio = lazy(() => import('./telas/NovoCondominio').then((m) => ({ default: m.NovoCondominio })));
 
 export function novoQueryClient() {
   return new QueryClient({
@@ -28,7 +30,7 @@ function Cabecalho() {
       <Link to="/" className="text-[16px] font-semibold text-white no-underline">Portaria Parque · Plataforma</Link>
       <div className="flex items-center gap-3">
         <span className="text-[14px]"><span className="text-white">{estado.usuario.nome}</span> · {estado.usuario.email}</span>
-        <Button variante="secundario" onClick={() => void sair()}>Sair</Button>
+        <Button variant="secondary" onClick={() => void sair()}>Sair</Button>
       </div>
     </header>
   );
@@ -45,7 +47,7 @@ function Rotas() {
       <main className="mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-8">
         <Routes>
           <Route path="/" element={<Licencas />} />
-          <Route path="/novo" element={<NovoCondominio />} />
+          <Route path="/novo" element={<Suspense fallback={<p role="status">Carregando…</p>}><NovoCondominio /></Suspense>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

@@ -1,10 +1,13 @@
 // Contrato da API do Master (/api/v1/plataforma/*; docs/api/openapi.json). Sucesso vem em `{ data }`.
 import type { Modulo } from '@portaria/domain/modulos';
 import type { PapelPlataforma } from '@portaria/domain/rbac-plataforma';
+import type { Agrupamento } from '@portaria/domain/units';
 import { criarCliente, type ClienteHttp } from './cliente';
 
 /** Chave da lista no React Query (só cadastro da plataforma; nunca a senha do síndico). */
 export const CHAVE_CONDOMINIOS = ['plataforma', 'condominios'] as const;
+/** Saúde do serviço provisionador (consultada no passo de revisão do "Novo condomínio"). */
+export const CHAVE_SAUDE_PROVISIONADOR = ['plataforma', 'provisionador', 'saude'] as const;
 
 export interface UsuarioPlataforma { id: string; nome: string; email: string; papel: PapelPlataforma; deveTrocarSenha: boolean }
 export interface SessaoInfo { expiraEm: string; inatividadeMin: number }
@@ -12,9 +15,11 @@ export type Situacao = 'provisionando' | 'ativo' | 'suspenso' | 'encerrado' | 'e
 export interface CondominioPlataforma {
   id: string; codigo: string; nome: string; cidade: string | null; uf: string | null; plano: string; situacao: Situacao; modulos: Modulo[]; criadoEm: string;
 }
+/** Corpo de POST /plataforma/condominios com a lista explícita de unidades (a tela não usa a grade `estrutura`). */
 export interface NovoCondominio {
-  codigo: string; nome: string; cidade: string; uf: string; plano?: string;
-  estrutura: { agrupamento: 'Bloco' | 'Torre'; blocos: string[]; andares: number[]; finais: number[]; ausentes: string[] };
+  codigo: string; nome: string; cidade: string; uf: string; plano: 'padrao';
+  agrupamento: Agrupamento;
+  unidades: { bloco: string; numero: string }[];
   areasComuns: string[];
   sindico: { nome: string; login: string };
 }
@@ -29,6 +34,8 @@ export interface ApiPlataforma {
   trocarSenha(senhaAtual: string, novaSenha: string): Promise<UsuarioPlataforma>;
   condominios(): Promise<CondominioPlataforma[]>;
   criarCondominio(dados: NovoCondominio): Promise<ResultadoCriacao>;
+  /** O provisionador está ligado e respondendo? (só quem pode criar condomínio) */
+  saudeProvisionador(): Promise<{ disponivel: boolean }>;
   modulos(id: string, modulos: Modulo[]): Promise<CondominioPlataforma>;
 }
 
@@ -43,6 +50,7 @@ export function criarApi(cliente: ClienteHttp = criarCliente(import.meta.env.VIT
     trocarSenha: (senhaAtual, novaSenha) => dados<{ usuario: UsuarioPlataforma }>(http.post('/plataforma/auth/trocar-senha', { senhaAtual, novaSenha })).then((r) => r.usuario),
     condominios: () => dados(http.get('/plataforma/condominios')),
     criarCondominio: (d) => dados(http.post('/plataforma/condominios', d)),
+    saudeProvisionador: () => dados(http.get('/plataforma/provisionador/saude')),
     modulos: (id, modulos) => dados(http.patch(`/plataforma/condominios/${encodeURIComponent(id)}/modulos`, { modulos })),
   };
 }
