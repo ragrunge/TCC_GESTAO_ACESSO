@@ -56,6 +56,20 @@ export class AuditoriaService {
     for (let i = 0; i < linhas.length; i += lote) await exec.insert(auditLog).values(linhas.slice(i, i + lote));
   }
 
+  /**
+   * Leitura do app do Master nos dados deste condomínio (SAAS-09): `usuario_id`/`usuario_papel` nulos (o Master não é
+   * usuário do condomínio, SAAS-07) e `usuario_nome = plataforma/<e-mail>`, SEM a máscara de dígitos do nome informado
+   * (o e-mail do operador é a identificação que o síndico precisa ver; não é dado de morador). Só ações `plataforma.*`.
+   */
+  async registrarPlataforma(exec: Executor, e: Omit<EntradaAuditoria, 'ator' | 'nomeInformado' | 'antes'> & { email: string }): Promise<void> {
+    if (!/^plataforma\.[a-z][a-zA-Z_]*$/.test(e.acao)) throw new Error(`ação da plataforma fora do formato: ${e.acao}`);
+    if (e.registroId && !UUID.test(e.registroId)) throw new Error('registroId da auditoria precisa ser uuid');
+    await exec.insert(auditLog).values({
+      usuarioId: null, usuarioPapel: null, usuarioNome: `plataforma/${e.email}`.replace(/[\r\n\t]+/g, ' ').slice(0, 300),
+      acao: e.acao, entidade: e.entidade, registroId: e.registroId ?? null, antes: null, depois: snapshot(e.depois), ip: ipOuNulo(e.ip),
+    });
+  }
+
   private linha(e: EntradaAuditoria) {
     if (!ACAO.test(e.acao)) throw new Error(`ação de auditoria fora do formato entidade.acao: ${e.acao}`);
     if (e.registroId && !UUID.test(e.registroId)) throw new Error('registroId da auditoria precisa ser uuid');

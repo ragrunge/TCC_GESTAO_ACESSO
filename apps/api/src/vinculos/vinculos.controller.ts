@@ -16,7 +16,7 @@ import { VinculosService } from './vinculos.service';
 
 const Dia = z.string().refine(ehDiaValido, { message: 'data inválida (AAAA-MM-DD)' });
 const ContagemDto = z.strictObject({ status: z.enum(statusVinculo.enumValues) });
-const ListarDto = PaginacaoDto.extend({
+export const ListarVinculosDto = PaginacaoDto.extend({
   /** `status=pendente` ou `status=aprovado,rejeitado`. */
   status: z.string().max(80).transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean))
     .pipe(z.array(z.enum(statusVinculo.enumValues)).min(1).max(5)).optional(),
@@ -60,7 +60,7 @@ export class VinculosController {
 
   @Get('vinculos')
   @Acao('vinculo.ver')
-  listar(@Query(new ZodPipe(ListarDto)) q: z.infer<typeof ListarDto>) {
+  listar(@Query(new ZodPipe(ListarVinculosDto)) q: z.infer<typeof ListarVinculosDto>) {
     return this.vinculos.listar(q);
   }
 

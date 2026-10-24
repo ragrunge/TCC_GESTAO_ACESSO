@@ -45,7 +45,7 @@ const EdicaoPessoaDto = z.strictObject({
   /** false: deixou de ser menor (exige CPF e telefone); true: só morador, não "sem CPF". */
   menorIdade: z.boolean().optional(),
 });
-const ListarPessoasDto = PaginacaoDto.extend({
+export const ListarPessoasDto = PaginacaoDto.extend({
   categoria: z.enum(categoriaPessoa.enumValues).optional(),
   incluirDesativadas: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
 });
@@ -84,7 +84,7 @@ export class PessoasController {
   @Get('pessoas/:id')
   @Acao('pessoa.ver')
   ficha(@Ctx() ctx: Contexto, @Param('id', uuidParam) id: string) {
-    return this.pessoas.ficha(ctx, id);
+    return this.pessoas.ficha(ctx.ator.papel, id);
   }
 
   /** pessoa.cadastrar_externo (SI, AD, PO); morador e funcionário exigem também pessoa.cadastrar_morador (no serviço). */

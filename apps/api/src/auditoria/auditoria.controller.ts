@@ -5,7 +5,7 @@ import { Body, Controller, Get, HttpCode, Inject, Injectable, Module, Post, Quer
 import { montarExportacaoJsonl } from '@portaria/domain/exportacao';
 import { hashGenese, verificarCadeia, type Ancora, type ResultadoVerificacao } from '@portaria/domain/hashChain';
 import { codigoUnidade } from '@portaria/domain/units';
-import { and, asc, desc, eq, gt, gte, inArray, lt, lte, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, like, lt, lte, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { Acao, Ctx } from '../auth/decorators';
 import type { Contexto } from '../auth/tipos';
@@ -43,6 +43,30 @@ const AlteracoesDto = PaginacaoDto.extend({
   entidade: z.string().regex(/^[a-z_]{1,40}$/).optional(),
 });
 const CursorSeq = z.strictObject({ s: z.number().int().positive() });
+
+/** Período (ms, como em /auditoria/alteracoes) e paginação. */
+const AcessosPlataformaDto = PaginacaoDto.extend({
+  de: z.coerce.number().int().min(0).optional(),
+  ate: z.coerce.number().int().min(0).optional(),
+});
+
+/** Ações que o app do Master grava na trilha do condomínio (SAAS-09; src/master/acesso-plataforma.service.ts). */
+export const ACOES_PLATAFORMA_TRILHA = ['plataforma.ler', 'plataforma.exportar'] as const;
+
+/** Uma leitura do Master nos dados deste condomínio: quando, quem, o quê e por qual rota (sem corpo nem filtros). */
+export interface AcessoPlataformaApi {
+  id: string;
+  em: number;
+  quem: string;
+  acao: string;
+  entidade: string;
+  registroId: string | null;
+  rota: string | null;
+  metodo: string | null;
+  status: number | null;
+}
+
+const texto = (v: unknown) => (typeof v === 'string' ? v : null);
 
 @Injectable()
 export class AuditoriaRotasService {
@@ -110,6 +134,20 @@ export class AuditoriaRotasService {
 
   /** RF-32: JSONL do período (ou de um evento isolado), no formato de @portaria/domain/exportacao. Grava a exportação no audit_log. */
   async exportar(ctx: Contexto, f: z.infer<typeof FiltrosCorpo>) {
+    const pacote = await this.gerarExportacao(f, ctx.ator.nome);
+    await this.auditoria.registrar(this.db, {
+      ator: ctx.ator, ip: ctx.ip, acao: 'auditoria.exportar', entidade: 'evento_acesso', registroId: f.eventoId ?? null,
+      // Sem o texto do filtro de nome (pode identificar alguém): só se ele foi usado.
+      depois: { modo: f.eventoId ? 'evento_isolado' : 'trilha', quantidade: pacote.quantidade, filtros: { ...f, pessoa: f.pessoa ? '(nome)' : undefined } },
+    });
+    return pacote;
+  }
+
+  /**
+   * O pacote JSONL, sem gravar trilha: quem chama registra (o usuário do condomínio como `auditoria.exportar`; o app do
+   * Master como `plataforma.exportar`, pelo AcessoPlataformaService). `geradoPor` vai no manifesto.
+   */
+  async gerarExportacao(f: z.infer<typeof FiltrosCorpo>, geradoPor: string) {
     const linhas = await this.eventos.linhas(f, TETO_EXPORTACAO);
     const isolado = !!f.eventoId;
     if (isolado && linhas.length === 0) throw erroApi(404, 'EVENTO_NAO_ENCONTRADO', 'Evento não encontrado.');
@@ -129,13 +167,8 @@ export class AuditoriaRotasService {
         pessoa: ps.get(e.pessoa_id!) ?? null, unidade: e.unidade_destino_id ? uns.get(e.unidade_destino_id) ?? null : null,
         areaComum: e.area_comum_id ? ars.get(e.area_comum_id) ?? null : null, operador: us.get(e.operador_id!) ?? null,
       }),
-      geradoPor: ctx.ator.nome, condominio: this.condominio?.nome ?? null, geradoEm: isoSP(n), carimbo: carimboSP(n),
+      geradoPor, condominio: this.condominio?.nome ?? null, geradoEm: isoSP(n), carimbo: carimboSP(n),
       observacao: 'Arquivo de hashes para verificação, gerado pela API a partir do banco. Não há assinatura digital nem âncora externa neste arquivo.',
-    });
-    await this.auditoria.registrar(this.db, {
-      ator: ctx.ator, ip: ctx.ip, acao: 'auditoria.exportar', entidade: 'evento_acesso', registroId: f.eventoId ?? null,
-      // Sem o texto do filtro de nome (pode identificar alguém): só se ele foi usado.
-      depois: { modo: isolado ? 'evento_isolado' : 'trilha', quantidade: pacote.quantidade, filtros: { ...f, pessoa: f.pessoa ? '(nome)' : undefined } },
     });
     return pacote;
   }
@@ -163,6 +196,31 @@ export class AuditoriaRotasService {
       acao: r.acao, entidade: r.entidade, registroId: r.registroId, antes: r.antes, depois: r.depois, redigidoEm: r.redigidoEm ? r.redigidoEm.getTime() : null,
     })), ls.length > f.limite && ultimo ? codificarCursor({ s: ultimo.seq }) : null);
   }
+
+  /**
+   * "Acessos da plataforma" (SAAS-09): as linhas `plataforma.*` da trilha, mais recentes primeiro. Só o que a tela
+   * mostra (o `master_usuario_id` do `depois` é da plataforma e não sai). O filtro por período usa o índice de `em`;
+   * as linhas da plataforma são poucas perto do resto da trilha (uma por consulta do Master).
+   */
+  async acessosPlataforma(f: z.infer<typeof AcessosPlataformaDto>): Promise<Pagina<AcessoPlataformaApi>> {
+    const w: SQL[] = [like(auditLog.acao, 'plataforma.%')];
+    if (f.de !== undefined) w.push(gte(auditLog.em, new Date(f.de)));
+    if (f.ate !== undefined) w.push(lte(auditLog.em, new Date(f.ate)));
+    if (f.cursor) w.push(lt(auditLog.seq, decodificarCursor(f.cursor, CursorSeq).s));
+    const ls = await this.db.select({
+      id: auditLog.id, seq: auditLog.seq, em: auditLog.em, usuarioNome: auditLog.usuarioNome, acao: auditLog.acao, entidade: auditLog.entidade,
+      registroId: auditLog.registroId, depois: auditLog.depois,
+    }).from(auditLog).where(and(...w)).orderBy(desc(auditLog.seq)).limit(f.limite + 1);
+    const pagina = ls.slice(0, f.limite);
+    const ultimo = pagina[pagina.length - 1];
+    return new Pagina(pagina.map((r): AcessoPlataformaApi => {
+      const d = (r.depois ?? {}) as Record<string, unknown>;
+      return {
+        id: r.id, em: r.em.getTime(), quem: r.usuarioNome, acao: r.acao, entidade: r.entidade, registroId: r.registroId,
+        rota: texto(d.rota), metodo: texto(d.metodo), status: typeof d.status === 'number' ? d.status : null,
+      };
+    }), ls.length > f.limite && ultimo ? codificarCursor({ s: ultimo.seq }) : null);
+  }
 }
 
 @Controller('auditoria')
@@ -182,6 +240,11 @@ export class AuditoriaController {
   @Get('alteracoes')
   @Acao('auditoria.verificar')
   alteracoes(@Query(new ZodPipe(AlteracoesDto)) q: z.infer<typeof AlteracoesDto>) { return this.servico.alteracoes(q); }
+
+  /** Leituras do app do Master nos dados deste condomínio (SAAS-09). Só leitura: a trilha é append-only. */
+  @Get('acessos-plataforma')
+  @Acao('auditoria.acessos_plataforma')
+  acessosPlataforma(@Query(new ZodPipe(AcessosPlataformaDto)) q: z.infer<typeof AcessosPlataformaDto>) { return this.servico.acessosPlataforma(q); }
 }
 
 @Module({ imports: [AcessoModule], controllers: [AuditoriaController], providers: [AuditoriaRotasService] })

@@ -261,15 +261,16 @@ export class PessoasService {
   /**
    * Ficha: pessoa, funcionário (se for) e vínculos. `eventos` continua null aqui: os últimos acessos vêm do módulo de
    * eventos (`GET /eventos-acesso?pessoaId=`), que o adaptador do front chama em paralelo (sem acoplar os módulos).
+   * `papel`: de quem lê (o motivo da desativação só para quem pode desativar). O app do Master lê com a visão do síndico.
    */
-  async ficha(ctx: Contexto, id: string) {
+  async ficha(papel: Papel, id: string) {
     const hoje = diaBrt(this.relogio.agora());
     const [p] = await this.db.select(colunasPessoa).from(pessoa).where(eq(pessoa.id, id));
     if (!p) throw erroApi(404, 'PESSOA_NAO_ENCONTRADA', 'Pessoa não encontrada.');
     const [f] = await this.db.select().from(funcionario).where(eq(funcionario.pessoaId, id));
     const vinculos = await carregarVinculos(this.db, eq(vinculoUnidade.pessoaId, id), hoje);
     return {
-      pessoa: paraPessoaApi(p as LinhaPessoa, { motivoDesativacao: veMotivoDesativacao(ctx.ator.papel) }),
+      pessoa: paraPessoaApi(p as LinhaPessoa, { motivoDesativacao: veMotivoDesativacao(papel) }),
       funcionario: f ? {
         pessoaId: f.pessoaId, funcao: f.funcao, ativo: f.ativo,
         escala: { diasSemana: f.diasSemana, horaInicio: f.horaInicio.slice(0, 5), horaFim: f.horaFim.slice(0, 5) },
