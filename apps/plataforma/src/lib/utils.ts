@@ -1,5 +1,7 @@
-// `cn` do shadcn/ui, sem clsx nem tailwind-merge (dependências a menos): junta classes e descarta falsy. Sem merge, quem
-// chama não sobrescreve utilitário do mesmo grupo (cor, altura); só acrescenta layout (flex-1, w-full, margens).
+// `cn` do shadcn/ui: junta classes, descarta falsy e resolve conflito de utilitário do mesmo grupo (tailwind-merge), para
+// quem chama poder sobrescrever o padrão do componente (ex.: `flex-row` sobre o `flex-col` do CardHeader).
+import { twMerge } from 'tailwind-merge';
+
 export function cn(...classes: (string | false | null | undefined)[]): string {
-  return classes.filter(Boolean).join(' ');
+  return twMerge(classes.filter(Boolean).join(' '));
 }

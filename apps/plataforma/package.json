@@ -28,7 +28,8 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.6",
-    "read-excel-file": "9.3.12"
+    "read-excel-file": "9.3.12",
+    "tailwind-merge": "2.6.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

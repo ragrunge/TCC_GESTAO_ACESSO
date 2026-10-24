@@ -131,7 +131,7 @@ export function NovoCondominio() {
 
       <form ref={formRef} onSubmit={avancar} noValidate aria-labelledby="titulo-passo" className="flex flex-col gap-5">
         <div>
-          <h2 id="titulo-passo" ref={tituloRef} tabIndex={-1} className="text-[20px] font-semibold">{PASSOS[passo]}</h2>
+          <h2 id="titulo-passo" ref={tituloRef} tabIndex={-1} className="text-[20px] font-semibold outline-none">{PASSOS[passo]}</h2>
           <p className="text-[14px] text-ink-suave">{DESCRICAO_PASSO[passo]}</p>
         </div>
 

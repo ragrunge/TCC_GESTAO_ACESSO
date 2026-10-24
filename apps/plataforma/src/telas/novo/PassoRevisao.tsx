@@ -42,7 +42,6 @@ export function PassoRevisao({ r, u, onEditar, saude, erroSaude, onVerificar, co
             <dt className="text-ink-suave">Nome</dt><dd>{r.nome.trim()}</dd>
             <dt className="text-ink-suave">Código</dt><dd className="font-mono">{r.codigo}</dd>
             <dt className="text-ink-suave">Cidade</dt><dd>{r.cidade.trim()}/{r.uf}</dd>
-            <dt className="text-ink-suave">Plano</dt><dd>Padrão</dd>
           </dl>
         </Bloco>
         <Bloco titulo="Síndico" passo={2} onEditar={onEditar} bloqueado={bloqueado}>
