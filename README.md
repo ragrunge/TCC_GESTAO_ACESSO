@@ -3,7 +3,8 @@
 Material do Trabalho de Conclusão de Curso de Sistemas de Informação (EAD) *Controle e Gestão de Acesso em
 Condomínio Residencial: contribuições para a segurança patrimonial, administrativa e jurídica*.
 
-Autor: Rafael Aparecido Vidal.
+Autores: Ana Carolina Vilelo Moreira Dias, Rafael Aparecido Vidal e Ruan Abolis de Araújo.
+Orientador: Prof. Me. Gilberto Alves Pereira. Faculdade Impacta, São Paulo, 2026.
 
 ## Sobre o trabalho
 
@@ -38,4 +39,4 @@ respostas dos questionários não são publicadas, apenas os instrumentos.
 
 ## Direitos
 
-Todos os direitos reservados ao autor (ver `LICENSE`). Citação acadêmica permitida, com a referência ao trabalho.
+Todos os direitos reservados aos autores (ver `LICENSE`). Citação acadêmica permitida, com a referência ao trabalho.
