@@ -1,0 +1,25 @@
+{
+  "name": "gestao-acesso-monorepo",
+  "private": true,
+  "license": "UNLICENSED",
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w apps/web",
+    "local": "node scripts/local.mjs",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm test --workspaces --if-present && npm run test:scripts",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "colecoes": "node scripts/api-colecoes/gerar.mjs",
+    "test:scripts": "node --test \"scripts/**/*.test.mjs\""
+  },
+  "devDependencies": {
+    "drizzle-orm": "0.45.4"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

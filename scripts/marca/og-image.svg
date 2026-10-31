@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" font-family="Helvetica, Arial, sans-serif">
+  <rect width="1200" height="630" fill="#10262C"/>
+  <svg x="80" y="80" width="88" height="88" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#0B5563"/><path d="M9.5 24.5V15a6.5 6.5 0 0 1 13 0v9.5" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round"/><circle cx="16" cy="19.5" r="2.8" fill="#A9D2D8"/></svg>
+  <text x="192" y="118" font-size="26" font-weight="700" fill="#FFFFFF">Gestão de Acesso</text>
+  <text x="192" y="157" font-size="20" fill="#9FB1B7">Controle de acesso e portaria</text>
+  <text x="80" y="327" font-size="54" font-weight="700" fill="#FFFFFF">Controle de acesso para condomínios</text>
+  <text x="80" y="405" font-size="28" fill="#9FB1B7">Cada entrada registrada com quem autorizou e quem registrou.</text>
+  <rect x="80" y="518" width="1040" height="2" fill="#24414A"/>
+  <text x="80" y="563" font-size="20" fill="#8299A0">Protótipo acadêmico · TCC de Sistemas de Informação · dados fictícios</text>
+</svg>

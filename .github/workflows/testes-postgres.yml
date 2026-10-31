@@ -1,0 +1,170 @@
+# Testes contra PostgreSQL 17 REAL (a mesma imagem do docker-compose.yml). O resto do CI roda sobre PGlite (Postgres em
+# WASM, uma conexão só, sem roles de verdade); aqui valem o que o PGlite não prova: concorrência real, LOGIN como app_rw,
+# roles e CONNECT por banco e o bootstrap de db/bootstrap/00_roles.sh contra o cluster.
+#
+# Ordem: bootstrap de roles (rodado duas vezes: é idempotente) -> migrações com drizzle-kit como app_migrator (duas
+# vezes: a segunda não aplica nada) -> npm run test:pg -> privilégios dos roles -> smoke da API (boot com as chaves do
+# job, /saude respondendo como app_rw, recusa sem a KEK). Qualquer divergência falha o job com ::error::.
+#
+# Sem segredo do repositório: o único valor fixo é a senha do superusuário de um Postgres que morre com o job; as demais
+# senhas e as chaves são geradas no job, mascaradas no log e descartadas.
+name: Testes do Postgres real
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - 'packages/domain/**'
+      - 'db/**'
+      - 'package-lock.json'
+      - '.github/workflows/testes-postgres.yml'
+  pull_request:
+    paths:
+      - 'apps/api/**'
+      - 'packages/domain/**'
+      - 'db/**'
+      - 'package-lock.json'
+      - '.github/workflows/testes-postgres.yml'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: testes-postgres-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-real:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Como o job roda em container, o service é alcançado pelo nome (`postgres`).
+    container: node:22-bookworm-slim
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    services:
+      postgres:
+        # Mesma imagem e mesmo TZ do serviço `db` do docker-compose.yml.
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: ci-postgres-descartavel # igual a POSTGRES_PASSWORD abaixo; o banco morre com o job
+          TZ: UTC
+          PGTZ: UTC
+        # -h 127.0.0.1 força TCP (durante o init o servidor temporário só escuta no socket unix), como no compose.
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 10s
+    env:
+      CI: 'true'
+      TZ: UTC
+      PGHOST: postgres
+      PGPORT: '5432'
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ci-postgres-descartavel
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      # psql (o bootstrap usa), openssl (senhas e chaves) e curl (smoke da API). O psql do Debian 12 é o 15: fala com o
+      # servidor 17 e o bootstrap só usa SQL básico e \gexec.
+      - name: Ferramentas do sistema
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends postgresql-client openssl ca-certificates curl
+          psql --version
+
+      - name: Senhas e chaves do job (geradas aqui, mascaradas)
+        run: |
+          gerar() { # nome comando...
+            local nome="$1"; shift
+            local valor; valor="$("$@")"
+            echo "::add-mask::$valor"
+            printf '%s=%s\n' "$nome" "$valor" >> "$GITHUB_ENV"
+          }
+          # Senhas de banco entram em URL: hex, sem /+=.
+          gerar APP_MIGRATOR_PASSWORD openssl rand -hex 24
+          gerar APP_RW_PASSWORD openssl rand -hex 24
+          # Chaves fictícias da API (base64): KEK de 32 bytes e HMAC do CPF de 48.
+          gerar PORTARIA_KEK openssl rand -base64 32
+          gerar PORTARIA_HMAC_CPF_KEY openssl rand -base64 48
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Bootstrap de roles e banco (db/bootstrap, como o init do compose)
+        env:
+          PGPASSWORD: ${{ env.POSTGRES_PASSWORD }}
+        run: |
+          for i in $(seq 1 30); do pg_isready -q -h "$PGHOST" -U postgres && break; sleep 2; done
+          pg_isready -h "$PGHOST" -U postgres || { echo "::error::o Postgres do service não ficou pronto"; exit 1; }
+          # Duas passadas: o bootstrap precisa ser idempotente.
+          for passada in 1 2; do
+            for s in db/bootstrap/*.sh; do
+              echo "--- $s (passada $passada)"
+              sh "$s" || { echo "::error::$s falhou na passada $passada"; exit 1; }
+            done
+          done
+          banco="$(psql -U postgres -d postgres -tAc "select datname from pg_database where datname = 'portaria'")"
+          [ "$banco" = "portaria" ] || { echo "::error::banco portaria não foi criado"; exit 1; }
+          sem_login="$(psql -U postgres -d postgres -tAc "select string_agg(rolname, ',' order by rolname) from pg_roles where rolname in ('app_migrator','app_rw') and not rolcanlogin")"
+          [ -z "$sem_login" ] || { echo "::error::roles sem LOGIN apesar das senhas: $sem_login"; exit 1; }
+
+      - name: Migrações (drizzle-kit como app_migrator, como o serviço migrate do compose)
+        working-directory: apps/api
+        run: |
+          falha() { echo "::error::$*"; exit 1; }
+          export DATABASE_URL_MIGRATOR="postgres://app_migrator:${APP_MIGRATOR_PASSWORD}@${PGHOST}:5432/portaria"
+          npx drizzle-kit migrate || falha "drizzle-kit migrate falhou"
+          n="$(PGPASSWORD="$POSTGRES_PASSWORD" psql -U postgres -d portaria -tAc "select count(*) from drizzle.__drizzle_migrations")"
+          esperado="$(ls drizzle/*.sql | wc -l | tr -d " ")"
+          [ "$n" = "$esperado" ] || falha "$n migrações aplicadas, $esperado arquivos em apps/api/drizzle"
+          # Segunda passada: nada a aplicar, sai com 0 (idempotente, como a cada `up`).
+          npx drizzle-kit migrate >/dev/null || falha "drizzle-kit migrate falhou na segunda passada"
+
+      # Os testes criam bancos descartáveis (portaria_teste_<n>) e usam o app_rw que o bootstrap já criou: por isso
+      # precisam de APP_RW_PASSWORD (eles se recusam a alterar a senha de um role existente).
+      - name: Testes contra o Postgres real
+        env:
+          PG_TEST_URL: postgres://postgres:${{ env.POSTGRES_PASSWORD }}@postgres:5432/postgres
+        run: npm run test:pg -w apps/api
+
+      - name: Privilégios dos roles
+        env:
+          PGPASSWORD: ${{ env.POSTGRES_PASSWORD }}
+        run: |
+          falha() { echo "::error::$*"; exit 1; }
+          q() { psql -U postgres -d postgres -tAc "$1"; }
+          [ "$(q "select has_database_privilege('app_rw','portaria','CONNECT')::text")" = "true" ] || falha "app_rw deveria ter CONNECT em portaria"
+          [ "$(q "select has_database_privilege('app_rw','portaria','CREATE')::text")" = "false" ] || falha "app_rw não deveria ter CREATE em portaria"
+          # Superusuário nunca é role de aplicação.
+          super="$(q "select string_agg(rolname, ',') from pg_roles where rolname like 'app\_%' and (rolsuper or rolcreaterole or rolbypassrls)")"
+          [ -z "$super" ] || falha "roles de aplicação com privilégio excessivo: $super"
+
+      - name: Build da API
+        run: npm run build -w apps/api
+
+      - name: Smoke da API (boot com as chaves do job e /saude como app_rw)
+        working-directory: apps/api
+        run: |
+          falha() { echo "::error::$*"; exit 1; }
+          export DATABASE_URL="postgres://app_rw:${APP_RW_PASSWORD}@${PGHOST}:5432/portaria"
+          export PORTARIA_AMBIENTE=dev COOKIE_SECURE=false TRUST_PROXY=false PORTARIA_KEK_VERSAO=1 JOBS_AGENDADOR=false
+          export PORTARIA_DOCUMENTOS_DIR="$RUNNER_TEMP/documentos" PORT=3000
+          node dist/main.js >"$RUNNER_TEMP/api.log" 2>&1 &
+          pid=$!
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:3000/api/v1/saude >/dev/null 2>&1 && break; sleep 1; done
+          curl -fsS http://127.0.0.1:3000/api/v1/saude || { cat "$RUNNER_TEMP/api.log"; falha "a API não respondeu ao /saude"; }
+          kill "$pid"
+          # Sem a KEK a API recusa subir (falha no boot, não default silencioso).
+          if PORTARIA_KEK= timeout 20 node dist/main.js >"$RUNNER_TEMP/api2.log" 2>&1; then falha "a API subiu sem PORTARIA_KEK"; fi
+          grep -q "PORTARIA_KEK" "$RUNNER_TEMP/api2.log" || falha "a recusa sem KEK não citou a variável"
+          # Nenhuma chave no log.
+          for chave in "$PORTARIA_KEK" "$PORTARIA_HMAC_CPF_KEY" "$APP_RW_PASSWORD"; do
+            if grep -qF -- "$chave" "$RUNNER_TEMP/api.log" "$RUNNER_TEMP/api2.log"; then falha "segredo apareceu no log da API"; fi
+          done

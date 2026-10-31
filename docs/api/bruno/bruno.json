@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Gestão de Acesso",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

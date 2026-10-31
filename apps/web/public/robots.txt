@@ -1,0 +1,5 @@
+# Só a tela de entrada é pública; as demais rotas exigem sessão.
+User-agent: *
+Allow: /$
+Allow: /login
+Disallow: /

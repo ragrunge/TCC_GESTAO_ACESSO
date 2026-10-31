@@ -1,0 +1,925 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { AlertTriangle, Car, Check, Clock, History, Plus, Search } from 'lucide-react';
+import { useApi, ehApiError, type Autorizador, type AutorizacaoView, type NovaPessoaInput, type PessoaBusca, type PrevistoView, type RestricaoView } from '../../api';
+import { useAuth } from '../../auth/AuthContext';
+import { Alert } from '../../components/Alert';
+import { InputMascara } from '../../components/InputMascara';
+import { SeloVinculo } from '../../components/Badge';
+import { Button } from '../../components/Button';
+import { CartaoPasso } from '../../components/Card';
+import { Field } from '../../components/Field';
+import { Modal, temModalAberto } from '../../components/Modal';
+import { PageHeader } from '../../components/PageHeader';
+import { TowerUnitPicker, type TowerUnitPickerHandle } from '../../components/TowerUnitPicker';
+import { useToast } from '../../components/Toast';
+import { Avatar } from '../../components/UnitTag';
+import {
+  ROTULO_CATEGORIA, ROTULO_MEIO, ROTULO_PAPEL, type CategoriaPessoa, type Funcionario, type MeioAutorizacao,
+} from '@portaria/domain/types';
+import { PRAZO_PADRAO_MIN, meioComMorador, prazoInicial, temPrazoPermanencia, tipoVisitaPadrao } from '@portaria/domain/rules';
+import { ROTULO_TIPO_VISITA, TIPOS_VISITA, type TipoVisita } from '@portaria/domain/types';
+import {
+  descreverHorario, descreverJanela, escalaVigente, estadoAutorizacaoPrevia, justificativaValida, meiosAceitos, MIN_JUSTIFICATIVA,
+  podeConfirmarEntrada, type DadosAutorizacao,
+} from '@portaria/domain/rules';
+import { fmtData, fmtHora, fromInput, toInputDate, toInputTime } from '@portaria/domain/time';
+import { mascaraPlaca, normalizarPlaca } from '@portaria/domain/cpf';
+import type { VeiculoAcesso } from '@portaria/domain/types';
+import { mensagemErro, useAgora } from '../../app/useAsync';
+import { useCatalogo } from '../../app/catalogo';
+import { APOS_EVENTO, CHAVES, useInvalidar } from '../../app/consultas';
+import { ANTECEDENCIA_ENTRADA_MS, HORAS_PREVISTOS } from './previstos';
+import { garantirNegado } from './negado';
+import { descreverVeiculo } from '../common/evento';
+
+const SUGESTOES_EXCECAO = ['Morador não atende o interfone', 'Emergência médica', 'Serviço público (luz, água, gás)'];
+
+const NP_VAZIA = { nome: '', documento: '', telefone: '', semCpf: false, categoria: 'visitante' as CategoriaPessoa, empresa: '', servico: '', tipoVisita: 'visita' as TipoVisita };
+
+/** Tipo do cadastro rápido: entregador e motorista de app são visitantes com outro tipo de visita (prazo menor). */
+const TIPOS_CADASTRO_RAPIDO: { valor: TipoVisita; rotulo: string; categoria: CategoriaPessoa }[] = [
+  { valor: 'visita', rotulo: 'Visitante', categoria: 'visitante' },
+  { valor: 'entrega', rotulo: 'Entregador', categoria: 'visitante' },
+  { valor: 'transporte_app', rotulo: 'Motorista de app', categoria: 'visitante' },
+  { valor: 'servico', rotulo: 'Prestador de serviço', categoria: 'prestador' },
+];
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const LIMITE_SUGESTOES = 8;
+/** Quem tem vínculo válido aparece na busca com o rótulo "Morador da D-32" (pode visitar outra unidade). */
+const rotuloPessoa = (p: PessoaBusca) => (p.unidadesVinculadasCodigos.length > 0
+  ? `Morador da ${p.unidadesVinculadasCodigos[0]}${p.unidadesVinculadasCodigos.length > 1 ? ` +${p.unidadesVinculadasCodigos.length - 1}` : ''}`
+  : ROTULO_CATEGORIA[p.categoria]);
+
+export function EntradaPage() {
+  const api = useApi();
+  const nav = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const retroativo = params.get('retroativo') === '1';
+  const { usuario } = useAuth();
+  const { avisar } = useToast();
+  const agora = useAgora(15000);
+  const agoraRef = useRef(agora);
+  agoraRef.current = agora;
+  const catalogo = useCatalogo();
+  // Registrar entrada, recusa ou negado atualiza presentes, turno e histórico (e a unidade, a ficha e a busca)
+  const invalidar = useInvalidar();
+
+  // --- Passo 1: pessoa
+  const [query, setQuery] = useState('');
+  const [sugestoes, setSugestoes] = useState<PessoaBusca[]>([]);
+  const [idx, setIdx] = useState(0);
+  const [buscando, setBuscando] = useState(false);
+  const [mais, setMais] = useState(false); // havia mais resultados que o limite da lista
+  const [pessoa, setPessoa] = useState<PessoaBusca | null>(null);
+  const [funcionario, setFuncionario] = useState<Funcionario | null>(null);
+  const [novoModo, setNovoModo] = useState(false);
+  const [np, setNp] = useState(NP_VAZIA);
+  const [erroNp, setErroNp] = useState('');
+  // --- Passo 2: unidade (ou área comum, só prestador: RF-36)
+  const [destino, setDestino] = useState<'unidade' | 'area_comum'>('unidade');
+  const [areaId, setAreaId] = useState('');
+  const [bloco, setBloco] = useState<string | null>(null);
+  const [numero, setNumero] = useState<string | null>(null);
+  const [carregandoUnidade, setCarregandoUnidade] = useState(false);
+  const [previas, setPrevias] = useState<AutorizacaoView[]>([]);
+  const [autorizadores, setAutorizadores] = useState<Autorizador[]>([]);
+  const [restricao, setRestricao] = useState<RestricaoView[] | null>(null);
+  // Negado que o servidor JÁ gravou (422 PESSOA_EM_RESTRICAO na confirmação): o modal não pode gravar outro
+  const [negadoGravado, setNegadoGravado] = useState<{ eventoId: string; codigo: string } | null>(null);
+  // --- Passo 3: autorização
+  const [meio, setMeio] = useState<MeioAutorizacao | null>(null);
+  const [residenteId, setResidenteId] = useState<string | null>(null);
+  const [justificativa, setJustificativa] = useState('');
+  /** Prazo de permanência (só visitante/prestador). Nulo = padrão da categoria. */
+  const [tipoVisita, setTipoVisita] = useState<TipoVisita | null>(null);
+  // --- Veículo (opcional; a pé é o padrão). Vai no evento de entrada e entra no hash.
+  const [veiculo, setVeiculo] = useState<VeiculoForm>(VEICULO_VAZIO);
+  /** Veículo da última entrada com veículo da pessoa ("mesmo veículo da última visita"). */
+  const [ultimoVeiculo, setUltimoVeiculo] = useState<VeiculoAcesso | null>(null);
+  const pedidoVeiculo = useRef('');
+  // --- Retroativo
+  const [dataReal, setDataReal] = useState(toInputDate(agora));
+  const [horaReal, setHoraReal] = useState('');
+  const [formulario, setFormulario] = useState('');
+  // --- Envio
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [recusando, setRecusando] = useState(false);
+
+  const buscaRef = useRef<HTMLInputElement>(null);
+  const pickerRef = useRef<TowerUnitPickerHandle>(null);
+  const grupoMeioRef = useRef<HTMLFieldSetElement>(null);
+  const focarMeio = useRef(false);
+  /** Onde estava o foco quando a consulta da unidade começou: se o operador já foi para outro campo, não roubamos o foco. */
+  const focoAntesDaConsulta = useRef<Element | null>(null);
+  const enterPendente = useRef(false);
+
+  useEffect(() => { buscaRef.current?.focus(); }, []);
+
+  // Pré-preenchimento vindo do painel ("Registrar entrada" em Previstos): ?pessoa=<uuid>&unidade=<uuid> ou &area=<uuid>.
+  // Usa os mesmos caminhos da seleção manual (escolherPessoa + bloco/número ou área); qualquer falha é ignorada e a
+  // tela fica vazia. Os parâmetros são consumidos (replace, mantendo `retroativo`) para um reload não repetir.
+  const prefillFeito = useRef(false);
+  useEffect(() => {
+    if (prefillFeito.current || !catalogo.pronto) return;
+    const pid = params.get('pessoa'), uid = params.get('unidade'), aid = params.get('area');
+    if (!pid && !uid && !aid) return;
+    prefillFeito.current = true;
+    const prox = new URLSearchParams(params);
+    ['pessoa', 'unidade', 'area'].forEach((k) => prox.delete(k));
+    setParams(prox, { replace: true });
+    void preencherRef.current(pid, uid, aid);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogo.pronto, params]);
+
+  /** Pessoa + unidade (ou área comum) de um previsto: vem do painel (URL) ou da lista de previstos desta tela. */
+  const preencherRef = useRef<(pid: string | null, uid: string | null, aid: string | null) => Promise<void>>(async () => undefined);
+  preencherRef.current = async (pid, uid, aid) => {
+    if (!pid || !UUID.test(pid) || (uid ? !UUID.test(uid) : false) || (aid ? !UUID.test(aid) : false) || (!!uid === !!aid)) return;
+    {
+      try {
+        const ficha = await api.pessoas.ficha(pid);
+        if (ficha.pessoa.desativadaEm) return;
+        // A busca devolve o PessoaBusca completo (vínculos, último acesso) que a seleção manual usa; ela já exclui desativadas
+        const achada = (await api.pessoas.buscar(ficha.pessoa.nome, { limite: 50 })).find((x) => x.id === pid);
+        if (!achada) return;
+        const un = uid ? catalogo.porId(uid) : undefined;
+        const area = aid ? catalogo.areasComuns.find((a) => a.id === aid) : undefined;
+        if (uid && !un?.ativo) return;
+        if (aid && (!area?.ativo || achada.categoria !== 'prestador')) return; // área comum é só do prestador (RF-36)
+        await escolherPessoaRef.current(achada);
+        if (un) { setBloco(un.bloco); setNumero(un.numero); }
+        else if (area) { setDestino('area_comum'); setAreaId(area.id); }
+      } catch { /* pré-preenchimento é conveniência: falha vira tela vazia */ }
+    }
+  };
+
+  // Previstos para agora (os mesmos do Painel): com a busca vazia, escolhe-se com um clique ou com as setas e Enter
+  const previstos = useQuery({
+    queryKey: CHAVES.autorizacoesPrevistas(HORAS_PREVISTOS), queryFn: () => api.autorizacoes.previstas(HORAS_PREVISTOS),
+    staleTime: 0, enabled: !retroativo,
+  });
+  const previstosAgora = (previstos.data ?? []).filter((p) => p.inicio - agora <= ANTECEDENCIA_ENTRADA_MS).slice(0, 5);
+  const [idxPrevisto, setIdxPrevisto] = useState(0);
+  const escolherPrevisto = (p: PrevistoView) => void preencherRef.current(p.pessoaId, p.destino.tipo === 'unidade' ? p.destino.id : null, p.destino.tipo === 'area_comum' ? p.destino.id : null);
+
+  // Busca incremental
+  useEffect(() => {
+    if (pessoa || novoModo || query.trim().length < 1) { setSugestoes([]); setMais(false); return; }
+    let vivo = true;
+    setBuscando(true);
+    const t = setTimeout(() => {
+      api.pessoas.buscar(query, { limite: LIMITE_SUGESTOES + 1 })
+        .then((r) => {
+          if (!vivo) return;
+          setMais(r.length > LIMITE_SUGESTOES); setSugestoes(r.slice(0, LIMITE_SUGESTOES)); setIdx(0);
+          // Enter digitado antes de a lista chegar: escolhe o primeiro resultado
+          if (enterPendente.current && r[0]) { enterPendente.current = false; void escolherPessoaRef.current(r[0]); }
+        })
+        .catch((e) => vivo && setErro(mensagemErro(e)))
+        .finally(() => vivo && setBuscando(false));
+    }, 120);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [query, pessoa, novoModo, api]);
+
+  const escolherPessoaRef = useRef<(p: PessoaBusca) => Promise<void>>(async () => undefined);
+  const escolherPessoa = useCallback(async (p: PessoaBusca) => {
+    setPessoa(p); setQuery(''); setSugestoes([]); setErro(''); setTipoVisita(null); setVeiculo(VEICULO_VAZIO); setUltimoVeiculo(null);
+    // Sugestão do último veículo: conveniência, falha não atrapalha a entrada
+    // Resposta de uma pessoa anterior (trocou rápido) é descartada.
+    pedidoVeiculo.current = p.id;
+    Promise.resolve().then(() => api.eventos.ultimoVeiculo(p.id))
+      .then((v) => { if (pedidoVeiculo.current === p.id) setUltimoVeiculo(v); }, () => undefined);
+    setFuncionario(p.categoria === 'funcionario' ? await api.pessoas.funcionario(p.id) : null);
+    // Correção 12: após escolher a pessoa, o foco vai para a seleção de bloco
+    setTimeout(() => pickerRef.current?.focusBloco(), 0);
+  }, [api]);
+
+  escolherPessoaRef.current = escolherPessoa;
+
+  function limpar(manterFoco = true) {
+    setPessoa(null); setFuncionario(null); setQuery(''); setSugestoes([]); setNovoModo(false); setNp(NP_VAZIA); setErroNp('');
+    setBloco(null); setNumero(null); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setJustificativa('');
+    setErro(''); setFormulario(''); setHoraReal(''); setRestricao(null); setNegadoGravado(null); setDestino('unidade'); setAreaId('');
+    setTipoVisita(null); setVeiculo(VEICULO_VAZIO); setUltimoVeiculo(null); pedidoVeiculo.current = '';
+    if (manterFoco) setTimeout(() => buscaRef.current?.focus(), 0);
+  }
+  const limparUnidade = () => {
+    setRestricao(null); setNegadoGravado(null);
+    setBloco(null); setNumero(null); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setJustificativa('');
+    setTimeout(() => pickerRef.current?.focusBloco(), 0);
+  };
+
+  // Ao escolher a unidade: restrições (RF-16), autorizações prévias e moradores aptos a autorizar
+  const emArea = destino === 'area_comum' && pessoa?.categoria === 'prestador';
+  const unidadeAtual = !emArea && bloco && numero ? catalogo.porBlocoNumero(bloco, numero)?.id ?? null : null;
+  const areaAtual = emArea && areaId ? areaId : null;
+  const codUnidade = unidadeAtual ? catalogo.codigo(unidadeAtual) : null;
+
+  // RF-36: prestador em área comum — só restrição de condomínio e autorizações prévias da área (sem morador para autorizar)
+  useEffect(() => {
+    if (!pessoa || !areaAtual) return;
+    let vivo = true;
+    setCarregandoUnidade(true); setMeio(null); setResidenteId(null); setErro('');
+    focoAntesDaConsulta.current = document.activeElement;
+    (async () => {
+      try {
+        const rest = await api.restricoes.verificar(pessoa.id, null);
+        if (!vivo) return;
+        if (rest.restrita) { setNegadoGravado(null); setRestricao(rest.alertas); setCarregandoUnidade(false); return; }
+        const aps = await api.autorizacoes.vigentes(pessoa.id, areaAtual, { areaComum: true });
+        if (!vivo) return;
+        setPrevias(aps); setAutorizadores([]);
+        if (aps.some((a) => estadoAutorizacaoPrevia(a, agoraRef.current) === 'valida') && !pessoa.semCpf) setMeio('autorizacao_previa');
+        focarMeio.current = true;
+      } catch (e) { if (vivo) setErro(mensagemErro(e)); }
+      finally { if (vivo) setCarregandoUnidade(false); }
+    })();
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pessoa?.id, areaAtual, api]);
+
+  useEffect(() => {
+    if (!pessoa || emArea) return;
+    // Funcionário sem unidade (entrada por escala): só vale restrição do condomínio, verificada logo ao escolher a pessoa
+    if (!unidadeAtual) {
+      if (pessoa.categoria !== 'funcionario') return;
+      let vivo = true;
+      api.restricoes.verificar(pessoa.id, null)
+        .then((rest) => { if (vivo && rest.restrita) { setNegadoGravado(null); setRestricao(rest.alertas); } })
+        .catch((e) => vivo && setErro(mensagemErro(e)));
+      return () => { vivo = false; };
+    }
+    let vivo = true;
+    setCarregandoUnidade(true); setMeio(null); setResidenteId(null); setErro('');
+    focoAntesDaConsulta.current = document.activeElement;
+    (async () => {
+      try {
+        const rest = await api.restricoes.verificar(pessoa.id, unidadeAtual);
+        if (!vivo) return;
+        if (rest.restrita) { setNegadoGravado(null); setRestricao(rest.alertas); setCarregandoUnidade(false); return; }
+        const [aps, auts] = await Promise.all([api.autorizacoes.vigentes(pessoa.id, unidadeAtual), api.vinculos.autorizadores(unidadeAtual)]);
+        if (!vivo) return;
+        setPrevias(aps); setAutorizadores(auts);
+        const valida = aps.find((a) => estadoAutorizacaoPrevia(a, agoraRef.current) === 'valida');
+        if (valida && !pessoa.semCpf) setMeio('autorizacao_previa');
+        focarMeio.current = true;
+      } catch (e) { if (vivo) setErro(mensagemErro(e)); }
+      finally { if (vivo) setCarregandoUnidade(false); }
+    })();
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pessoa?.id, unidadeAtual, api]);
+
+  // Correção 12: após a unidade, o foco vai para "Quem autorizou?"
+  useEffect(() => {
+    if (!carregandoUnidade && focarMeio.current && (unidadeAtual || areaAtual)) {
+      focarMeio.current = false;
+      const atual = document.activeElement;
+      const antes = focoAntesDaConsulta.current;
+      focoAntesDaConsulta.current = null;
+      // O operador mexeu em outro campo enquanto a unidade carregava (ex.: tipo de visita): não roubar o foco.
+      if (antes && atual && atual !== antes && atual !== document.body) return;
+      const alvo = grupoMeioRef.current?.querySelector<HTMLInputElement>('input[type=radio]:checked:not(:disabled)')
+        ?? grupoMeioRef.current?.querySelector<HTMLInputElement>('input[type=radio]:not(:disabled)');
+      alvo?.focus();
+    }
+  }, [carregandoUnidade, unidadeAtual, areaAtual]);
+
+  // --- instante do acesso (retroativo usa a hora real informada)
+  const quando = retroativo ? fromInput(dataReal, horaReal || '00:00') : agora;
+  const retroValido = !retroativo || (!!horaReal && quando !== null && quando < agora);
+
+  const previaValida = useMemo(() => previas.find((a) => quando !== null && estadoAutorizacaoPrevia(a, quando) === 'valida'), [previas, quando]);
+  const previaFora = useMemo(() => (previaValida ? undefined : previas.find((a) => quando !== null && estadoAutorizacaoPrevia(a, quando) === 'fora_da_janela')), [previas, previaValida, quando]);
+  // "Morador" em outra unidade (ou sem vínculo válido) é tratado como visitante também no servidor
+  const categoria = pessoa ? (pessoa.categoria === 'morador' ? 'visitante' : pessoa.categoria) : undefined;
+  const meiosPermitidos = categoria ? meiosAceitos(categoria, emArea ? 'area_comum' : 'unidade') : [];
+  const semCpf = !!pessoa?.semCpf;
+  // Seletor do tipo de visita: só para quem é cadastrado como visitante ou prestador ("morador" em outra unidade entra
+  // como visitante com o padrão "Visita", decidido no servidor).
+  const comPrazo = !!pessoa && temPrazoPermanencia(pessoa.categoria);
+  const tipoEscolhido = comPrazo ? tipoVisita ?? tipoVisitaPadrao(pessoa!.categoria) : null;
+
+  const dados: DadosAutorizacao | null = pessoa ? {
+    categoriaPessoa: categoria!, semCpf, unidadeDestinoId: unidadeAtual, areaComumId: areaAtual, autorizadoPorTipo: meio,
+    autorizadoPorPessoaId: meioComMorador(meio) ? residenteId : null,
+    autorizacaoPreviaId: meio === 'autorizacao_previa' ? previaValida?.id ?? null : null, justificativa,
+  } : null;
+  // Mesma função pura que o "servidor" usa: o botão só habilita se a regra passar
+  const regraOk = !!dados && quando !== null && podeConfirmarEntrada(dados, {
+    quando, moradoresValidosIds: new Set(autorizadores.map((a) => a.pessoa.id)), autorizacoes: previas, funcionario: funcionario ?? undefined,
+  });
+  // Morador não registra entrada na própria unidade no MVP; em outra unidade segue como visitante
+  const propriaUnidade = !!pessoa && !!unidadeAtual && pessoa.unidadesVinculadas.includes(unidadeAtual);
+  // Com veículo, a placa é obrigatória e no padrão antigo ou Mercosul (a mesma regra da API)
+  const placaNormalizada = veiculo.comVeiculo ? normalizarPlaca(veiculo.placa) : null;
+  const veiculoOk = !veiculo.comVeiculo || placaNormalizada !== null;
+  const pronto = !!pessoa && !propriaUnidade && regraOk && retroValido && (!retroativo || formulario.trim().length > 0) && veiculoOk && !carregandoUnidade && !restricao && !enviando;
+
+  const confirmar = useCallback(async () => {
+    if (!pessoa || !dados || !pronto) return;
+    setEnviando(true); setErro('');
+    try {
+      const ev = await api.eventos.criar({
+        pessoaId: pessoa.id, unidadeDestinoId: unidadeAtual, areaComumId: areaAtual, autorizadoPorTipo: dados.autorizadoPorTipo,
+        autorizadoPorPessoaId: dados.autorizadoPorPessoaId, autorizacaoPreviaId: dados.autorizacaoPreviaId,
+        justificativa: meio === 'excecao_porteiro' ? justificativa : null, retroativo,
+        ocorridoEm: retroativo ? quando : null, formularioContingencia: retroativo ? formulario.trim() : null,
+        // Só quando difere do padrão (que o servidor aplica sozinho): durante o deploy, o front novo diante da API anterior
+        // (DTO estrito, sem o campo) não quebra a entrada comum.
+        tipoVisita: pessoa && tipoEscolhido && tipoEscolhido !== tipoVisitaPadrao(pessoa.categoria) ? tipoEscolhido : null,
+        veiculo: placaNormalizada ? { placa: placaNormalizada, modelo: veiculo.modelo, cor: veiculo.cor } : null,
+      });
+      const via = { interfone: 'via interfone', celular: 'pelo celular (WhatsApp ou ligação)', morador_presente: 'com o morador presente na portaria', autorizacao_previa: 'via autorização prévia', excecao_porteiro: 'por exceção do porteiro (justificativa registrada)', escala: 'por escala' }[meio!];
+      const quem = ev.autorizadoPorTipo === 'excecao_porteiro' || ev.autorizadoPorTipo === 'escala' ? '' : `autorizada por ${ev.autorizadoPorNome ?? '—'} `;
+      avisar({
+        tom: ev.autorizadoPorTipo === 'excecao_porteiro' ? 'ambar' : 'verde',
+        titulo: retroativo ? 'Lançamento retroativo registrado' : 'Entrada registrada',
+        texto: `${retroativo ? `Acesso de ${fmtData(ev.ocorridoEm)} ${fmtHora(ev.ocorridoEm)}, lançado` : 'Entrada registrada'} às ${fmtHora(ev.registradoEm)} por ${ROTULO_PAPEL[usuario!.papel]} ${usuario!.nome} — ${quem}${via} (${ev.codigo}).`,
+      });
+      void invalidar(APOS_EVENTO);
+      nav('/painel');
+    } catch (e) {
+      if (ehApiError(e) && e.code === 'PESSOA_EM_RESTRICAO') {
+        // O servidor já gravou o "negado": guarda o evento para o modal não gravar de novo
+        const det = e.detalhes as { restricoes: RestricaoView[]; eventoId: string; codigo: string };
+        setNegadoGravado({ eventoId: det.eventoId, codigo: det.codigo });
+        setRestricao(det.restricoes);
+        void invalidar(APOS_EVENTO); // o negado já está na trilha
+      } else setErro(mensagemErro(e));
+      setEnviando(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pessoa, dados, pronto, api, unidadeAtual, areaAtual, meio, justificativa, retroativo, quando, formulario, usuario, tipoEscolhido, placaNormalizada, veiculo]);
+
+  // Correção 13: Enter confirma sempre que o registro estiver completo (exceto em campo de texto longo)
+  const confirmarRef = useRef(confirmar);
+  confirmarRef.current = confirmar;
+  const prontoRef = useRef(pronto);
+  prontoRef.current = pronto;
+  const algoPreenchido = !!pessoa || novoModo || query.length > 0;
+  const algoRef = useRef(algoPreenchido);
+  algoRef.current = algoPreenchido;
+  useEffect(() => {
+    function tecla(e: KeyboardEvent) {
+      if (temModalAberto()) return;
+      const alvo = e.target as HTMLElement;
+      if (e.key === 'Enter') {
+        if (!prontoRef.current || alvo.tagName === 'TEXTAREA' || alvo.id === 'busca-pessoa') return;
+        e.preventDefault(); e.stopPropagation();
+        void confirmarRef.current();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        if (algoRef.current) limpar(); else nav('/painel');
+      }
+    }
+    document.addEventListener('keydown', tecla, true);
+    return () => document.removeEventListener('keydown', tecla, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function cadastrarNova(e: FormEvent) {
+    e.preventDefault();
+    setErroNp('');
+    try {
+      const input: NovaPessoaInput = {
+        nome: np.nome, documento: np.semCpf ? undefined : np.documento, telefone: np.telefone, semCpf: np.semCpf, categoria: np.categoria,
+        empresa: np.categoria === 'prestador' ? np.empresa : undefined, servico: np.categoria === 'prestador' ? np.servico : undefined,
+      };
+      const criada = await api.pessoas.criar(input);
+      const tipo = np.tipoVisita;
+      setNovoModo(false); setNp(NP_VAZIA);
+      await escolherPessoa({ ...criada, ultimoAcesso: 'Sem acessos', unidadesVinculadas: [], unidadesVinculadasCodigos: [] });
+      if (tipo !== tipoVisitaPadrao(criada.categoria)) setTipoVisita(tipo);
+      avisar({ texto: `${criada.nome} cadastrado(a) como ${ROTULO_CATEGORIA[criada.categoria].toLowerCase()}.` });
+    } catch (err) { setErroNp(mensagemErro(err)); }
+  }
+
+  // Modal de restrição: ambos os caminhos gravam o evento "negado" (a gravação ocorre no servidor)
+  // Se a restrição veio no 422 da confirmação, o servidor já gravou o negado: NÃO chamar eventos.criar de novo.
+  async function resolverRestricao(registrarOcorrencia: boolean) {
+    if (!pessoa) return;
+    let eventoId: string, codigo: string;
+    try {
+      ({ eventoId, codigo } = await garantirNegado(negadoGravado, async () => {
+        try {
+          await api.eventos.criar({ pessoaId: pessoa.id, unidadeDestinoId: unidadeAtual, areaComumId: areaAtual, autorizadoPorTipo: null, retroativo, ocorridoEm: retroativo ? quando : null, formularioContingencia: retroativo ? formulario.trim() || null : null });
+          return { eventoId: '', codigo: '' };
+        } catch (e) {
+          if (ehApiError(e) && e.code === 'PESSOA_EM_RESTRICAO') {
+            const d = e.detalhes as { eventoId: string; codigo: string };
+            return { eventoId: d.eventoId, codigo: d.codigo };
+          }
+          throw e;
+        }
+      }));
+    } catch (e) { setErro(mensagemErro(e)); setRestricao(null); return; }
+    void invalidar(APOS_EVENTO);
+    const nome = pessoa.nome;
+    const onde = codUnidade ? `na ${codUnidade}` : areaAtual ? `na área comum ${catalogo.areaNome(areaAtual)}` : 'no condomínio';
+    setRestricao(null); setNegadoGravado(null);
+    avisar({ tom: 'vermelho', titulo: 'Entrada negada', texto: `${nome} não entrou ${onde}. Tentativa gravada na trilha (${codigo}).` });
+    if (registrarOcorrencia) {
+      nav(`/ocorrencias?novo=1&tipo=tentativa_acesso_indevido${codUnidade ? `&unidade=${codUnidade}` : ''}&envolvidos=${encodeURIComponent(nome)}&evento=${eventoId}`);
+    } else if (unidadeAtual || areaAtual) {
+      setBloco(null); setNumero(null); setMeio(null); setAreaId('');
+      setTimeout(() => pickerRef.current?.focusBloco(), 0);
+    } else {
+      limpar(); // funcionário sem unidade: nada a refazer na unidade, recomeça pela pessoa
+    }
+  }
+
+  // UC02 A4: o morador recusou a visita. Grava o evento "recusado" e limpa a tela.
+  const podeRecusar = !!pessoa && !!unidadeAtual && meioComMorador(meio) && !!residenteId
+    && retroValido && (!retroativo || formulario.trim().length > 0) && !carregandoUnidade && !restricao && !enviando && !recusando;
+  async function registrarRecusa() {
+    if (!podeRecusar || !pessoa || !unidadeAtual || !meioComMorador(meio)) return;
+    setRecusando(true); setErro('');
+    try {
+      const ev = await api.eventos.registrarRecusa({
+        pessoaId: pessoa.id, unidadeDestinoId: unidadeAtual, meio, moradorPessoaId: residenteId!, retroativo,
+        ocorridoEm: retroativo ? quando : null, formularioContingencia: retroativo ? formulario.trim() : null,
+      });
+      avisar({ tom: 'ambar', titulo: 'Recusa registrada', texto: `${ev.autorizadoPorNome} recusou a visita de ${pessoa.nome} à ${codUnidade} (${ev.codigo}). Nenhuma entrada foi registrada.` });
+      void invalidar(APOS_EVENTO);
+      limpar();
+    } catch (e) { setErro(mensagemErro(e)); } finally { setRecusando(false); }
+  }
+
+  const pr = restricao?.[0];
+
+  // Resumo do registro (coluna direita)
+  const residente = autorizadores.find((a) => a.pessoa.id === residenteId)?.pessoa.nome;
+  const autorizadoPor = !meio ? '—'
+    : meio === 'excecao_porteiro' ? `${usuario!.nome} (exceção do porteiro)`
+    : meio === 'escala' ? 'Escala do condomínio'
+    : meio === 'autorizacao_previa' ? (previaValida ? (previaValida.areaComumId ? `Área comum — cadastrada por ${previaValida.cadastradaPorNome}` : previaValida.semSolicitante ? `Sem solicitante — cadastrada por ${previaValida.cadastradaPorNome}` : previaValida.solicitadaPorNome) ?? '—' : '—')
+    : residente ?? '—';
+  const faltas: string[] = [];
+  if (!pessoa) faltas.push('pessoa');
+  else {
+    if (propriaUnidade) faltas.push('outra unidade de destino (morador não registra entrada na própria)');
+    else if (emArea && !areaAtual) faltas.push('área comum');
+    else if (!emArea && !unidadeAtual && pessoa.categoria !== 'funcionario') faltas.push('unidade');
+    else if (carregandoUnidade) faltas.push('verificação da unidade');
+    if (!meio && !carregandoUnidade && (unidadeAtual || areaAtual || pessoa.categoria === 'funcionario')) faltas.push('quem autorizou');
+    else if (meioComMorador(meio) && !residenteId) faltas.push('morador que autorizou');
+    else if (meio === 'excecao_porteiro' && !justificativaValida(justificativa)) faltas.push(`justificativa (mín. ${MIN_JUSTIFICATIVA} caracteres)`);
+  }
+  if (retroativo) {
+    if (!horaReal) faltas.push('hora real do acesso');
+    else if (!retroValido) faltas.push('hora real anterior ao momento atual');
+    if (!formulario.trim()) faltas.push('nº do formulário de papel');
+  }
+  if (pessoa && !veiculoOk) faltas.push('placa do veículo (padrão antigo ou Mercosul), ou marque “A pé”');
+  if (faltas.length === 0 && !pronto && !enviando && !restricao) faltas.push('autorização válida para este momento');
+
+  const LABEL_MEIO: Record<MeioAutorizacao, [string, string]> = {
+    interfone: ['Interfone', 'Morador confirma pelo interfone'],
+    celular: ['Celular', 'Morador confirma por WhatsApp ou ligação'],
+    morador_presente: ['Morador presente', 'Morador está na portaria'],
+    autorizacao_previa: ['Autorização prévia', emArea ? 'Cadastrada pela administração' : 'Cadastrada antes pelo morador'],
+    excecao_porteiro: ['Exceção do porteiro', 'Sem morador; exige justificativa'],
+    escala: ['Escala', 'Funcionário em horário de escala'],
+  };
+  // Todos os meios aparecem; os que não valem para esta pessoa ou destino ficam desabilitados com o motivo
+  const meiosVisiveis = ['interfone', 'celular', 'morador_presente', 'autorizacao_previa', 'excecao_porteiro', 'escala'] as MeioAutorizacao[];
+  /** Motivo de um meio não valer para a pessoa ou o destino escolhidos (null = vale). */
+  const motivoMeioBloqueado = (m: MeioAutorizacao): string | null => {
+    if (!pessoa || meiosPermitidos.includes(m)) return null;
+    if (m === 'escala') return 'Só para funcionário';
+    if (emArea) return 'Não vale para área comum';
+    return 'Não vale para esta pessoa';
+  };
+  const rotuloResumo = 'text-[13px] text-[#56616B]';
+  // Prazo de permanência pela MESMA regra do servidor (prazoInicial): tipo escolhido ou padrão da categoria efetiva
+  // ("morador" em outra unidade entra como visitante) e, no serviço com autorização prévia, o fim da janela
+  const tipoResumo = categoria && temPrazoPermanencia(categoria) ? tipoEscolhido ?? tipoVisitaPadrao(categoria) : null;
+  const saiAte = tipoResumo && quando !== null && (!retroativo || horaReal)
+    ? prazoInicial(tipoResumo, quando, meio === 'autorizacao_previa' ? previaValida?.horaFim : null) : null;
+
+  return (
+    <div className="flex flex-col gap-5">
+      <PageHeader titulo={retroativo ? 'Lançar registro retroativo' : 'Registrar entrada'}
+        descricao={retroativo
+          ? 'Contingência (UC08): lance o acesso anotado no papel durante a queda do sistema, com a data e a hora reais.'
+          : 'Pessoa, unidade e quem autorizou. O registro não pode ser editado depois de confirmado.'} />
+
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="flex flex-col gap-4">
+          {retroativo && (
+            <section className="rounded-[10px] border border-[#A9D2D8] bg-[#F0F8F9] p-5">
+              <h2 className="mb-[14px] flex items-center gap-2 text-[17px] font-semibold"><History className="h-5 w-5 text-[#0B5563]" aria-hidden />Data e hora reais do acesso</h2>
+              <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-3">
+                <Field label="Data real do acesso"><input type="date" className="input" value={dataReal} max={toInputDate(agora)} onChange={(e) => setDataReal(e.target.value)} /></Field>
+                <Field label="Hora real do acesso" erro={horaReal && !retroValido ? 'Deve ser anterior ao momento atual.' : undefined}>
+                  <input type="time" className="input" value={horaReal} max={dataReal === toInputDate(agora) ? toInputTime(agora) : undefined} onChange={(e) => setHoraReal(e.target.value)} />
+                </Field>
+                <Field label="Nº do formulário de papel" dica="Obrigatório. Fica registrado no próprio evento (entra no hash)."><input className="input" value={formulario} onChange={(e) => setFormulario(e.target.value)} /></Field>
+              </div>
+              <p className="mt-3 flex items-center gap-1.5 text-[14px] text-[#0B4450]"><Clock className="h-4 w-4" aria-hidden />A hora do lançamento ({fmtHora(agora)}) é definida pelo sistema e gravada junto, com a etiqueta Retroativo.</p>
+            </section>
+          )}
+
+          <CartaoPasso n={1} titulo="Pessoa">
+            {!pessoa && !novoModo && (
+              <>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-[14px] top-[14px] h-5 w-5 text-[#56616B]" strokeWidth={2} aria-hidden />
+                  <label htmlFor="busca-pessoa" className="sr-only">Buscar por nome, documento ou placa</label>
+                  <input id="busca-pessoa" ref={buscaRef} autoComplete="off" role="combobox" aria-expanded={sugestoes.length > 0}
+                    aria-controls={!query.trim() && previstosAgora.length > 0 ? 'lista-previstos' : 'lista-sugestoes'}
+                    aria-activedescendant={!query.trim() && previstosAgora[idxPrevisto] ? `prev-${previstosAgora[idxPrevisto].autorizacaoId}` : sugestoes[idx] ? `sug-${sugestoes[idx].id}` : undefined}
+                    className="h-12 w-full rounded-lg border border-[#9AA7B0] bg-white pl-11 pr-[14px] text-[16px] text-ink placeholder:text-[#56616B]/70"
+                    value={query} onChange={(e) => { enterPendente.current = false; setQuery(e.target.value); }} placeholder="Nome, início do CPF ou placa da pessoa"
+                    onKeyDown={(e) => {
+                      // Busca vazia: as setas e o Enter andam pelos previstos para agora
+                      const naLista = !query.trim() && previstosAgora.length > 0;
+                      if (e.key === 'ArrowDown') { e.preventDefault(); if (naLista) setIdxPrevisto((i) => Math.min(i + 1, previstosAgora.length - 1)); else setIdx((i) => Math.min(i + 1, sugestoes.length - 1)); }
+                      else if (e.key === 'ArrowUp') { e.preventDefault(); if (naLista) setIdxPrevisto((i) => Math.max(i - 1, 0)); else setIdx((i) => Math.max(i - 1, 0)); }
+                      else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (naLista) { if (previstosAgora[idxPrevisto]) escolherPrevisto(previstosAgora[idxPrevisto]); }
+                        else if (sugestoes[idx]) void escolherPessoa(sugestoes[idx]); else if (query.trim()) enterPendente.current = true;
+                      }
+                    }} />
+                </div>
+                <div className="mt-2 flex flex-col gap-1">
+                  <ul id="lista-sugestoes" role="listbox" aria-label="Pessoas encontradas" className="flex flex-col gap-1 empty:hidden">
+                    {sugestoes.map((p, i) => (
+                      <li key={p.id} id={`sug-${p.id}`} role="option" aria-selected={i === idx}>
+                        <button type="button" tabIndex={-1} onClick={() => void escolherPessoa(p)} onMouseEnter={() => setIdx(i)}
+                          className={`grid min-h-[56px] w-full grid-cols-[44px_minmax(0,1fr)] items-center gap-y-0.5 md:grid-cols-[44px_minmax(0,1fr)_150px_110px_190px] gap-3 rounded-lg border px-[10px] py-[6px] text-left hover:bg-[#EEF5F6] ${
+                            i === idx ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#E1E6EA] bg-white'}`}>
+                          <Avatar nome={p.nome} />
+                          <span className="truncate font-semibold">{p.nome}</span>
+                          <span className="col-start-2 font-mono text-[14px] text-[#33424B] md:col-start-auto">{p.documentoMascarado}</span>
+                          <span className="col-start-2 truncate text-[14px] md:col-start-auto">{rotuloPessoa(p)}</span>
+                          <span className="col-start-2 truncate text-[13px] text-[#56616B] md:col-start-auto">Último: {p.ultimoAcesso}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {mais && <p className="px-0.5 py-1 text-[13px] text-[#56616B]">Mais resultados — refine a busca</p>}
+                  {query.trim() && !buscando && sugestoes.length === 0 && <p className="px-0.5 py-1 text-[#56616B]">Nenhuma pessoa encontrada com “{query}”.</p>}
+                  <button type="button" onClick={() => { setNovoModo(true); setNp({ ...NP_VAZIA, nome: query }); }}
+                    className="flex min-h-[48px] items-center gap-[10px] rounded-lg border border-dashed border-[#9AA7B0] bg-white px-3 text-left font-semibold text-[#0B5563] hover:bg-[#EEF5F6]">
+                    <Plus className="h-[18px] w-[18px]" strokeWidth={2.2} aria-hidden />Pessoa sem cadastro
+                  </button>
+                  {!query.trim() && previstosAgora.length > 0 && (
+                    <div className="mt-1 flex flex-col gap-1">
+                      <span id="rot-previstos" className="px-0.5 text-[13px] font-medium text-[#56616B]">Previstos para agora · autorização prévia</span>
+                      <ul id="lista-previstos" role="listbox" aria-labelledby="rot-previstos" className="flex flex-col gap-1">
+                        {previstosAgora.map((p, i) => (
+                          <li key={p.autorizacaoId} id={`prev-${p.autorizacaoId}`} role="option" aria-selected={i === idxPrevisto}>
+                            <button type="button" tabIndex={-1} onClick={() => escolherPrevisto(p)} onMouseEnter={() => setIdxPrevisto(i)}
+                              className={`grid min-h-[52px] w-full grid-cols-[44px_minmax(0,1fr)] items-center gap-3 rounded-lg border px-[10px] py-[6px] text-left hover:bg-[#EEF5F6] md:grid-cols-[44px_minmax(0,1fr)_minmax(0,1fr)_170px] ${
+                                i === idxPrevisto ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#E1E6EA] bg-white'}`}>
+                              <Avatar nome={p.nome} />
+                              <span className="flex min-w-0 flex-col"><span className="truncate font-semibold">{p.nome}</span><span className="text-[13px] text-[#56616B]">{ROTULO_CATEGORIA[p.categoria]}</span></span>
+                              <span className="col-start-2 truncate text-[14px] md:col-start-auto"><span className="text-[#56616B]">{p.destino.tipo === 'unidade' ? 'Unidade ' : 'Área comum: '}</span><span className="font-mono font-semibold">{p.destino.rotulo}</span></span>
+                              <span className="col-start-2 font-mono text-[13px] text-[#56616B] md:col-start-auto">{p.inicio <= agora ? `até ${fmtHora(p.fim)}` : `a partir de ${fmtHora(p.inicio)}`}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {sugestoes.length === 0 && !query.trim() && <div className="px-0.5 py-1 text-[13px] text-[#56616B]">Digite o nome ou o documento. Use ↑ ↓ para escolher e Enter para selecionar.</div>}
+                </div>
+              </>
+            )}
+
+            {novoModo && !pessoa && (
+              <form onSubmit={cadastrarNova} className="grid grid-cols-1 gap-[14px] sm:grid-cols-2">
+                <Field label="Nome completo" className="sm:col-span-2"><input className="input" autoFocus required value={np.nome} onChange={(e) => setNp({ ...np, nome: e.target.value })} /></Field>
+                <Field label="CPF" dica="Só CPF. Guardado mascarado, com hash para busca."><InputMascara tipo="cpf" className="input font-mono" disabled={np.semCpf} required={!np.semCpf} value={np.documento} onChange={(documento) => setNp({ ...np, documento })} /></Field>
+                <Field label="Telefone (obrigatório)"><InputMascara tipo="telefone" required value={np.telefone} onChange={(telefone) => setNp({ ...np, telefone })} /></Field>
+                <label className="sm:col-span-2 flex cursor-pointer items-start gap-3 rounded-lg border border-[#B9C3CA] p-3">
+                  <input type="checkbox" className="mt-1" checked={np.semCpf} onChange={(e) => setNp({ ...np, semCpf: e.target.checked, documento: '' })} />
+                  <span><span className="font-medium">Pessoa sem CPF</span><span className="block text-[13px] text-[#56616B]">Exceção: nome e telefone continuam obrigatórios e a pessoa só entra por exceção do porteiro, com justificativa.</span></span>
+                </label>
+                <Field label="Tipo">
+                  <select className="input" value={np.tipoVisita} onChange={(e) => {
+                    const t = TIPOS_CADASTRO_RAPIDO.find((x) => x.valor === e.target.value)!;
+                    setNp({ ...np, tipoVisita: t.valor, categoria: t.categoria });
+                  }}>
+                    {TIPOS_CADASTRO_RAPIDO.map((t) => <option key={t.valor} value={t.valor}>{t.rotulo}</option>)}
+                  </select>
+                </Field>
+                {np.categoria === 'prestador' && (
+                  <>
+                    <Field label="Empresa"><input className="input" required value={np.empresa} onChange={(e) => setNp({ ...np, empresa: e.target.value })} /></Field>
+                    <Field label="Serviço"><input className="input" value={np.servico} onChange={(e) => setNp({ ...np, servico: e.target.value })} /></Field>
+                  </>
+                )}
+                {erroNp && <Alert tom="vermelho" role="alert" className="sm:col-span-2">{erroNp}</Alert>}
+                <div className="flex flex-wrap gap-[10px] sm:col-span-2">
+                  <Button type="submit" variante="primario">Usar este cadastro</Button>
+                  <Button onClick={() => { setNovoModo(false); setTimeout(() => buscaRef.current?.focus(), 0); }}>Voltar à busca</Button>
+                </div>
+              </form>
+            )}
+
+            {pessoa && (
+              <div className="flex items-center gap-[14px] rounded-lg border border-[#A9D2D8] bg-[#F0F8F9] px-[14px] py-3">
+                <Avatar nome={pessoa.nome} tamanho={44} />
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-[16px] font-semibold">{pessoa.nome}</span>
+                  <span className="text-[14px] text-[#33424B]"><span className="font-mono">{pessoa.documentoMascarado}</span> · {rotuloPessoa(pessoa)}
+                    {pessoa.empresa && <> · {pessoa.empresa}{pessoa.servico ? ` (${pessoa.servico})` : ''}</>} · último acesso: {pessoa.ultimoAcesso}</span>
+                </div>
+                <Button pequeno onClick={() => limpar()}>Trocar</Button>
+              </div>
+            )}
+          </CartaoPasso>
+
+          <CartaoPasso n={2} titulo="Unidade de destino">
+            {!pessoa ? <p className="text-[#56616B]">Escolha a pessoa primeiro.</p> : (
+              <div className="flex flex-col gap-3">
+                {pessoa.categoria === 'funcionario' && <Alert tom="petroleo">Funcionário do condomínio: a unidade é opcional quando a entrada é por Escala.</Alert>}
+                {/* Ordem do protótipo: tipo de visita (define o prazo), destino do prestador, bloco e apartamento, veículo */}
+                {comPrazo && tipoEscolhido && <SeletorTipoVisita valor={tipoEscolhido} onChange={setTipoVisita} />}
+                {pessoa.categoria === 'prestador' && (
+                  <div role="radiogroup" aria-label="Destino do prestador" className="flex gap-2">
+                    {(['unidade', 'area_comum'] as const).map((d) => (
+                      <button key={d} type="button" role="radio" aria-checked={destino === d}
+                        onClick={() => { setDestino(d); setBloco(null); setNumero(null); setAreaId(''); setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); setRestricao(null); }}
+                        className={`h-[44px] rounded-full border px-4 text-[14px] font-medium ${destino === d ? 'border-[#0B5563] bg-[#0B5563] text-white' : 'border-[#B9C3CA] bg-white hover:bg-[#EEF2F4]'}`}>
+                        {d === 'unidade' ? 'Unidade' : 'Área comum'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {emArea ? (
+                  <div className="flex flex-col gap-2">
+                    <span id="rot-area" className="text-[14px] font-medium">Área comum</span>
+                    <div role="radiogroup" aria-labelledby="rot-area" className="flex flex-wrap gap-2">
+                      {catalogo.areasComuns.filter((a) => a.ativo).map((a) => (
+                        <button key={a.id} type="button" role="radio" aria-checked={areaId === a.id} onClick={() => { setAreaId(a.id); setRestricao(null); }}
+                          className={`h-11 rounded-lg border-2 px-4 font-medium max-lg:h-[44px] ${areaId === a.id ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#DCE1E5] bg-white hover:border-[#9AA7B0]'}`}>{a.nome}</button>
+                      ))}
+                    </div>
+                    <span className="text-[13px] text-[#56616B]">Na área comum a entrada é por autorização prévia da administração ou por exceção do porteiro (RF-36).</span>
+                  </div>
+                ) : (
+                <TowerUnitPicker ref={pickerRef} bloco={bloco} numero={numero}
+                  onChange={(b, n) => { setBloco(b); setNumero(n); if (!n) { setPrevias([]); setAutorizadores([]); setMeio(null); setResidenteId(null); } }}
+                  onAlterar={limparUnidade}
+                  onComplete={() => { /* o efeito de [unidade] consulta restrições e autorizações */ }} />
+                )}
+                {propriaUnidade && <Alert tom="ambar" role="alert">Morador não registra entrada na própria unidade no MVP.</Alert>}
+                <BlocoVeiculo valor={veiculo} onChange={setVeiculo} ultimo={ultimoVeiculo} />
+              </div>
+            )}
+          </CartaoPasso>
+
+          <CartaoPasso n={3} titulo="Quem autorizou?">
+            {!pessoa || (!unidadeAtual && !areaAtual && pessoa.categoria !== 'funcionario') || carregandoUnidade ? (
+              // Antes de liberar: os meios aparecem desabilitados, cada um com o motivo (o porteiro novo aprende o fluxo)
+              <div className="flex flex-col gap-2">
+                <div aria-label="Meios de autorização, ainda bloqueados" role="group" className="grid grid-cols-1 gap-[10px] sm:grid-cols-2 lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" style={{ '--n': meiosVisiveis.length } as CSSProperties}>
+                  {meiosVisiveis.map((m) => (
+                    <div key={m} aria-disabled="true" className="flex min-h-[76px] flex-col gap-1 rounded-[10px] border-2 border-[#DCE1E5] bg-white p-3 opacity-60">
+                      <span className="font-semibold">{LABEL_MEIO[m][0]}</span>
+                      <span className="text-[13px] text-[#56616B]">{motivoMeioBloqueado(m) ?? (carregandoUnidade ? 'Verificando a unidade…' : !pessoa ? 'Escolha a pessoa primeiro' : 'Escolha a unidade primeiro')}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[13px] text-[#56616B]">{carregandoUnidade ? 'Verificando restrições e autorizações…' : 'O sistema confere restrições e autorizações prévias da unidade antes de liberar esta etapa.'}</p>
+              </div>
+            ) : (
+                <div className="flex flex-col gap-[14px]">
+                  {previaValida && (
+                    <div role="status" className="flex items-start gap-3 rounded-[10px] border border-[#75E0A7] bg-[#DCFAE6] p-4 text-[#05603A]">
+                      <Check className="h-[22px] w-[22px] shrink-0" strokeWidth={2.4} aria-hidden />
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[16px] font-semibold">Autorização prévia {previaValida.areaComumId ? 'da administração' : previaValida.semSolicitante ? 'sem solicitante' : `de ${previaValida.solicitadaPorNome}`} ({previaValida.unidadeRotulo}), válida até {fmtData(previaValida.validaAte)}, {descreverJanela(previaValida)}.</span>
+                        <span className="text-[14px]">Autorizador preenchido automaticamente. Sem restrições para esta unidade.</span>
+                      </div>
+                    </div>
+                  )}
+                  {previaFora && (
+                    <Alert tom="ambar" titulo={`Autorização prévia fora do horário (${descreverHorario(previaFora)})`} role="status">
+                      Válida até {fmtData(previaFora.validaAte)}, {descreverJanela(previaFora)}. Neste momento ela não vale: escolha outro meio de autorização.
+                    </Alert>
+                  )}
+
+                  {semCpf && <Alert tom="ambar" titulo="Pessoa cadastrada sem CPF">Só pode entrar por exceção do porteiro, com justificativa. Interfone, celular, morador presente e autorização prévia ficam desabilitados.</Alert>}
+
+                  <fieldset ref={grupoMeioRef} className="grid grid-cols-1 gap-[10px] sm:grid-cols-2 lg:[grid-template-columns:repeat(var(--n),minmax(0,1fr))]" style={{ '--n': Math.max(meiosVisiveis.length, 1) } as CSSProperties}>
+                    <legend className="sr-only">Meio de autorização</legend>
+                    {meiosVisiveis.map((m) => {
+                      const bloqueioSemCpf = semCpf && m !== 'excecao_porteiro';
+                      const naoVale = motivoMeioBloqueado(m);
+                      const desabilitado = !!naoVale || (m === 'autorizacao_previa' && !previaValida) || bloqueioSemCpf;
+                      const [titulo, desc] = LABEL_MEIO[m];
+                      return (
+                        <label key={m} className={`flex min-h-[76px] flex-col gap-1 rounded-[10px] border-2 p-3 text-left [&:has(:focus-visible)]:outline [&:has(:focus-visible)]:outline-[3px] [&:has(:focus-visible)]:outline-offset-2 [&:has(:focus-visible)]:outline-[#0B5563] ${
+                          meio === m ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#DCE1E5] bg-white'} ${desabilitado ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#9AA7B0]'}`}>
+                          <input type="radio" name="meio" className="sr-only" disabled={desabilitado} checked={meio === m}
+                            onChange={() => { setMeio(m); setResidenteId(null); }} />
+                          <span className="font-semibold">{titulo}</span>
+                          <span className="text-[13px] text-[#56616B]">{desabilitado ? (naoVale ?? (bloqueioSemCpf ? 'Pessoa sem CPF' : previaFora ? 'Fora da janela de horário' : 'Sem autorização válida')) : desc}</span>
+                        </label>
+                      );
+                    })}
+                  </fieldset>
+
+                  {meioComMorador(meio) && (
+                    <div className="flex flex-col gap-2">
+                      <span id="rot-morador" className="text-[14px] font-medium">Morador que autorizou <span className="text-[#B42318]">*</span> <span className="font-normal text-[#56616B]">· somente vínculo aprovado na {codUnidade}</span></span>
+                      {autorizadores.length === 0
+                        ? <Alert tom="ambar">Nenhum morador com vínculo válido nesta unidade. Vínculo pendente não dá acesso de morador. Use outro meio.</Alert>
+                        : (
+                          <div role="radiogroup" aria-labelledby="rot-morador" className="flex flex-wrap gap-2">
+                            {autorizadores.map((a) => (
+                              <label key={a.pessoa.id} className={`flex h-11 cursor-pointer items-center gap-2 rounded-lg border-2 px-4 max-lg:h-[44px] [&:has(:focus-visible)]:outline [&:has(:focus-visible)]:outline-[3px] [&:has(:focus-visible)]:outline-offset-2 [&:has(:focus-visible)]:outline-[#0B5563] ${
+                                residenteId === a.pessoa.id ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#DCE1E5] bg-white hover:border-[#9AA7B0]'}`}>
+                                <input type="radio" name="morador" className="sr-only" checked={residenteId === a.pessoa.id} onChange={() => setResidenteId(a.pessoa.id)} />
+                                <span className="font-medium">{a.pessoa.nome}</span>
+                                <span className="text-[13px] text-[#56616B]">{a.vinculo.tipo === 'proprietario' ? 'Proprietário(a)' : a.vinculo.tipo === 'inquilino' ? 'Inquilino(a)' : 'Dependente'}</span>
+                                {a.vinculo.status === 'legado' && <SeloVinculo status="legado" tamanho="xs" />}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                    </div>
+                  )}
+
+                  {meioComMorador(meio) && residenteId && (
+                    <div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-dashed border-[#C5CDD3] px-4 py-3">
+                      <Button disabled={!podeRecusar} carregando={recusando} onClick={() => void registrarRecusa()}>Morador recusou</Button>
+                      <span className="text-[13px] text-[#56616B]">O morador não autorizou a visita: grava o evento “Recusado” na trilha, sem registrar entrada, e limpa a tela.</span>
+                    </div>
+                  )}
+
+                  {meio === 'excecao_porteiro' && (
+                    <div className="flex flex-col gap-3 rounded-[10px] border border-[#FEC84B] bg-[#FEF0C7] p-4 text-[#93370D]">
+                      <div className="flex items-start gap-[10px]">
+                        <AlertTriangle className="h-[22px] w-[22px] shrink-0" strokeWidth={2.2} aria-hidden />
+                        <div>
+                          <div className="text-[16px] font-semibold">Liberação por exceção</div>
+                          <div className="text-[14px] text-[#7A2E0E]">Esta entrada ficará marcada como exceção, com {usuario!.nome} como responsável, e aparecerá no relatório de exceções.</div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {SUGESTOES_EXCECAO.map((s) => (
+                          <button key={s} type="button" onClick={() => setJustificativa(s)} className="h-[44px] rounded-full border border-[#F5B54A] lg:h-9 bg-white px-3 text-[14px] text-[#7A2E0E] hover:bg-[#FFF8E6]">{s}</button>
+                        ))}
+                      </div>
+                      <label htmlFor="just" className="flex flex-col gap-1.5 text-[14px] font-medium text-[#7A2E0E]">Justificativa (obrigatória, mínimo {MIN_JUSTIFICATIVA} caracteres)
+                        <textarea id="just" rows={3} className="input !border-[#F5B54A] font-normal" value={justificativa} onChange={(e) => setJustificativa(e.target.value)} />
+                      </label>
+                      <span className="text-[13px] text-[#7A2E0E]">{justificativa.trim().length} de {MIN_JUSTIFICATIVA} caracteres{justificativaValida(justificativa) ? ' — suficiente' : ''}</span>
+                    </div>
+                  )}
+
+                  {meio === 'escala' && (
+                    funcionario && escalaVigente(funcionario, quando ?? agora)
+                      ? <Alert tom="verde" role="status">{funcionario.funcao} em horário de escala ({funcionario.escala.horaInicio}–{funcionario.escala.horaFim}, {descreverJanela({ diasSemana: funcionario.escala.diasSemana, horaInicio: null, horaFim: null })}).</Alert>
+                      : <Alert tom="ambar">O funcionário não está em horário de escala neste momento.</Alert>
+                  )}
+
+                  {erro && <Alert tom="vermelho" role="alert">{erro}</Alert>}
+                </div>
+              )}
+          </CartaoPasso>
+        </div>
+
+        <aside aria-label="Resumo do registro" className="flex xl:sticky xl:top-0 xl:self-start flex-col gap-[14px] rounded-[10px] border border-[#DCE1E5] bg-white p-5">
+          <h2 className="text-[17px] font-semibold">Resumo do registro</h2>
+          <div className="flex flex-col gap-0.5"><span className={rotuloResumo}>Pessoa</span><span className="font-semibold">{pessoa?.nome ?? '—'}</span></div>
+          <div className="flex flex-col gap-0.5"><span className={rotuloResumo}>{emArea ? 'Área comum' : 'Unidade'}</span>
+            <span className="font-mono text-[24px] font-semibold text-[#0B3F49]">{unidadeAtual ? catalogo.rotulo(unidadeAtual) : areaAtual ? catalogo.areaNome(areaAtual) : '—'}</span></div>
+          <div className="flex flex-col gap-0.5"><span className={rotuloResumo}>Autorizado por</span><span className="font-semibold">{autorizadoPor}</span>
+            <span className="text-[14px] text-[#33424B]">{meio ? ROTULO_MEIO[meio] : ''}</span></div>
+          <div className="flex flex-col gap-0.5"><span className={rotuloResumo}>Veículo</span>
+            <span className="font-semibold">{!veiculo.comVeiculo ? 'A pé' : placaNormalizada
+              ? [mascaraPlaca(placaNormalizada), veiculo.modelo.trim(), veiculo.cor.trim()].filter(Boolean).join(' · ') : '—'}</span></div>
+          {tipoResumo && (
+            <div className="flex flex-col gap-0.5"><span className={rotuloResumo}>Tipo de visita</span>
+              <span className="font-semibold">{ROTULO_TIPO_VISITA[tipoResumo]} · prazo {fmtPrazo(PRAZO_PADRAO_MIN[tipoResumo])}</span>
+              {saiAte !== null && <span className="flex items-center gap-1.5 font-mono text-[14px] text-[#33424B]"><Clock className="h-4 w-4" aria-hidden />Sai até {fmtHora(saiAte)}{fmtData(saiAte) !== fmtData(quando ?? agora) ? ` de ${fmtData(saiAte)}` : ''}</span>}
+            </div>
+          )}
+          {retroativo && (
+            <div className="flex flex-col gap-0.5"><span className={rotuloResumo}>Data e hora reais</span>
+              <span className="font-semibold">{quando !== null && horaReal ? `${fmtData(quando)} ${fmtHora(quando)}` : '—'}</span></div>
+          )}
+          <div className="flex flex-col gap-0.5"><span className={rotuloResumo}>Registrado por</span>
+            <span className="font-semibold">{ROTULO_PAPEL[usuario!.papel]} {usuario!.nome} · {fmtHora(agora)}</span></div>
+          <div className="h-px bg-[#E6EAED]" />
+          {pronto ? (
+            <button type="button" onClick={() => void confirmar()}
+              className="flex h-[52px] items-center justify-center gap-[10px] rounded-lg bg-[#0B5563] text-[16px] font-semibold text-white hover:bg-[#08434E]">
+              {retroativo ? 'Confirmar lançamento' : 'Confirmar entrada'} <kbd className="rounded-[5px] border border-white/50 px-[7px] py-0.5 font-mono text-[13px]">Enter</kbd>
+            </button>
+          ) : (
+            <>
+              <button type="button" disabled className="h-[52px] cursor-not-allowed rounded-lg border border-[#D5DDE2] bg-[#EEF2F4] text-[16px] font-semibold text-[#6B7780]">
+                {enviando ? 'Registrando…' : retroativo ? 'Confirmar lançamento' : 'Confirmar entrada'}
+                {!enviando && <kbd aria-hidden className="ml-[10px] rounded-[5px] border border-[#B9C3CA] px-[7px] py-0.5 font-mono text-[13px]">Enter</kbd>}
+              </button>
+              {faltas.length > 0 && <span className="text-[13px] text-[#56616B]">Falta: {faltas.join(', ')}</span>}
+            </>
+          )}
+          <Button atalho="Esc" onClick={() => (algoPreenchido ? limpar() : nav('/painel'))}>Cancelar</Button>
+        </aside>
+      </div>
+
+      {restricao && pr && pessoa && (
+        <Modal titulo={codUnidade ? `Entrada não permitida para ${codUnidade}` : 'Entrada não permitida no condomínio'} tom="vermelho" tituloId="titulo-restricao" onClose={() => void resolverRestricao(false)}
+          rodape={<>
+            <Button variante="perigo" grande className="flex-1" onClick={() => void resolverRestricao(true)}>Registrar ocorrência</Button>
+            <Button grande atalho="Esc" data-autofocus onClick={() => void resolverRestricao(false)}>Cancelar</Button>
+          </>}>
+          <div className="text-[18px] font-semibold">{pessoa.nome}</div>
+          <div className="flex flex-col gap-0.5"><span className="text-[13px] text-[#56616B]">Motivo registrado pelo morador</span><span className="text-[17px] font-semibold text-[#912018]">“{pr.motivo}”</span></div>
+          <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2">
+            <div className="flex flex-col gap-0.5"><span className="text-[13px] text-[#56616B]">Restrição solicitada por</span><span className="font-medium">{pr.solicitadaPorNome ?? 'Administração'}</span></div>
+            <div className="flex flex-col gap-0.5"><span className="text-[13px] text-[#56616B]">Cadastrada no sistema por</span><span className="font-medium">{pr.cadastradaPorNome} · {fmtData(pr.cadastradaEm)} {fmtHora(pr.cadastradaEm)}</span></div>
+          </div>
+          {pr.escopo === 'condominio' && <div className="text-[14px] font-medium text-[#912018]">Restrição para todo o condomínio (aprovada pelo síndico).</div>}
+          <div className="rounded-lg bg-[#F3F5F6] px-3 py-[10px] text-[14px] text-[#33424B]">A tentativa será gravada na trilha de auditoria com seu nome e horário. Não há opção de liberar: os dois caminhos gravam a tentativa negada.</div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+const fmtPrazo = (min: number) => (min >= 60 ? `${min / 60} h` : `${min} min`);
+
+export interface VeiculoForm { comVeiculo: boolean; placa: string; modelo: string; cor: string }
+export const VEICULO_VAZIO: VeiculoForm = { comVeiculo: false, placa: '', modelo: '', cor: '' };
+
+/**
+ * Veículo da entrada (opcional). Rádios nativos "A pé" / "Com veículo" (Tab entra no grupo, setas trocam); com veículo,
+ * placa (obrigatória, com máscara), modelo e cor. "Mesmo veículo da última visita" preenche tudo de uma vez.
+ */
+export function BlocoVeiculo({ valor, onChange, ultimo }: { valor: VeiculoForm; onChange: (v: VeiculoForm) => void; ultimo: VeiculoAcesso | null }) {
+  // O primeiro campo (placa) do bloco recebe o foco ao marcar "Com veículo"
+  const camposRef = useRef<HTMLDivElement>(null);
+  const focarPlaca = useRef(false);
+  useEffect(() => {
+    if (valor.comVeiculo && focarPlaca.current) { focarPlaca.current = false; camposRef.current?.querySelector('input')?.focus(); }
+  }, [valor.comVeiculo]);
+  const placaInvalida = valor.comVeiculo && valor.placa.replace(/[^A-Za-z0-9]/g, '').length === 7 && !normalizarPlaca(valor.placa);
+  const opcao = (com: boolean, rotulo: string) => (
+    <label className={`flex h-11 cursor-pointer items-center gap-2 rounded-lg border-2 px-4 max-lg:h-[44px] [&:has(:focus-visible)]:outline [&:has(:focus-visible)]:outline-[3px] [&:has(:focus-visible)]:outline-offset-2 [&:has(:focus-visible)]:outline-[#0B5563] ${
+      valor.comVeiculo === com ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#DCE1E5] bg-white hover:border-[#9AA7B0]'}`}>
+      <input type="radio" name="veiculo" className="sr-only" checked={valor.comVeiculo === com}
+        onChange={() => { focarPlaca.current = com; onChange({ ...valor, comVeiculo: com }); }} />
+      <span className="font-medium">{rotulo}</span>
+    </label>
+  );
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-2 flex items-center gap-1.5 text-[14px] font-medium"><Car className="h-4 w-4 text-[#56616B]" aria-hidden />Veículo <span className="font-normal text-[#56616B]">· opcional, fica registrado na entrada</span></legend>
+      <div className="flex flex-wrap items-center gap-2">
+        {opcao(false, 'A pé')}
+        {opcao(true, 'Com veículo')}
+        {ultimo && !(valor.comVeiculo && normalizarPlaca(valor.placa) === ultimo.placa) && (
+          <Button pequeno onClick={() => { focarPlaca.current = false; onChange({ comVeiculo: true, placa: mascaraPlaca(ultimo.placa), modelo: ultimo.modelo ?? '', cor: ultimo.cor ?? '' }); }}>
+            Mesmo da última visita: {descreverVeiculo(ultimo)}
+          </Button>
+        )}
+      </div>
+      {valor.comVeiculo && (
+        <div ref={camposRef} className="grid grid-cols-1 gap-[14px] sm:grid-cols-3">
+          <Field label={<>Placa <span className="text-[#B42318]">*</span></>} erro={placaInvalida ? 'Placa fora do padrão antigo (ABC-1234) ou Mercosul (ABC1D23).' : undefined}>
+            <InputMascara tipo="placa" className="input font-mono" aria-required value={valor.placa} onChange={(placa) => onChange({ ...valor, placa })} />
+          </Field>
+          <Field label="Modelo"><input className="input" maxLength={60} value={valor.modelo} onChange={(e) => onChange({ ...valor, modelo: e.target.value })} /></Field>
+          <Field label="Cor"><input className="input" maxLength={30} value={valor.cor} onChange={(e) => onChange({ ...valor, cor: e.target.value })} /></Field>
+        </div>
+      )}
+    </fieldset>
+  );
+}
+
+/**
+ * Tipo de visita (define o prazo de permanência). Rádios nativos: Tab entra no grupo e as setas trocam a opção.
+ * O prazo de serviço com autorização prévia de horário vai até o fim da janela (regra do servidor).
+ */
+export function SeletorTipoVisita({ valor, onChange }: { valor: TipoVisita; onChange: (t: TipoVisita) => void }) {
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-2 text-[14px] font-medium">Tipo de visita <span className="font-normal text-[#56616B]">· define o prazo de permanência</span></legend>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {TIPOS_VISITA.map((t) => (
+          <label key={t} className={`flex min-h-[56px] cursor-pointer flex-col justify-center rounded-lg border-2 px-4 py-2 [&:has(:focus-visible)]:outline [&:has(:focus-visible)]:outline-[3px] [&:has(:focus-visible)]:outline-offset-2 [&:has(:focus-visible)]:outline-[#0B5563] ${
+            valor === t ? 'border-[#0B5563] bg-[#F0F8F9]' : 'border-[#DCE1E5] bg-white hover:border-[#9AA7B0]'}`}>
+            <input type="radio" name="tipo-visita" className="sr-only" checked={valor === t} onChange={() => onChange(t)} />
+            <span className="font-medium">{ROTULO_TIPO_VISITA[t]}</span>
+            <span className="text-[13px] text-[#56616B]">Prazo {fmtPrazo(PRAZO_PADRAO_MIN[t])}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}

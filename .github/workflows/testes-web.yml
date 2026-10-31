@@ -1,0 +1,57 @@
+# Testes do domain, da API e do front (apps/web): typecheck, testes unitários, build e e2e (Playwright) contra a API REAL
+# sobre PGlite em memória (`npm run dev:pglite -w apps/api`, subida pelo playwright.config.ts). Sem Docker e sem segredo:
+# o servidor de e2e recusa subir com PORTARIA_AMBIENTE=producao ou DATABASE_URL, e nada deste job fala com servidor externo.
+name: Testes (domain, API e web)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'apps/api/**'
+      - 'packages/domain/**'
+      - 'package-lock.json'
+      - '.github/workflows/testes-web.yml'
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'apps/api/**'
+      - 'packages/domain/**'
+      - 'package-lock.json'
+      - '.github/workflows/testes-web.yml'
+
+permissions: {}
+
+concurrency:
+  group: testes-web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Imagem oficial do Node (sem action de setup-node).
+    container: node:22-bookworm-slim
+    permissions:
+      contents: read
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - run: npm ci --no-audit --no-fund
+      - name: Typecheck do domain e da API
+        run: npm run typecheck -w packages/domain -w apps/api
+      - name: Testes do domain e da API (PGlite)
+        run: npm test -w packages/domain -w apps/api
+      - name: Typecheck e build do web
+        run: npm run build -w apps/web
+      - name: Testes unitários do web
+        run: npm test -w apps/web
+      - name: Chromium do Playwright (com as dependências do sistema)
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+      - name: E2E contra a API sobre PGlite
+        working-directory: apps/web
+        run: npx playwright test

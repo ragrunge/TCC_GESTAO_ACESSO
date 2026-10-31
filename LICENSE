@@ -4,8 +4,13 @@ Todos os direitos reservados.
 Os textos, documentos, diagramas e instrumentos de pesquisa deste repositório são obra protegida pela Lei
 n.º 9.610/1998 (Lei de Direitos Autorais), de titularidade dos autores.
 
+O código-fonte deste repositório, escrito para este trabalho, também está coberto por este aviso, com a proteção da
+Lei n.º 9.610/1998 e da Lei n.º 9.609/1998 (Lei do Software).
+
 É permitida a citação de trechos para fins acadêmicos, desde que acompanhada da referência ao trabalho e aos autores.
 Qualquer outro uso, reprodução, adaptação ou distribuição depende de autorização prévia e por escrito dos autores.
 
-Este repositório não distribui software. A publicação deste material e a apresentação do trabalho a instituição de
-ensino não implicam cessão ou licença de direitos sobre qualquer software mencionado nele.
+Este aviso não se aplica a software de terceiros usado pelo código (bibliotecas, fontes e ferramentas obtidas por
+gerenciador de pacotes ou por link), que segue a licença do respectivo titular. A publicação deste material e a
+apresentação do trabalho a instituição de ensino não implicam cessão ou licença de direitos sobre qualquer software
+mencionado nele.

@@ -1,0 +1,26 @@
+# Dependências e build
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Segredos (KEK, chave HMAC do CPF, senha do banco)
+.env
+.env.*
+!.env.example
+
+# Testes e2e
+test-results/
+playwright-report/
+
+# Deploy e ferramentas
+.vercel/
+*.log
+npm-debug.log*
+
+# Sistema e editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
