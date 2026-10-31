@@ -1,0 +1,30 @@
+@startuml uc3_auditoria
+' Casos de uso de auditoria e rotinas automáticas — fonte: 01_requisitos.md, seção 12
+!include _estilo.iuml
+title Diagrama 3 — Auditoria, relatórios e rotinas automáticas (M1, M4)
+
+actor "Administração" as A
+actor "Auditor\n(conselho fiscal)" as AU
+
+rectangle "Sistema de Controle de Acesso" {
+  usecase "UC28 Consultar histórico\nde acessos" as UC28
+  usecase "UC29 Emitir relatórios" as UC29
+  usecase "UC30 Exportar trilha\nde auditoria" as UC30
+  usecase "UC31 Verificar integridade\nda trilha" as UC31
+  usecase "UC20 Encerrar vínculos\nvencidos" as UC20
+  usecase "UC32 Aplicar política\nde retenção (LGPD)" as UC32
+}
+
+actor "Agendador\n(tempo)" as T
+
+A -- UC28
+A -- UC29
+A -- UC30
+AU -- UC28
+AU -- UC29
+AU -- UC30
+UC20 -- T
+UC32 -- T
+
+UC30 ..> UC31 : <<include>>
+@enduml
